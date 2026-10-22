@@ -265,9 +265,11 @@ function ensureInk() {
       void main() {
         vec2 px = 1.0 / res;
         // wasteland: graphite + ink wash, near monochrome (Epic Mickey's Wasteland)
-        // "line boil": time stepped at 8fps, like hand-painted animation frames
-        float tq = floor(time * 8.0) / 8.0;
-        vec2 pj = hash22(vec2(tq * 7.3, tq * 3.1)) * 0.012;
+        // "line boil": time stepped at 4fps, like hand-painted animation frames.
+        // Kept SUBTLE — a living line, not a shimmer: the paper barely shifts
+        // and the strokes move by about a pixel.
+        float tq = floor(time * 4.0) / 4.0;
+        vec2 pj = hash22(vec2(tq * 7.3, tq * 3.1)) * 0.0025;
         float paper = texture2D(tPaper, vUv * vec2(res.x / res.y, 1.0) * 2.6 + pj).r;
         // slow continuous pigment drift — the wash never quite dries
         float flow = texture2D(tPaper, vUv * vec2(res.x / res.y, 1.0) * 0.7
@@ -276,12 +278,12 @@ function ensureInk() {
         float skyMask = 1.0 - step(camFar * 0.55, d0);
 
         // ── the ink: double-stroked, wobbling, redrawn every boil step
-        vec2 wobA = hash22(floor(vUv * res / 5.0) + tq * 17.0) * px * 2.1;
-        vec2 wobB = hash22(floor(vUv * res / 5.0) + 31.7 + tq * 17.0) * px * 3.3;
-        float w = 1.5 + paper * 1.7;
+        vec2 wobA = hash22(floor(vUv * res / 14.0) + tq * 17.0) * px * 0.7;
+        vec2 wobB = hash22(floor(vUv * res / 14.0) + 31.7 + tq * 17.0) * px * 1.1;
+        float w = 1.3 + paper * 0.7;
         float e1 = edgeAt(vUv + wobA, w, d0);
         float e2 = edgeAt(vUv + wobB, w * 0.65, d0);
-        float ink = clamp(e1 + e2 * 0.6, 0.0, 1.0) * skyMask;
+        float ink = clamp(e1 + e2 * 0.3, 0.0, 1.0) * skyMask;
 
         // ── the fill: watercolor washes whose boundaries slowly crawl
         vec3 col = texture2D(tColor, vUv).rgb;
@@ -308,7 +310,7 @@ function ensureInk() {
 
         // …but the INK does: confident near-black sketch line on top
         vec3 inkCol = vec3(0.07, 0.07, 0.10);
-        col = mix(col, inkCol, ink * 0.9);
+        col = mix(col, inkCol, ink * 0.8);
 
         // ── WASTELAND: graphite and ink wash. Colour is drained to a warm
         // grey, hatching bites everywhere rather than only in shadow, the ink
@@ -324,7 +326,7 @@ function ensureInk() {
           float shade = smoothstep(0.96, 0.04, g);            // 0 = light, 1 = dark
           vec2 fc = gl_FragCoord.xy;
           // boil the seed a touch so the strokes are redrawn frame to frame
-          float sd = 3.1 + floor(time * 6.0);
+          float sd = 3.1 + floor(time * 3.0);
           // build tone in messy pencil passes, each biting deeper in shadow
           float p1 = pencilLines(fc, 0.7,  7.0, sd)       * smoothstep(0.14, 0.5, shade);
           float p2 = pencilLines(fc, -0.5, 8.5, sd + 5.0) * smoothstep(0.44, 0.8, shade);  // cross-hatch
@@ -596,6 +598,16 @@ function surfH(d) {
   return h;
 }
 const radiusAt = (d) => R + surfH(d) * H_AMP;
+// how far short of a district's centre its spur road stops (world units): the
+// centre is where the hotel / mall / barn stands, so the turning circle (r=2)
+// goes in front of its foundation instead of under it
+const SPUR_SETBACK = new Map();
+SPUR_SETBACK.set(RESORT, 5.2).set(MALL, 5.6).set(FARM_A, 6.9).set(FARM_B, 6.9);   // farms: outside the fence ring (r=4.6)
+function spurEndT(target) {
+  const sb = SPUR_SETBACK.get(target) || 0;
+  return 1 - sb / (R * DOWNTOWN.angleTo(target));
+}
+function spurEndDir(target) { return slerpDir(DOWNTOWN, target, spurEndT(target)); }
 const posOn = (d, extra = 0) => d.clone().multiplyScalar(radiusAt(d) + extra);
 const isLand = (d, margin = 0.15) => surfH(d) > SEA_H + margin;
 const isWater = (d, margin = 0.2) => surfH(d) < SEA_H - margin;
@@ -677,9 +689,13 @@ function randomWaterDir() {
 }
 
 const planet = (() => {
-  // level 6 gives a fine sphere; merging shared vertices lets computeVertexNormals
-  // AVERAGE across faces → smooth, bevelled ground instead of hard facets
-  let g = mergeVertices(new THREE.IcosahedronGeometry(R, 6));
+  // Roads, buildings and cars are all placed on the ANALYTIC height radiusAt();
+  // the visible ground must follow it closely or everything floats. Detail 6
+  // made 4.5-unit triangles whose flat middles sagged ~0.08 below that height
+  // (more than a road's lift), so roads and props hovered over the ground.
+  // Detail 44 → ~0.7-unit triangles, sag < 0.003. Shared vertices are merged
+  // so normals average → smooth ground, no facets.
+  let g = mergeVertices(new THREE.IcosahedronGeometry(R, IS_TOUCH ? 32 : 44));
   const p = g.attributes.position;
   const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
@@ -1138,12 +1154,14 @@ scatter(rockDeco, 26);
   roadNetPts.push(...blvd);
 
   // spur roads: downtown out to every district, ending in a turning circle
+  // that sits IN FRONT of the district's main building (spurEndDir), never under it
   const SPURS = [AIRPORT, RESORT, MALL, FARM_A, FARM_B, BEACH];
   for (const target of SPURS) {
     const total = DOWNTOWN.angleTo(target);
     const t0 = Math.min(0.9, 0.94 / total);           // leave from the ring boulevard
+    const t1 = spurEndT(target);
     const spur = [];
-    for (let k = 0; k <= 26; k++) spur.push(slerpDir(DOWNTOWN, target, t0 + (1 - t0) * (k / 26)));
+    for (let k = 0; k <= 26; k++) spur.push(slerpDir(DOWNTOWN, target, t0 + (t1 - t0) * (k / 26)));
     const spurPts = smoothLoop(spur, 3, false);
     roadLayers(spurPts, false);
     roadNetPts.push(...spurPts);
@@ -1579,9 +1597,12 @@ for (let i = 0; i < LANDMARKS.length; i++) {
   const nxt = LANDMARKS[(i + 1) % LANDMARKS.length];
   const tang = nxt.dir.clone().sub(lm.dir.clone().multiplyScalar(lm.dir.dot(nxt.dir))).normalize();
   for (const s of [-1, 1]) {
-    const d = lm.dir.clone().applyAxisAngle(tang, s * 0.085).normalize();
+    // 0.085 rad (2.5 units) put them ON the landmark's plaza and on the ring
+    // road that skirts it; 0.17 (5 units) is across the road, facing in
+    const d = lm.dir.clone().applyAxisAngle(tang, s * 0.17).normalize();
     if (!isLand(d, 0.02)) continue;
-    if (LANDMARKS.some(l => l !== lm && l.dir.angleTo(d) < 0.07)) continue;
+    if (nearRoad(d, 2.0)) continue;
+    if (LANDMARKS.some(l => l.dir.angleTo(d) < 0.14)) continue;
     const o = cottage();
     o.position.copy(settleOn(d, 1.0, 0.12));
     alignToSurface(o, d, yawToFace(d, lm.dir));
@@ -2054,6 +2075,7 @@ mark('downtown:start');
   const STREET = 1.4;                                   // clear ground between footprints
   const placed = [];                                    // {x, y, r} effective radii
   const lotsBig = CITY_PLAN.lots.slice().sort((a, b) => b.a - a.a);
+  const DISTRICT_CLEAR = [[MALL, 8.0], [RESORT, 7.5], [FARM_A, 8.0], [FARM_B, 8.0], [AIRPORT, 14.0]];
   const fits = (x, y, r) => placed.every(p => Math.hypot(p.x - x, p.y - y) >= p.r + r + STREET);
   for (const lot of lotsBig) {
     const [cx, cy] = lot.c;
@@ -2064,6 +2086,13 @@ mark('downtown:start');
     if (LANDMARKS.some(lm => dd0.angleTo(lm.dir) < lmClearArc)) continue;
     if (dd0.angleTo(STOP_DIRS.central) < LAYOUT.reference.stationClear / R) continue;
     if (museumLm.footDir && dd0.angleTo(museumLm.footDir) < museumLm.footArc + 0.03) continue;   // museum building footprint stays clear
+    if (museumLm.root) {                              // …and its forecourt, out to the road
+      const ml = museumLm.root.worldToLocal(dd0.clone().multiplyScalar(R));
+      if (Math.abs(ml.x) < 9.5 && ml.z > -13.5 && ml.z < 5.5) continue;
+    }
+    // districts the grown city reaches (the Galleria sits ~8 units from the
+    // centre) keep their ground too — towers were being built through the mall
+    if (DISTRICT_CLEAR.some(([d, r]) => dd0.angleTo(d) < r / R)) continue;
     if (!isLand(dd0, 0.05)) continue;                // don't build into the strait
     const rr2 = Math.hypot(cx, cy);
     // ...and never onto the carriageway: distance from the centroid to the
@@ -2571,6 +2600,7 @@ mark('bridge:start');
   for (let i = 0; i < 7; i++) {
     const d = bAt(-9 + i * 3.1 + rand() * 1.4, -seaSign * (1.2 + rand() * 2.6));
     if (surfH(d) < SEA_H) continue;
+    if (nearRoad(d, 3.0)) continue;                 // never on the hotel drive / turning circle
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.15, 5), M(0xfffaf2));
     pole.position.copy(settleOn(d, 0.2, 0)); pole.translateY(0.55);
     alignToSurface(pole, d); scene.add(pole);
@@ -3178,14 +3208,25 @@ function buildJetRig(jet) {
     g.add(foundation(1.7, 3.0, 6));
     g.scale.setScalar(1.6);                        // a hotel, not a kiosk: bigger than any car
     g.position.copy(settleOn(d, 2.8, 0.14));
-    alignToSurface(g, d, rand() * Math.PI * 2);
+    rand();                                        // keep the seeded sequence stable
+    alignToSurface(g, d, yawToFace(d, spurEndDir(RESORT)));   // front doors face the drive
     g.traverse(m => { if (m.isMesh && !IS_TOUCH) m.castShadow = true; });
     scene.add(g); addSolid(d, 2.8, g); resortHotel = g;
   }
   // cabanas + palms round the pool
+  // the spur arrives from downtown: leave its line (and the turning circle) open
+  const rEast = new THREE.Vector3(0, 1, 0).cross(RESORT).normalize();
+  const rNorth = new THREE.Vector3().crossVectors(RESORT, rEast).normalize();
+  const toCity = new THREE.Vector2(DOWNTOWN.dot(rEast), DOWNTOWN.dot(rNorth)).normalize();
+  const onDriveway = (x, y) => {
+    const t = x * toCity.x + y * toCity.y;
+    return t > 0 && Math.abs(x * toCity.y - y * toCity.x) < 2.8;
+  };
   for (let i = 0; i < 5; i++) {
-    const ang = (i / 5) * Math.PI * 2;
-    const d = at(Math.cos(ang) * 3.4, Math.sin(ang) * 3.4 - 0.5);
+    const ang = (i / 5) * Math.PI * 2 + 0.6;
+    const cx = Math.cos(ang) * 3.4, cy = Math.sin(ang) * 3.4 - 0.5;
+    if (onDriveway(cx, cy) || onDriveway(Math.cos(ang) * 4.2, Math.sin(ang) * 4.2 - 0.5)) continue;
+    const d = at(cx, cy);
     if (surfH(d) < SEA_H) continue;
     const cab = boxHouse(1.0, 0.7, 1.0, 0xfffaf2, [0xff4d6e, 0x33c9ff, 0xffd23d][i % 3], 'gable');
     cab.position.copy(settleOn(d, 0.7, 0.08));
@@ -3199,7 +3240,7 @@ function buildJetRig(jet) {
       const frond = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.9, 4), M(0x2dd47b));
       frond.position.y = 1.4; frond.rotation.set(1.1, f * 1.25, 0); frond.translateY(0.4); palm.add(frond);
     }
-    const pd = at(Math.cos(ang) * 4.2, Math.sin(ang) * 4.2 - 0.5);
+    const pd = at(Math.cos(ang) * 4.2, Math.sin(ang) * 4.2 - 0.5);   // its palm, behind it
     palm.position.copy(settleOn(pd, 0.3, 0.05)); alignToSurface(palm, pd);
     scene.add(palm);
   }
@@ -3231,11 +3272,11 @@ function buildJetRig(jet) {
   }
   // a few parked cars out front
   for (let i = 0; i < 4; i++) {
-    const d = at(-2.4 + i * 1.6, -3.2);
+    const d = at(-2.4 + i * 1.6, -4.4);            // clear of the mall's foundation lip (r=3)
     const car = simpleCar(shopHues[i]);
     car.position.copy(settleOn(d, 0.5, 0.02)); alignToSurface(car, d, rand() * Math.PI * 2); scene.add(car);
   }
-  districtSign(MALL, '🛍 The Galleria', 0, -4.5);
+  districtSign(MALL, '🛍 The Galleria', 3.6, -5.8);
 }
 
 // ── THE FARMS: fields, a barn, a silo, a farmhouse, fences ──
@@ -3244,7 +3285,7 @@ function buildFarm(anchor, label) {
   // field patches as tinted ground quads
   for (let fx = -1; fx <= 1; fx++) {
     for (let fy = -1; fy <= 1; fy++) {
-      if (fx === 0 && fy === 0) continue;
+      if (fy === 0) continue;                    // the middle row is the farmyard: barn, silo, house
       const d = at(fx * 3.2, fy * 3.2);
       if (surfH(d) < SEA_H + 0.05) continue;
       const crop = [0x8fae4a, 0xc9a94a, 0x6f9e4a, 0xb98a3a][(fx + fy + 2) % 4];
@@ -3272,7 +3313,7 @@ function buildFarm(anchor, label) {
   }
   // silo
   {
-    const d = at(1.8, 0.6);
+    const d = at(2.6, 0.9);                       // silo stands clear of the barn's foundation
     const g = new THREE.Group();
     const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 2.4, 12), M(0xcfd6de));
     drum.position.y = 1.2; g.add(drum);
@@ -3284,7 +3325,7 @@ function buildFarm(anchor, label) {
   }
   // farmhouse
   {
-    const d = at(-2.4, 0.4);
+    const d = at(-3.3, 0.4);                      // farmhouse across the yard, not touching the barn
     const g = boxHouse(1.6, 1.2, 1.4, 0xf0e6d2, 0x8a5a3a, 'gable');
     g.add(foundation(1.1, 1.8, 6));
     g.position.copy(settleOn(d, 1.1, 0.1));
@@ -4803,7 +4844,8 @@ function buildArrPath() {
       .addScaledVector(bE1, Math.sin(BARC) * Math.cos(th))
       .addScaledVector(bE2, Math.sin(BARC) * Math.sin(th)).normalize());
   }
-  for (let k = 0; k <= 20; k++) pts.push(slerpDir(eR, RESORT, k / 20));
+  const eEnd = spurEndDir(RESORT);               // the turning circle, in front of the hotel
+  for (let k = 0; k <= 20; k++) pts.push(slerpDir(eR, eEnd, k / 20));
   // soften the two grid-edge corners so the limo steers, not teleports
   for (let pass = 0; pass < 3; pass++) {
     const out = [pts[0]];
@@ -4834,7 +4876,7 @@ function buildArrPath() {
   }
   uGas = arrArcs[best] / arrTotal;
   // pull up OUTSIDE the hotel: the path ends at its centre, so stop short
-  uEnd = Math.max(uGas + 0.05, 1 - 4.5 / (arrTotal * R));
+  uEnd = Math.max(uGas + 0.05, 1 - 0.8 / (arrTotal * R));   // stop inside the turning circle
 }
 const _apDir = new THREE.Vector3(), _apTan = new THREE.Vector3();
 function sampleArrPath(u01, outDir, outTan) {
@@ -5200,8 +5242,10 @@ const _paxA = new THREE.Vector3(), _paxB = new THREE.Vector3(), _paxP = new THRE
 let arrBeat = -1;
 const cineHidden = [];                               // sprites switched off for the film
 const ARR_LEN = 11;                                  // seconds, whole cinematic
+const ARR_FREEZE = parseFloat(new URLSearchParams(location.search).get('arrfreeze'));   // dev: hold a frame
 function updateArrival(dt) {
   arrivalT += dt / ARR_LEN;
+  if (ARR_FREEZE > 0) arrivalT = ARR_FREEZE;
   const T = arrivalT;
   const airAt = frameAt(AIRPORT);
   const rig = airportPlane && airportPlane.userData.rig;
@@ -5519,23 +5563,23 @@ function makeBoilMat(thickness, seed, color, opacity) {
         return fract(sin(dot(v, vec3(12.9898, 78.233, 45.164)) + s) * 43758.5453);
       }
       void main() {
-        float tick = floor(time * 7.0);                     // 7 redraws a second
+        float tick = floor(time * 4.0);                     // 4 redraws a second
         float h = h1(position, seed + tick * 0.618);
         float g = h1(position.zxy, seed * 1.7 + tick * 0.37);
-        // the line swells and thins along its length, differently every tick
-        float w = thick * (0.55 + 1.0 * h);
-        // and wanders sideways a touch, so it never sits exactly still
-        vec3 wander = (vec3(h, g, h1(position.yzx, seed + tick)) - 0.5) * thick * 1.4;
+        // the line swells and thins a little along its length, redrawn each tick
+        float w = thick * (0.8 + 0.4 * h);
+        // and drifts a hair sideways, so it lives without scribbling
+        vec3 wander = (vec3(h, g, h1(position.yzx, seed + tick)) - 0.5) * thick * 0.35;
         vec3 p = position + normalize(normal) * w + wander;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
       }`,
     fragmentShader: `void main() { gl_FragColor = vec4(${color}, ${opacity}); }`,
   });
 }
-const gpBoilHeavy = makeBoilMat(0.05, 3.1, '0.10, 0.09, 0.12', 1.0);    // buildings
-const gpBoilMid   = makeBoilMat(0.032, 7.9, '0.10, 0.09, 0.12', 1.0);   // props, vehicles
-const gpBoilLight = makeBoilMat(0.02, 15.3, '0.14, 0.12, 0.16', 0.8);   // small items
-const gpBoilLoose = makeBoilMat(0.03, 11.7, '0.16, 0.14, 0.18', 0.5);   // the loose over-stroke
+const gpBoilHeavy = makeBoilMat(0.04, 3.1, '0.10, 0.09, 0.12', 1.0);    // buildings
+const gpBoilMid   = makeBoilMat(0.026, 7.9, '0.10, 0.09, 0.12', 1.0);   // props, vehicles
+const gpBoilLight = makeBoilMat(0.017, 15.3, '0.14, 0.12, 0.16', 0.8);  // small items
+const gpBoilLoose = makeBoilMat(0.022, 11.7, '0.16, 0.14, 0.18', 0.28); // the loose over-stroke, faint
 const gpBoilMats = [gpBoilHeavy, gpBoilMid, gpBoilLight, gpBoilLoose];
 const gpOutlines = [];
 let gpBuilt = false, gpOn = false;
@@ -5987,10 +6031,10 @@ const DEV_CAM = (() => {
   if (!q) return null;
   const [k, ...n] = q.split(','); const [x, y, z, ly, lz] = n.map(Number);
   return () => {
-    const lm = lmByKey[k]; if (!lm?.root) return;
-    camera.position.copy(lm.root.localToWorld(new THREE.Vector3(x, y, z)));
-    camera.up.copy(lm.dir);
-    camera.lookAt(lm.root.localToWorld(new THREE.Vector3(0, ly || 0, lz || 0)));
+    const root = lmByKey[k]?.root ?? { hotel: resortHotel }[k]; if (!root) return;
+    camera.position.copy(root.localToWorld(new THREE.Vector3(x, y, z)));
+    camera.up.copy(root.position).normalize();
+    camera.lookAt(root.localToWorld(new THREE.Vector3(0, ly || 0, lz || 0)));
   };
 })();
 function animate() {
@@ -6480,19 +6524,84 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
   });
   console.log(`[perf] meshes=${meshes} tris=${Math.round(tris)} buildMs=${Math.round(performance.now())}`);
 }
-// the museum is a big set-piece placed before the scatter passes ran: clear any
-// tree, cottage or bush that landed on its plinth or forecourt
-{
-  const mus = lmByKey.artgarden;
-  if (mus?.root) {
-    const loc = new THREE.Vector3();
-    for (const c of [...deco.children]) {
-      loc.copy(c.position); mus.root.worldToLocal(loc);
-      const onPlinth = Math.abs(loc.x) < 8.0 && loc.z < 1.2 && loc.z > -12.4;
-      const onPlaza = Math.hypot(loc.x, loc.z + 0.3) < 4.4;
-      if ((onPlinth || onPlaza) && Math.abs(loc.y) < 6) deco.remove(c);
+// ── footprints: an object's centre + radius measured in its OWN surface frame
+// (so the planet's curvature doesn't inflate it). Used to keep decoration out
+// of real structures, and by the ?audit=1 overlap report below.
+function footprintOf(o) {
+  o.updateWorldMatrix(true, true);
+  const up = o.position.clone().normalize();
+  const q = new THREE.Quaternion().setFromUnitVectors(up, UP_Y);
+  const bb = new THREE.Box3(), v = new THREE.Vector3();
+  o.traverse(m => {
+    if (!m.isMesh || !m.geometry.attributes.position || m.userData.noCollide) return;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    const g = m.geometry.boundingBox;
+    for (let i = 0; i < 8; i++) {
+      v.set(i & 1 ? g.max.x : g.min.x, i & 2 ? g.max.y : g.min.y, i & 4 ? g.max.z : g.min.z)
+        .applyMatrix4(m.matrixWorld).sub(o.position).applyQuaternion(q);
+      bb.expandByPoint(v);
     }
+  });
+  if (bb.isEmpty()) return null;
+  const sz = bb.getSize(new THREE.Vector3());
+  const c = bb.getCenter(new THREE.Vector3()).applyQuaternion(q.clone().invert()).add(o.position);
+  return { c, rad: Math.hypot(sz.x, sz.z) / 2 * 0.8, h: sz.y, w: Math.max(sz.x, sz.z) };
+}
+// decoration (trees, rocks, bushes, cottages) was scattered before most
+// districts were built, so some of it landed inside them. Anything decorative
+// that intrudes into a real structure's footprint is removed.
+{
+  const isStructure = (o) => o.isObject3D && !o.isLight && !o.isCamera && !o.isSprite
+    && o !== planet && o !== ocean && o !== sky && o !== skyStars && o !== deco && o !== landmarkGroup
+    && o.position.length() > R * 0.5 && !npcs.includes(o);
+  const structs = [];
+  for (const o of [...scene.children, ...landmarkGroup.children]) {
+    if (!isStructure(o)) continue;
+    const f = footprintOf(o);
+    if (f && f.rad > 1.2 && f.h > 0.9) structs.push(f);          // buildings, not decals or slabs
   }
+  const mus = lmByKey.artgarden, loc = new THREE.Vector3();
+  let removed = 0;
+  for (const c of [...deco.children]) {
+    const f = footprintOf(c);
+    if (!f) continue;
+    let hit = structs.some(S => S.c.distanceTo(f.c) < S.rad * 0.9 + f.rad * 0.5);
+    if (!hit && mus?.root) {                                       // the museum is a long rectangle
+      loc.copy(c.position); mus.root.worldToLocal(loc);
+      hit = (Math.abs(loc.x) < 8.0 && loc.z < 1.2 && loc.z > -12.4) || Math.hypot(loc.x, loc.z + 0.3) < 4.4;
+    }
+    if (hit) { deco.remove(c); removed++; }
+  }
+  if (TRACE) console.log('[layout] decoration removed from inside structures:', removed);
+}
+// ?audit=1 (dev): list every pair of placed objects whose footprints overlap —
+// the "things inside other things" report. Footprints are measured in each
+// object's own surface frame so the planet's curvature doesn't inflate them.
+if (new URLSearchParams(location.search).get('audit') === '1') {
+  const items = [];
+  const add = (o, tag) => {
+    if (!o.isObject3D || o.isLight || o.isCamera || o.isSprite) return;
+    if (o === planet || o === ocean || o === sky || o === skyStars || o === landmarkGroup || o === deco) return;
+    if (o.position.length() < R * 0.5) return;                 // world-spanning groups (roads, floors)
+    const f = footprintOf(o);
+    if (!f || f.w < 0.5 || f.h < 0.6) return;                  // pebbles, decals, plaza slabs
+    const up = o.position.clone().normalize();
+    let col = ''; o.traverse(m => { if (!col && m.isMesh && m.material?.color) col = m.material.color.getHexString(); });
+    items.push({ ...f, name: tag + ':' + (o.name || o.type) + '#' + col + '/' + o.children.length + `@${(Math.asin(up.y) * 180 / Math.PI).toFixed(0)},${(Math.atan2(up.z, up.x) * 180 / Math.PI).toFixed(0)}` });
+  };
+  for (const c of scene.children) add(c, 'scene');
+  for (const c of deco.children) add(c, 'deco');
+  for (const c of landmarkGroup.children) add(c, 'landmark');
+  const hits = [];
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const A = items[i], B = items[j];
+    const d = A.c.distanceTo(B.c), pen = A.rad + B.rad - d;
+    if (pen > 0.25 && pen > 0.35 * Math.min(A.rad, B.rad) && Math.max(A.rad, B.rad) > 0.7)
+      hits.push([+pen.toFixed(2), A.name, +A.rad.toFixed(1), B.name, +B.rad.toFixed(1)]);
+  }
+  hits.sort((a, b) => b[0] - a[0]);
+  console.log('[audit] items=' + items.length + ' overlaps=' + hits.length);
+  for (const h of hits.slice(0, 80)) console.log('[audit] ' + JSON.stringify(h));
 }
 try { buildCollisionBVH(); } catch (e) { console.warn('BVH build skipped:', e.message); }
 progress(1, 'ready!');

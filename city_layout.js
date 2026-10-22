@@ -55,7 +55,7 @@ export default {
                     note: 'NetJets on the apron, nose up-runway' },
     limoApron:    { frame: 'airport', at: [5.2, 12],  dims: [1.15, 4.6],
                     note: 'limo waits clear of the runway end' },
-    gasStation:   { frame: 'spur:downtown→airport', t: 0.5, side: 2.3, scale: 1.7, dims: [6.1, 4.8],
+    gasStation:   { frame: 'spur:downtown→airport', t: 0.64, side: 2.3, scale: 1.7, dims: [6.1, 4.8],
                     note: 'Gas-N-Go halfway down the airport spur; limo pulls onto the slab' },
     trainStation: { frame: 'stop:central', offTrack: -3.0, len: 13.5, lift: 0.32, settleHalf: 3.8,
                     dims: [5.4, 13.5], note: 'walk-through station; long axis along the rails' },

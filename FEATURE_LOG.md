@@ -5,6 +5,14 @@ Append each new request here as it comes in (see the rule in CLAUDE.md). Format:
 `- [status] request — short note`. Status: ✅ done+verified · 🟡 done, needs live
 check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
+## Session 2026-10-22 (world clean-up: grounding, overlaps, calmer lines)
+
+- 🟡 **"The world is a mess: roads float, the limo is inside a building, the comic lines waver too much."** Fixed in code + verified by headless screenshots; deploy with `./deploy.sh` (cloud session has no Netlify login).
+  - Floating: the planet's ground mesh was icosahedron detail 6 (~4.5-unit triangles) while everything else sits on the analytic height — flat triangle middles sagged ~0.08 below roads/buildings. Now detail 44 (~0.7-unit triangles).
+  - Limo in the hotel: spur roads ran straight to each district's centre, where the hotel/mall/barn stands. Spurs now stop in front (SPUR_SETBACK); the limo parks in the turning circle; hotel faces its drive; cabanas, palms and beach umbrellas keep off the drive.
+  - Overlaps (new `?audit=1` dev report): cottages were on every landmark's plaza/road → moved across the road; downtown towers were built through the Galleria → district clearances; decoration inside any structure is removed; farm silo/farmhouse no longer inside the barn; Gas-N-Go moved off Harvest Fields' farmhouse (t 0.5→0.64); mall cars off the foundation; a tower on the museum forecourt removed.
+  - Lines: Wasteland boil 7→4 redraws/s, width jitter ±50%→±20%, sideways wander 1.4×→0.35× thickness, thinner strokes, fainter over-stroke; Sketchbook ink wobble ~3px→~1px at 4fps, steadier paper.
+
 ## Session 2026-10-07 (art heist: museum + narrative)
 
 - 🟡 **Art heist overhaul — top-notch museum, less sloppy, fix the narrative.** Done in code, verified by headless screenshots in Classic / Sketchbook / Wasteland; **not yet deployed** (no Netlify CLI/token in the cloud session — run `./deploy.sh` locally).
