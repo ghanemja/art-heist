@@ -95,6 +95,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // cartoon world: 2x retina is wasted fill
 // perf probe (dev): draw calls / triangles / programs from the last frame
 window.__perf = () => ({ ...renderer.info.render, programs: renderer.info.programs?.length });
+if (new URLSearchParams(location.search).get('debug') === '1') window.__three = { get scene() { return scene; } };   // dev: inspect from the console
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -131,6 +132,8 @@ function applyChrome(on) {
     for (const m of mats) {
       if (!m.isMeshStandardMaterial) continue;         // Basic/Normal/Shader/Points/Sprite → skip
       if (m.transparent || (m.opacity ?? 1) < 1) continue; // glass, water, clouds, trails
+      if (m.userData.noChrome) continue;              // the ground + roads stay matte: a chrome
+                                                      // planet read as one big shiny ball
       if (m.emissive && m.emissive.getHex() !== 0 && (m.emissiveIntensity ?? 0) > 0) continue; // lamps, windows, stars
       if (!m.userData._matte) {
         m.userData._matte = { metalness: m.metalness, roughness: m.roughness, envMapIntensity: m.envMapIntensity };
@@ -707,6 +710,7 @@ const planet = (() => {
   const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 0.95, metalness: 0,   // smooth-shaded, no facets
   }));
+  mesh.material.userData.noChrome = true;
   mesh.receiveShadow = true;
   scene.add(mesh);
   return mesh;
@@ -747,21 +751,24 @@ function paintTerrain(T) {
 }
 paintTerrain(VIBES[vibe].terr);
 function roadMat(dark) {
-  return new THREE.MeshStandardMaterial({
+  const m = new THREE.MeshStandardMaterial({
     roughness: 0.97, flatShading: true,
     polygonOffset: true, polygonOffsetFactor: dark ? -2 : -1, polygonOffsetUnits: dark ? -2 : -1,
   });
+  m.userData.noChrome = true;
+  return m;
 }
 
 // ocean — faceted translucent sphere at sea level
 const ocean = new THREE.Mesh(
   mergeVertices(new THREE.IcosahedronGeometry(SEA_R, 4)),
   new THREE.MeshStandardMaterial({
-    color: 0x6cbcdf, transparent: true, opacity: 0.82, roughness: 0.2, metalness: 0.05,
+    color: 0x6cbcdf, transparent: true, opacity: 0.82, roughness: 0.75, metalness: 0.0,   // soft water — 0.2 read as glossy plastic
     depthWrite: false,   // smooth water, no faceted spikes
   })
 );
 ocean.geometry.computeVertexNormals();
+ocean.material.envMapIntensity = 0.12;   // the studio env map turned the sea into a shiny ball
 scene.add(ocean);
 
 progress(0.28, 'planting forests…');
@@ -2894,6 +2901,7 @@ let subwayInt = null;      // subway car interior, wrapped around the camera mid
       // sink −0.09 cancels the +0.09 lane lift so tyres sit ON the road, not above it
       const tpl = toTemplate(g.scene, f.len, -0.09, true, f.flip ? Math.PI : 0);
       dressCar(tpl);
+      mergeStatic(tpl);              // one draw per material per car, not one per part
       return tpl;
     }).catch(assetFail(`car ${f.file}.glb`))
   )).then(tpls => {
@@ -2996,6 +3004,7 @@ let subwayInt = null;      // subway car interior, wrapped around the camera mid
     tpl.traverse(o => { if (o.isMesh && /^plane/i.test(o.name)) junk.push(o); });
     for (const o of junk) o.removeFromParent();
     dressCar(tpl);
+    mergeStatic(tpl);                // ~160 parts → one draw per material
     tpl.traverse(o => { if (o.isMesh) o.userData._gpForce = true; });
     const d = STOP_DIRS.central;
     const nb = trackPts[1];
@@ -4547,6 +4556,10 @@ mark('title3d:start');
 // width swells in the middle and tapers at both ends, the way a loaded brush
 // lays paint down. Unlit material, so it reads as flat pigment, not plastic.
 const GLYPHS = {
+  H: [[[0.08, 1], [0.08, 0]], [[0.92, 1], [0.92, 0]], [[0.08, 0.52], [0.92, 0.52]]],
+  V: [[[0.02, 1], [0.5, 0], [0.98, 1]]],
+  G: [[[0.9, 0.84], [0.64, 1], [0.32, 0.97], [0.09, 0.72], [0.05, 0.36], [0.24, 0.06], [0.58, -0.01], [0.88, 0.14], [0.93, 0.44], [0.55, 0.46]]],
+  R: [[[0.08, 0], [0.08, 1], [0.58, 1], [0.86, 0.88], [0.88, 0.66], [0.62, 0.5], [0.08, 0.5]], [[0.46, 0.5], [0.94, 0]]],
   A: [[[0.02, 0], [0.5, 1], [0.98, 0]], [[0.19, 0.38], [0.81, 0.38]]],
   E: [[[0.88, 1], [0.06, 1], [0.06, 0], [0.9, 0]], [[0.06, 0.52], [0.66, 0.52]]],
   I: [[[0.5, 0], [0.5, 1]]],
@@ -4608,7 +4621,7 @@ const paletteG = new THREE.Group();
     paletteG.add(blob);
     paletteG.add(outline(blob, 1.16));
   }
-  paletteG.position.set(-7.2, -3.1, 2.0);
+  paletteG.position.set(-8.9, 0.4, 2.0);
   // held out to the side and tipped toward the viewer, thumb hole inboard
   paletteG.rotation.set(-0.28, 0.62, -0.42);
   paletteG.scale.setScalar(1.15);
@@ -4690,11 +4703,11 @@ function buildLine(text, size, y, colorHex, arc) {
   return strokes;
 }
 
-const LINE_A = buildLine("JANELLE'S", 0.85, 2.2, PAINTS[0].hex, 0.42);
-const LINE_B = buildLine('TINY', 1.75, -0.9, PAINTS[1].hex, 0.55);
-const LINE_C = buildLine('PLANET', 1.75, -0.9, PAINTS[2].hex, 0.55);
-for (const s of LINE_B) s.mesh.position.x -= 4.9;
-for (const s of LINE_C) s.mesh.position.x += 4.2;
+// the game's real name, painted: THE / VANISHING / GALLERY, stacked in the sky
+// above the planet (the planet sits low in frame — see the title camera)
+const LINE_A = buildLine('THE', 0.95, 4.55, PAINTS[0].hex, 0.18);
+const LINE_B = buildLine('VANISHING', 1.6, 2.0, PAINTS[1].hex, 0.5);
+const LINE_C = buildLine('GALLERY', 1.6, -0.75, PAINTS[2].hex, 0.42);
 
 // ── splatters: flat irregular flecks, not beads
 const splashes = [];
@@ -4757,6 +4770,26 @@ function finishTitleNow() {                        // used when you skip ahead
   tiDone = true;
 }
 
+// open looking at downtown / the museum (the scene of the crime)
+const TITLE_A0 = (() => { const m = LANDMARKS.find(l => l.key === 'artgarden').dir; return Math.atan2(m.x, m.z) - 0.35; })();
+// the title block is ~24 units wide: scale it down on narrow (portrait) screens
+function titleFit() {
+  const visW = 2 * 17 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
+  title3D.scale.setScalar(Math.min(1, visW / 25));
+  // portrait: the planet fills more of the screen, so the title rides higher
+  title3D.position.y = 0.6 + Math.max(0, 1 - camera.aspect) * 4.6;
+}
+// map labels and signs are clutter on the title card: hide them until play
+const _titleHidden = [];
+let _tLast = -1;
+function titleClutter(hide) {
+  if (hide) {
+    scene.traverse(o => { if (o.isSprite && o.visible && !title3D.getObjectById(o.id)) { o.visible = false; _titleHidden.push(o); } });
+  } else {
+    for (const o of _titleHidden) o.visible = true;
+    _titleHidden.length = 0;
+  }
+}
 function updateTitle3D(dt) {
   for (const s of splashes) {
     if (s.life <= 0) continue;
@@ -5199,6 +5232,7 @@ function startArrival() {
   gameState = 'arrival';
   arrivalT = 0;
   titleEl.classList.add('hide');
+  titleClutter(false);
   title3D.visible = false;
   document.body.classList.remove('title-mode');
   applyGfx();
@@ -5859,7 +5893,7 @@ const _headPrev = new THREE.Vector3(1, 0, 0);
   const _qs = new URLSearchParams(location.search);
   if (_qs.get('title') === '0') {
     document.body.classList.remove('title-mode');
-    titleEl.classList.add('hide'); title3D.visible = false;
+    titleEl.classList.add('hide'); titleClutter(false); title3D.visible = false;
     const tp = _qs.get('transport');
     beginRun(tp && TRANSPORT[tp] ? tp : 'jeep');
     // ?at=<landmark key> drops you on its forecourt, facing it (dev / screenshots)
@@ -5887,7 +5921,7 @@ const _headPrev = new THREE.Vector3(1, 0, 0);
     if (av > 0 && av < 1) arrivalT = av;
   } else if (_qs.get('gps')) {
     document.body.classList.remove('title-mode');
-    titleEl.classList.add('hide'); title3D.visible = false;
+    titleEl.classList.add('hide'); titleClutter(false); title3D.visible = false;
     enterPhone();                   // jump straight to the phone (testing)
     if (_qs.get('gps') === 'maps') document.getElementById('msg-reply').click();
   }
@@ -6024,6 +6058,42 @@ function updateWorldAmbient(dt, t) {
   }
 }
 
+// ── the rest of the static world (fences, farm buildings, downtown towers,
+// airport, beach props…) is built straight into the scene, ~500 tiny meshes.
+// A few seconds into play, anything that provably hasn't moved and isn't a
+// known event-mover is merged per material, like the decoration above.
+const _batch = { phase: 0, t0: 0, snap: null };
+function batchStaticScene(t) {
+  if (_batch.phase === 2) return;
+  const dyn = new Set([courier, limo, rocketG, airportPlane, gasDriver, arrivalPax, cabin, compass, targetRing,
+    mooredBoat, subwayInt, stationG, camera, sky, skyStars, ocean, planet, landmarkGroup, deco,
+    ...npcs, ...traffic.map(v => v.obj), ...starItems.map(s => s.mesh), ...CLUES.map(c => c.marker),
+    ...bobbers, ...birdFlocks, ...camOccluders].filter(Boolean));
+  const cands = () => scene.children.filter(o => !dyn.has(o) && !o.isLight && !o.isSprite && !o.isCamera
+    && !o.isPoints && o.visible && o.position.lengthSq() > (R * 0.5) ** 2);
+  const sig = (o) => {
+    o.updateMatrixWorld(true);
+    let k = '';
+    o.traverse(m => { if (m.isMesh || m.isGroup) k += (m.visible ? 1 : 0) + m.matrixWorld.elements.map(e => e.toFixed(4)).join(','); });
+    return k;
+  };
+  if (_batch.phase === 0) {
+    _batch.phase = 1; _batch.t0 = t;
+    _batch.snap = new Map(cands().map(o => [o, sig(o)]));
+    return;
+  }
+  if (t - _batch.t0 < 6) return;
+  _batch.phase = 2;
+  const still = cands().filter(o => _batch.snap.get(o) === sig(o));
+  if (still.length < 2) return;
+  const root = new THREE.Group();
+  root.name = 'StaticBatch';
+  scene.add(root);
+  for (const o of still) root.attach(o);
+  const r = mergeStatic(root);
+  if (TRACE) console.log(`[perf] batched ${still.length} static scene objects: ${r.before}→${r.after} meshes`);
+}
+
 // ?shotcam=<landmark>,x,y,z,lookY,lookZ pins the camera in that landmark's
 // local frame — for screenshots and model reviews (dev only)
 const DEV_CAM = (() => {
@@ -6065,10 +6135,14 @@ function animate() {
 
   // title: slow orbit of the whole planet, world alive behind the logo
   if (gameState === 'title') {
-    const a = t * 0.055;
-    camera.position.set(Math.sin(a) * 92, 34, Math.cos(a) * 92);
+    // the planet sits in the lower half, its skyline on the horizon, the
+    // painted title in the sky above. Starts facing downtown + the museum.
+    const a = TITLE_A0 + t * 0.045;
+    camera.position.set(Math.sin(a) * 84, 30, Math.cos(a) * 84);
     camera.up.set(0, 1, 0);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, 25, 0);
+    titleFit();
+    if (t - _tLast > 0.4 || _tLast < 0) { _tLast = t; titleClutter(true); }   // labels stream in after the fonts load
     scene.fog.near = 260; scene.fog.far = 520;   // whole planet crisp from space
     updateTitle3D(dt);
     updateWorldAmbient(dt, t);
@@ -6410,6 +6484,7 @@ function animate() {
   }
 
   targetRing.material.opacity = Math.max(0, targetRing.material.opacity - dt * 0.25);
+  batchStaticScene(t);
   if (DEV_CAM) DEV_CAM();
   sky.position.copy(camera.position);
 
@@ -6604,6 +6679,119 @@ if (new URLSearchParams(location.search).get('audit') === '1') {
   for (const h of hits.slice(0, 80)) console.log('[audit] ' + JSON.stringify(h));
 }
 try { buildCollisionBVH(); } catch (e) { console.warn('BVH build skipped:', e.message); }
+
+// ── static batching: one draw call per material instead of one per mesh.
+// The decoration layer alone was ~790 meshes (every tree trunk, canopy, lamp
+// post, rail tie, bench…) — ~40% of all draw calls, for things that never
+// move. Collision was baked above from the individual meshes, so merging now
+// changes nothing you can bump into. Materials are shared, so animated
+// material properties (lamp glow at night) still work on the merged mesh.
+// props often build their own copy of an identical material (every cottage
+// makes a fresh "white wall"), so batch by what a material LOOKS like, not by
+// which object it is. Materials with live per-object state are kept apart.
+let _liveMats = null;
+function liveMats() {
+  if (_liveMats) return _liveMats;
+  _liveMats = new Set([LEAF_A, LEAF_B, WOOD, ROCK, cloudMat, lampBulbMat, ...cityWindowMats,
+    ...roadParts.map(r => r.mesh.material)]);
+  return _liveMats;
+}
+function matSig(m) {
+  if (liveMats().has(m)) return m.uuid;      // recoloured/animated by reference: never pooled
+  const c = (x) => (x && x.isColor ? x.getHexString() : '');
+  const sig = [m.type, c(m.color), c(m.emissive), m.emissiveIntensity, m.roughness, m.metalness,
+    m.flatShading, m.map?.uuid, m.emissiveMap?.uuid, m.transparent, m.opacity, m.side,
+    m.vertexColors, m.userData?.gp, m.polygonOffset, m.depthWrite].join('|');
+  return sig;
+}
+function mergeStatic(root, { skip = () => false, tag = null } = {}) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map();
+  const victims = [];
+  root.traverse(o => {
+    if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || Array.isArray(o.material)) return;
+    if (gpBoilMats.includes(o.material) || o.userData.gpSkip) return;   // ink hulls / beams: not geometry
+    if (!o.visible || skip(o)) return;
+    for (let p = o.parent; p && p !== root; p = p.parent) if (!p.visible || skip(p) || p.isSprite) return;
+    const mat = o.userData._origMat || o.material;   // in drawn modes the lit material is parked here
+    const key = matSig(mat) + (o.castShadow ? 's' : '') + (o.receiveShadow ? 'r' : '');
+    const geo = o.geometry.clone();
+    geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    // keep uv whenever the material samples ANY texture (normal/rough/ao maps
+    // need it too — dropping it broke the shader); pad missing uvs with zeros
+    const usesTex = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'lightMap']
+      .some(k => mat[k]);
+    for (const k of Object.keys(geo.attributes)) {
+      if (k === 'position' || k === 'normal') continue;
+      if (/^uv\d?$/.test(k) && usesTex) continue;      // uv, uv1 (aoMap channel), …
+      if (k === 'color' && mat.vertexColors) continue;
+      geo.deleteAttribute(k);
+    }
+    if (usesTex && !geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+    for (const ch of [1, 2, 3]) {                     // texture channels the material reads
+      const need = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'lightMap']
+        .some(k => mat[k] && mat[k].channel === ch);
+      if (need && !geo.attributes['uv' + ch]) geo.setAttribute('uv' + ch, (geo.attributes.uv || new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2)).clone());
+    }
+    if (mat.vertexColors && !geo.attributes.color) geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3));
+    if (geo.attributes.uv && geo.attributes.uv.itemSize !== 2) geo.deleteAttribute('uv');
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    // a merged mesh's attributes must all be plain (non-interleaved) arrays
+    for (const k of Object.keys(geo.attributes)) {
+      const at = geo.attributes[k];
+      if (at.isInterleavedBufferAttribute) {
+        const arr = new Float32Array(at.count * at.itemSize);
+        for (let i = 0; i < at.count; i++) for (let c = 0; c < at.itemSize; c++) arr[i * at.itemSize + c] = at.getComponent ? at.getComponent(i, c) : [at.getX(i), at.getY(i), at.getZ(i), at.getW(i)][c];
+        geo.setAttribute(k, new THREE.BufferAttribute(arr, at.itemSize, at.normalized));
+      }
+    }
+    if (!geo.index) {
+      const n = geo.attributes.position.count;
+      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(n).map((_, i) => i), 1));
+    }
+    geo.morphAttributes = {};
+    if (!buckets.has(key)) buckets.set(key, { mat, cast: o.castShadow, recv: o.receiveShadow, geos: [], meshes: [] });
+    const b = buckets.get(key); b.geos.push(geo); b.meshes.push(o);
+  });
+  let before = 0, after = 0;
+  for (const b of buckets.values()) {
+    before += b.meshes.length;
+    if (b.meshes.length < 2) { after += b.meshes.length; continue; }
+    const merged = mergeGeometries(b.geos, false);
+    if (!merged) { after += b.meshes.length; continue; }
+    const mm = new THREE.Mesh(merged, b.mat);
+    mm.castShadow = b.cast; mm.receiveShadow = b.recv;
+    mm.userData._gpForce = true; mm.userData._gpThin = true;   // one light ink contour in Wasteland
+    if (tag) Object.assign(mm.userData, tag);
+    root.add(mm);
+    victims.push(...b.meshes);
+    after++;
+  }
+  for (const m of victims) m.parent.remove(m);
+  gpRegister(root);                              // merged meshes join the drawn modes (ink + flat fills)
+  // drop groups left empty
+  const empties = [];
+  root.traverse(o => { if (o !== root && !o.isMesh && o.children.length === 0 && o.type === 'Group') empties.push(o); });
+  for (const e of empties) e.parent?.remove(e);
+  return { before, after, victims };
+}
+{
+  const r1 = mergeStatic(deco);
+  // landmark buildings: merge each one's static parts, but keep its spinning gem
+  // and (for the museum) leave its own pre-merged, animated set-piece alone
+  let lmBefore = 0, lmAfter = 0;
+  for (const lm of LANDMARKS) {
+    if (!lm.root || lm.museum) continue;
+    const r = mergeStatic(lm.root, { skip: o => o === lm.gem || o === lm.sculpture, tag: { landmark: lm } });
+    lmBefore += r.before; lmAfter += r.after;
+    // clicks: swap the dissolved meshes for the merged ones
+    const gone = new Set(r.victims);
+    for (let i = clickables.length - 1; i >= 0; i--) if (gone.has(clickables[i])) clickables.splice(i, 1);
+    lm.root.traverse(o => { if (o.isMesh && o.userData.landmark === lm && !clickables.includes(o)) clickables.push(o); });
+  }
+  if (TRACE) console.log(`[perf] batched deco ${r1.before}→${r1.after} meshes, landmarks ${lmBefore}→${lmAfter}`);
+}
 progress(1, 'ready!');
 animate();
 setTimeout(() => loaderEl.classList.add('hide'), 450);

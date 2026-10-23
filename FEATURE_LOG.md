@@ -5,6 +5,14 @@ Append each new request here as it comes in (see the rule in CLAUDE.md). Format:
 `- [status] request — short note`. Status: ✅ done+verified · 🟡 done, needs live
 check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
+## Session 2026-10-23 (opening screen, title wording, graphics + lightweight)
+
+- 🟡 **Better opening planet layout + better title wording + graphics polish, and keep it lightweight.** Done in code, verified by headless screenshots (desktop + phone); deploy with `./deploy.sh`.
+  - Name: the painted title is now **THE VANISHING GALLERY** (new H/V/G/R brush glyphs), with "45 real paintings, stolen in one night. Get them back." and "an art heist on janelle ghanem's tiny planet" under it; button "start the case". In-game header + browser tab match.
+  - Opening layout: planet sits low in frame with its skyline on the horizon, the title paints into the sky above; opens facing downtown/the museum; map labels hidden on the title card; title scales and lifts on phones (it used to clip).
+  - Graphics: barbie "chrome" vibe no longer turns the ground and roads into a mirror ball (buildings keep their chrome); sea is soft, not glossy.
+  - Lightweight: static batching (merge per material) of decoration, landmark buildings, the station + car models, and every static prop (a motion probe confirms nothing merged ever moves). Draw calls per frame: Classic 2058 → ~1200 (−42%), Wasteland 4452 → ~2000 (−55%). No visual change.
+
 ## Session 2026-10-22 (world clean-up: grounding, overlaps, calmer lines)
 
 - 🟡 **"The world is a mess: roads float, the limo is inside a building, the comic lines waver too much."** Fixed in code + verified by headless screenshots; deploy with `./deploy.sh` (cloud session has no Netlify login).

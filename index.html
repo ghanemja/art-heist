@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Janelle Ghanem — a tiny planet</title>
+<title>The Vanishing Gallery — an art heist on Janelle's tiny planet</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Permanent+Marker&display=swap" rel="stylesheet">
@@ -70,6 +70,22 @@
   #enter-btn:hover { transform: rotate(-1.5deg) translateY(2px); box-shadow: 0 4px 0 var(--ink), 0 8px 18px rgba(45, 33, 56, 0.3); }
   #enter-btn:active { transform: rotate(-1.5deg) translateY(5px); box-shadow: 0 1px 0 var(--ink); }
   @keyframes t-pulse { 0%, 100% { filter: brightness(1) } 50% { filter: brightness(1.09) } }
+  /* the line under the painted title: what the game IS, in one breath */
+  #title .t-sub {
+    font-family: "Permanent Marker", "Comic Sans MS", cursive; font-weight: 400;
+    font-size: clamp(17px, 2.6vw, 26px); color: var(--ink); text-align: center;
+    padding: 6px 18px; margin: 0 16px; border-radius: 12px;
+    background: rgba(255, 250, 242, 0.82); box-shadow: 0 4px 0 rgba(45, 33, 56, 0.18);
+    transform: rotate(-1deg);
+    opacity: 0; animation: word-appear 0.6s ease 2.6s forwards;
+  }
+  #title .t-sub b { color: #e0176f; font-weight: 400; }
+  #title .t-by {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(45, 33, 56, 0.75); text-align: center; margin: 0 16px;
+    padding: 3px 12px; border-radius: 999px; background: rgba(255, 250, 242, 0.7);
+    opacity: 0; animation: word-appear 0.6s ease 2.8s forwards;
+  }
   #title .t-hint {
     font-size: 12px; font-weight: 600; color: rgba(45, 33, 56, 0.55); margin-top: 6px;
     opacity: 0; animation: word-appear 0.5s ease 3.4s forwards;
@@ -474,7 +490,9 @@
   </div>
 
   <div id="title">
-    <button id="enter-btn">enter</button>
+    <p class="t-sub">45 real paintings, stolen in one night. <b>Get them back.</b></p>
+    <p class="t-by">an art heist on janelle ghanem's tiny planet</p>
+    <button id="enter-btn">start the case</button>
     <span class="t-hint">or press ⏎</span>
   </div>
 
@@ -575,8 +593,8 @@
   </div>
 
   <div id="hud">
-    <h1>janelle's tiny planet</h1>
-    <p>the vanishing gallery · 45 stolen canvases</p>
+    <h1>The Vanishing Gallery</h1>
+    <p>an art heist on janelle's tiny planet</p>
   </div>
 
   <div id="quest">
@@ -622,6 +640,6 @@
     }
   }
   </script>
-  <script type="module" src="./planet.js?cb=p93"></script>
+  <script type="module" src="./planet.js?cb=p94"></script>
 </body>
 </html>
