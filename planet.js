@@ -95,7 +95,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // cartoon world: 2x retina is wasted fill
 // perf probe (dev): draw calls / triangles / programs from the last frame
 window.__perf = () => ({ ...renderer.info.render, programs: renderer.info.programs?.length });
-if (new URLSearchParams(location.search).get('debug') === '1') window.__three = { get scene() { return scene; } };   // dev: inspect from the console
+if (new URLSearchParams(location.search).get('debug') === '1') window.__three = { get scene() { return scene; }, get surfH() { return surfH; }, get ll() { return ll; }, get SEA_H() { return SEA_H; }, get LANDMARKS() { return LANDMARKS; }, get LAYOUT() { return LAYOUT; } };   // dev: inspect from the console
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -606,11 +606,54 @@ const radiusAt = (d) => R + surfH(d) * H_AMP;
 // goes in front of its foundation instead of under it
 const SPUR_SETBACK = new Map();
 SPUR_SETBACK.set(RESORT, 5.2).set(MALL, 5.6).set(FARM_A, 6.9).set(FARM_B, 6.9);   // farms: outside the fence ring (r=4.6)
+// a disc laid ON the terrain: every vertex sits at the ground height under it
+function groundDisc(centerDir, radius, lift = 0.05, rings = 4, segs = 28) {
+  const e1 = new THREE.Vector3(0, 1, 0).cross(centerDir);
+  if (e1.lengthSq() < 1e-6) e1.set(1, 0, 0);
+  e1.normalize();
+  const e2 = new THREE.Vector3().crossVectors(centerDir, e1);
+  const pos = [], idx = [], v = new THREE.Vector3();
+  const put = (d) => { const r = Math.max(radiusAt(d), SEA_R) + lift; pos.push(d.x * r, d.y * r, d.z * r); };
+  put(centerDir);
+  for (let i = 1; i <= rings; i++) {
+    const a = (radius * i / rings) / R;
+    for (let j = 0; j < segs; j++) {
+      const th = j / segs * Math.PI * 2;
+      v.copy(e1).multiplyScalar(Math.cos(th)).addScaledVector(e2, Math.sin(th));
+      put(centerDir.clone().multiplyScalar(Math.cos(a)).addScaledVector(v, Math.sin(a)).normalize());
+    }
+  }
+  for (let j = 0; j < segs; j++) idx.push(0, 1 + j, 1 + (j + 1) % segs);
+  for (let i = 1; i < rings; i++) {
+    const a0 = 1 + (i - 1) * segs, b0 = 1 + i * segs;
+    for (let j = 0; j < segs; j++) {
+      const j2 = (j + 1) % segs;
+      idx.push(a0 + j, b0 + j, b0 + j2, a0 + j, b0 + j2, a0 + j2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
 function spurEndT(target) {
   const sb = SPUR_SETBACK.get(target) || 0;
   return 1 - sb / (R * DOWNTOWN.angleTo(target));
 }
 function spurEndDir(target) { return slerpDir(DOWNTOWN, target, spurEndT(target)); }
+// the ring boulevard around downtown (arc radius, radians from DOWNTOWN)
+const RING_BLVD_ARC = 0.94;
+// districts INSIDE the ring (the resort, the mall, the beach) are reached from
+// the boulevard itself: no spur. A spur to them used to start at the boulevard
+// beyond them and run BACK past (through) the building toward the city.
+const insideRing = (target) => DOWNTOWN.angleTo(target) < RING_BLVD_ARC + 0.02;
+// where a car drops you for a district: the kerb of the boulevard on the
+// district's bearing (inside the ring), else the spur's turning circle
+function dropOffDir(target) {
+  const total = DOWNTOWN.angleTo(target);
+  return insideRing(target) ? slerpDir(DOWNTOWN, target, RING_BLVD_ARC / total) : spurEndDir(target);
+}
 const posOn = (d, extra = 0) => d.clone().multiplyScalar(radiusAt(d) + extra);
 const isLand = (d, margin = 0.15) => surfH(d) > SEA_H + margin;
 const isWater = (d, margin = 0.2) => surfH(d) < SEA_H - margin;
@@ -1149,7 +1192,7 @@ scatter(rockDeco, 26);
   // spurs meet it, and through-traffic goes AROUND downtown, never across
   const bvE1 = new THREE.Vector3(0, 1, 0).cross(DOWNTOWN).normalize();
   const bvE2 = new THREE.Vector3().crossVectors(DOWNTOWN, bvE1).normalize();
-  const BLVD_ARC = 0.94;
+  const BLVD_ARC = RING_BLVD_ARC;
   const blvd = [];
   for (let i = 0; i < 72; i++) {
     const th = (i / 72) * Math.PI * 2;
@@ -1164,6 +1207,7 @@ scatter(rockDeco, 26);
   // that sits IN FRONT of the district's main building (spurEndDir), never under it
   const SPURS = [AIRPORT, RESORT, MALL, FARM_A, FARM_B, BEACH];
   for (const target of SPURS) {
+    if (insideRing(target)) continue;                 // the boulevard already passes it
     const total = DOWNTOWN.angleTo(target);
     const t0 = Math.min(0.9, 0.94 / total);           // leave from the ring boulevard
     const t1 = spurEndT(target);
@@ -1174,13 +1218,13 @@ scatter(rockDeco, 26);
     roadNetPts.push(...spurPts);
     // cul-de-sac: a dirt turning circle where the road arrives
     const end = spur[spur.length - 1];
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(2.0, 22), new THREE.MeshStandardMaterial({
-      color: 0x9a805a, roughness: 0.97, flatShading: true,
+    // conformed to the terrain (a flat disc on a slope stuck out as a wedge)
+    const discMat = new THREE.MeshStandardMaterial({
+      color: 0x9a805a, roughness: 0.97,
       polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
-    }));
-    disc.position.copy(posOn(end, 0.06));
-    alignToSurface(disc, end);
-    disc.rotateX(-Math.PI / 2);
+    });
+    discMat.userData.noChrome = true;
+    const disc = new THREE.Mesh(groundDisc(end, 2.0), discMat);
     disc.receiveShadow = true;
     scene.add(disc);
   }
@@ -3218,7 +3262,7 @@ function buildJetRig(jet) {
     g.scale.setScalar(1.6);                        // a hotel, not a kiosk: bigger than any car
     g.position.copy(settleOn(d, 2.8, 0.14));
     rand();                                        // keep the seeded sequence stable
-    alignToSurface(g, d, yawToFace(d, spurEndDir(RESORT)));   // front doors face the drive
+    alignToSurface(g, d, yawToFace(d, dropOffDir(RESORT)));   // front doors face where the car pulls up
     g.traverse(m => { if (m.isMesh && !IS_TOUCH) m.castShadow = true; });
     scene.add(g); addSolid(d, 2.8, g); resortHotel = g;
   }
@@ -3226,7 +3270,8 @@ function buildJetRig(jet) {
   // the spur arrives from downtown: leave its line (and the turning circle) open
   const rEast = new THREE.Vector3(0, 1, 0).cross(RESORT).normalize();
   const rNorth = new THREE.Vector3().crossVectors(RESORT, rEast).normalize();
-  const toCity = new THREE.Vector2(DOWNTOWN.dot(rEast), DOWNTOWN.dot(rNorth)).normalize();
+  const dropD = dropOffDir(RESORT);               // where the car pulls up
+  const toCity = new THREE.Vector2(dropD.dot(rEast), dropD.dot(rNorth)).normalize();
   const onDriveway = (x, y) => {
     const t = x * toCity.x + y * toCity.y;
     return t > 0 && Math.abs(x * toCity.y - y * toCity.x) < 2.8;
@@ -3236,6 +3281,7 @@ function buildJetRig(jet) {
     const cx = Math.cos(ang) * 3.4, cy = Math.sin(ang) * 3.4 - 0.5;
     if (onDriveway(cx, cy) || onDriveway(Math.cos(ang) * 4.2, Math.sin(ang) * 4.2 - 0.5)) continue;
     const d = at(cx, cy);
+    if (nearRoad(d, 2.2) || nearRoad(at(Math.cos(ang) * 4.2, Math.sin(ang) * 4.2 - 0.5), 1.8)) continue;   // off the boulevard
     if (surfH(d) < SEA_H) continue;
     const cab = boxHouse(1.0, 0.7, 1.0, 0xfffaf2, [0xff4d6e, 0x33c9ff, 0xffd23d][i % 3], 'gable');
     cab.position.copy(settleOn(d, 0.7, 0.08));
@@ -4870,15 +4916,19 @@ function buildArrPath() {
   let dth = thR - thA;
   while (dth > Math.PI) dth -= Math.PI * 2;
   while (dth < -Math.PI) dth += Math.PI * 2;
-  const BARC = 0.94;
+  const BARC = RING_BLVD_ARC;
   for (let k = 0; k <= 24; k++) {
     const th = thA + dth * (k / 24);
     pts.push(DOWNTOWN.clone().multiplyScalar(Math.cos(BARC))
       .addScaledVector(bE1, Math.sin(BARC) * Math.cos(th))
       .addScaledVector(bE2, Math.sin(BARC) * Math.sin(th)).normalize());
   }
-  const eEnd = spurEndDir(RESORT);               // the turning circle, in front of the hotel
-  for (let k = 0; k <= 20; k++) pts.push(slerpDir(eR, eEnd, k / 20));
+  // the resort sits inside the ring: the boulevard loop above already ends at
+  // its kerb. (Only a district beyond the ring gets the spur leg.)
+  if (!insideRing(RESORT)) {
+    const eEnd = spurEndDir(RESORT);              // the turning circle, in front of the hotel
+    for (let k = 0; k <= 20; k++) pts.push(slerpDir(eR, eEnd, k / 20));
+  }
   // soften the two grid-edge corners so the limo steers, not teleports
   for (let pass = 0; pass < 3; pass++) {
     const out = [pts[0]];
@@ -4909,7 +4959,7 @@ function buildArrPath() {
   }
   uGas = arrArcs[best] / arrTotal;
   // pull up OUTSIDE the hotel: the path ends at its centre, so stop short
-  uEnd = Math.max(uGas + 0.05, 1 - 0.8 / (arrTotal * R));   // stop inside the turning circle
+  uEnd = Math.max(uGas + 0.05, 1 - 0.3 / (arrTotal * R));   // pull up at the kerb / in the turning circle
 }
 const _apDir = new THREE.Vector3(), _apTan = new THREE.Vector3();
 function sampleArrPath(u01, outDir, outTan) {
@@ -6675,6 +6725,19 @@ if (new URLSearchParams(location.search).get('audit') === '1') {
       hits.push([+pen.toFixed(2), A.name, +A.rad.toFixed(1), B.name, +B.rad.toFixed(1)]);
   }
   hits.sort((a, b) => b[0] - a[0]);
+  // buildings standing ON a road (roads are world-spanning meshes, so they
+  // aren't items above — test footprints against the road centre-line samples)
+  const onRoad = [];
+  for (const A of items) {
+    if (A.rad < 0.9 || A.h < 1.0) continue;
+    let best = 1e9;
+    for (const p of roadNetPts) best = Math.min(best, A.c.clone().normalize().angleTo(p) * R);
+    const pen = A.rad * 0.75 + 1.1 - best;          // 1.1 ≈ half a carriageway
+    if (pen > 0.3) onRoad.push([+pen.toFixed(2), A.name, +A.rad.toFixed(1), +best.toFixed(1)]);
+  }
+  onRoad.sort((a, b) => b[0] - a[0]);
+  console.log('[audit] on-road=' + onRoad.length);
+  for (const h of onRoad.slice(0, 40)) console.log('[audit] ROAD ' + JSON.stringify(h));
   console.log('[audit] items=' + items.length + ' overlaps=' + hits.length);
   for (const h of hits.slice(0, 80)) console.log('[audit] ' + JSON.stringify(h));
 }
