@@ -5,6 +5,15 @@ Append each new request here as it comes in (see the rule in CLAUDE.md). Format:
 `- [status] request — short note`. Status: ✅ done+verified · 🟡 done, needs live
 check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
+## Session 2026-10-24 (layout rebuild)
+
+- 🟡 **"The world is still messed up and clashing" → layout rebuild (not a restart).** Done in code, verified with a true-scale planning map, the overlap/on-road audits and screenshots in all three modes; deploy with `./deploy.sh`.
+  - One reservation map (`ZONES`): landmarks, stations, districts, the mountain reserve ground first; ring loop, boulevard, spurs and railway bend around it; the scenic loop skirts downtown.
+  - Downtown rebuilt as a fitted grid: the grown plan put 198 streets on a 2.6 grid → 0.5-unit parcels, so towers stood in the streets. Now 4.2-pitch blocks, one building per block, nothing on a road.
+  - Moved: the mall out of the middle of downtown to the boulevard (anchors.mall), Museum Station out of the museum (stops.museumst), the gas station off the airport road, the rocket pad off Far Side Station, Farm B off the jetty; the airport road stops at the apron.
+  - Hotel arrival: districts inside the ring get no backwards spur; the limo stops at the boulevard kerb; turning circles lie on the terrain; the jetty only runs over water.
+  - Buildings on roads: 40 → only intentional ones (the bridge) + kerb-flush facades. Draw calls ~1200 → ~870.
+
 ## Session 2026-10-23 (opening screen, title wording, graphics + lightweight)
 
 - 🟡 **Better opening planet layout + better title wording + graphics polish, and keep it lightweight.** Done in code, verified by headless screenshots (desktop + phone); deploy with `./deploy.sh`.

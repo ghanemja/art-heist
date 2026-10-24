@@ -41,6 +41,25 @@ The models must read **curved, smooth and real** — bevelled edges, smooth
 Judge both at once: if it looks faceted, add geometry; if it stalls on load or
 drags the framerate, cut texture size / tris first, not the smoothness.
 
+## Layout: the reservation map — nothing may be built on anything
+
+The world used to be placed by a dozen systems that ignored each other (roads
+through buildings, towers in streets, a station inside the museum). Now:
+
+- Every structure that matters **reserves its ground** in `ZONES` (`reserve(dir, r, key)`
+  in planet.js, right before `roadNetPts`) BEFORE roads are laid.
+- Roads and rails go **around** reserved ground (`deflect(...)`): ring loop, boulevard,
+  spurs, railway. Downtown's streets/parcels are **clipped** out of it.
+- Downtown is a fitted grid (`gridPlan`, ~4.2 pitch, one building per block);
+  `?city=grown` restores the old over-dense grown plan for comparison.
+- Districts inside the ring boulevard get no spur — cars stop at the boulevard kerb
+  (`dropOffDir`). Districts outside get a spur that ends in front (`SPUR_SETBACK`).
+- Decoration landing in a structure, on a road or on the rails is removed at the end.
+- **Adding something big?** `reserve()` it, then check with the dev tools:
+  `?audit=1` (overlaps + buildings on roads, in the console) and `?layout=1`
+  (`window.__layout()` → every footprint/road/zone for a planning map).
+  Other dev params: `?at=<landmark>`, `?shotcam=<key>,x,y,z,lookY,lookZ`, `?arrfreeze=0.9`, `?debug=1`.
+
 ## Asset pipeline
 
 - Raw source GLBs live in `models/_raw/` (**gitignored, never deployed**).

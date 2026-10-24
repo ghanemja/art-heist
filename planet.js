@@ -11,7 +11,7 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import CITY_PLAN from './city_plan.js?v=5';
-import LAYOUT from './city_layout.js?v=2';
+import LAYOUT from './city_layout.js?v=5';
 import { buildMuseum } from './museum.js?v=1';
 const llv = (a) => ll(a[0], a[1]);   // manifest [lat,lon] → unit direction
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -95,7 +95,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // cartoon world: 2x retina is wasted fill
 // perf probe (dev): draw calls / triangles / programs from the last frame
 window.__perf = () => ({ ...renderer.info.render, programs: renderer.info.programs?.length });
-if (new URLSearchParams(location.search).get('debug') === '1') window.__three = { get scene() { return scene; }, get surfH() { return surfH; }, get ll() { return ll; }, get SEA_H() { return SEA_H; }, get LANDMARKS() { return LANDMARKS; }, get LAYOUT() { return LAYOUT; } };   // dev: inspect from the console
+if (new URLSearchParams(location.search).get('debug') === '1') window.__three = { get scene() { return scene; }, get surfH() { return surfH; }, get ll() { return ll; }, get SEA_H() { return SEA_H; }, get LANDMARKS() { return LANDMARKS; }, get LAYOUT() { return LAYOUT; }, get ZONES() { return ZONES; }, get DOWNTOWN() { return DOWNTOWN; } };   // dev: inspect from the console
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -605,7 +605,8 @@ const radiusAt = (d) => R + surfH(d) * H_AMP;
 // centre is where the hotel / mall / barn stands, so the turning circle (r=2)
 // goes in front of its foundation instead of under it
 const SPUR_SETBACK = new Map();
-SPUR_SETBACK.set(RESORT, 5.2).set(MALL, 5.6).set(FARM_A, 6.9).set(FARM_B, 6.9);   // farms: outside the fence ring (r=4.6)
+SPUR_SETBACK.set(RESORT, 5.2).set(MALL, 5.6).set(FARM_A, 6.9).set(FARM_B, 6.9)   // farms: outside the fence ring (r=4.6)
+  .set(AIRPORT, 7.0);                              // the airport road stops at the apron, not mid-runway
 // a disc laid ON the terrain: every vertex sits at the ground height under it
 function groundDisc(centerDir, radius, lift = 0.05, rings = 4, segs = 28) {
   const e1 = new THREE.Vector3(0, 1, 0).cross(centerDir);
@@ -651,8 +652,13 @@ const insideRing = (target) => DOWNTOWN.angleTo(target) < RING_BLVD_ARC + 0.02;
 // where a car drops you for a district: the kerb of the boulevard on the
 // district's bearing (inside the ring), else the spur's turning circle
 function dropOffDir(target) {
-  const total = DOWNTOWN.angleTo(target);
-  return insideRing(target) ? slerpDir(DOWNTOWN, target, RING_BLVD_ARC / total) : spurEndDir(target);
+  if (!insideRing(target)) return spurEndDir(target);
+  if (BLVD_PTS) {                                   // the kerb as actually built (deflected)
+    let best = BLVD_PTS[0];
+    for (const p of BLVD_PTS) if (p.angleTo(target) < best.angleTo(target)) best = p;
+    return best.clone();
+  }
+  return slerpDir(DOWNTOWN, target, RING_BLVD_ARC / DOWNTOWN.angleTo(target));
 }
 const posOn = (d, extra = 0) => d.clone().multiplyScalar(radiusAt(d) + extra);
 const isLand = (d, margin = 0.15) => surfH(d) > SEA_H + margin;
@@ -693,7 +699,9 @@ const cityWindowMats = [];    // tower window materials, lit after dark
 const traffic = [];           // cars and pedestrians that actually move
 const bobbers = [];           // moored boats that rock on the swell
 let airportPlane = null, resortHotel = null;   // handles for the arrival intro
-let RING_LOOP = null;                          // the smoothed landmark loop
+let RING_LOOP = null;
+let BLVD_PTS = null;                           // the ring boulevard as built (deflected)
+const SPUR_PTS = new Map();                    // district → its spur road as built                          // the smoothed landmark loop
 let GAS_DIR = null;                            // gas station, off the airport spur
 let GAS_SLAB_R = 0;                            // world radius of the forecourt slab top
 let cityMapCtx = null, cityMapTex = null, cityMapDraw = null;   // the painted city floor
@@ -1025,6 +1033,105 @@ function slerpDir(a, b, t) {
   return a.clone().multiplyScalar(Math.sin((1 - t) * th) / s)
     .addScaledVector(b, Math.sin(t * th) / s).normalize();
 }
+// ─── THE RESERVATION MAP ─────────────────────────────────────────────────────
+// Every structure that matters reserves its ground BEFORE any road, rail or
+// downtown parcel is laid. Roads and rails are deflected around reserved
+// ground, downtown's grown streets and parcels are clipped out of it, and
+// decoration that still lands on a road is removed at the end. One shared
+// map, so systems can no longer build on top of each other.
+// zone = { dir (unit vector), r (world units), key }
+const ZONES = [];
+function reserve(dir, r, key) { ZONES.push({ dir: dir.clone().normalize(), r, key }); }
+function zoneHit(d, pad = 0, except = null) {
+  for (const z of ZONES) {
+    if (except && except(z)) continue;
+    if (d.angleTo(z.dir) * R < z.r + pad) return z;
+  }
+  return null;
+}
+// each landmark's road gate: the ring road passes its plaza 4.4 units to the
+// side (plaza 2.4 + half a carriageway 1.3 + air) — 2.7 ran over the plazas
+const GATE_OFF = 4.4;
+function landmarkGate(i) {
+  const lm = LANDMARKS[i];
+  const prev = LANDMARKS[(i - 1 + LANDMARKS.length) % LANDMARKS.length].dir;
+  const next = LANDMARKS[(i + 1) % LANDMARKS.length].dir;
+  const tang = next.clone().sub(prev.clone().multiplyScalar(prev.dot(next))).normalize();
+  return lm.dir.clone().applyAxisAngle(tang, GATE_OFF / R).normalize();
+}
+// a point in a local tangent frame at d, facing `toward` (+z = toward)
+function localAt(d, toward, x, z) {
+  const fwd = toward.clone().sub(d.clone().multiplyScalar(d.dot(toward))).normalize();
+  const side = new THREE.Vector3().crossVectors(fwd, d).normalize();
+  return d.clone().multiplyScalar(R).addScaledVector(side, x).addScaledVector(fwd, z).normalize();
+}
+{
+  LANDMARKS.forEach((lm, i) => {
+    if (lm.key === 'artgarden') {
+      // the museum faces its road gate; the building stands BEHIND the plaza
+      const gate = landmarkGate(i);
+      lm.facing = gate;
+      reserve(localAt(lm.dir, gate, 0, -0.3), 4.2, 'museum-plaza');
+      reserve(localAt(lm.dir, gate, 0, -7.0), 8.3, 'museum');
+    } else {
+      reserve(lm.dir, lm.key === 'library' ? 5.6 : 3.9, 'lm:' + lm.key);   // the Library has a 4.8 town plaza
+    }
+  });
+  for (const [k, d] of Object.entries(STOP_DIRS)) reserve(d, k === 'central' ? 4.5 : 3.4, 'stop:' + k);
+  reserve(MTN, 6.0, 'mountain');
+  reserve(RESORT, 5.2, 'resort');
+  reserve(MALL, 5.4, 'mall');
+  reserve(FARM_A, 6.4, 'farmA');
+  reserve(FARM_B, 6.4, 'farmB');
+  reserve(BEACH, 5.5, 'beach');
+  { const at = frameAt(AIRPORT); for (let y = -16; y <= 16; y += 8) reserve(at(0, y), 4.2, 'airport'); }
+}
+// push a polyline's samples out of reserved ground (keeping `keep(i)` points
+// fixed — e.g. where a road is MEANT to arrive), then relax it so it stays smooth
+function deflect(pts, { closed = false, clear = 1.7, keep = () => false, except = null } = {}) {
+  const n = pts.length;
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (let i = 0; i < n; i++) {
+      if (keep(i)) continue;
+      for (const z of ZONES) {
+        if (except && except(z)) continue;
+        const a = pts[i].angleTo(z.dir), want = (z.r + clear) / R;
+        if (a >= want) continue;
+        const perp = pts[i].clone().sub(z.dir.clone().multiplyScalar(z.dir.dot(pts[i])));
+        if (perp.lengthSq() < 1e-10) perp.set(1, 0, 0);
+        perp.normalize();
+        pts[i] = z.dir.clone().multiplyScalar(Math.cos(want)).addScaledVector(perp, Math.sin(want)).normalize();
+        moved = true;
+      }
+    }
+    if (!moved) break;
+    // relax: neighbours pull each other smooth again (a kink reads as a glitch)
+    const out = pts.map(p => p.clone());
+    for (let i = 0; i < n; i++) {
+      if (keep(i)) continue;
+      if (!closed && (i === 0 || i === n - 1)) continue;
+      const a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+      out[i] = pts[i].clone().multiplyScalar(2).add(a).add(b).normalize();
+    }
+    for (let i = 0; i < n; i++) pts[i] = out[i];
+  }
+  // last word goes to the zones: relaxing can drag a point back inside one
+  for (let i = 0; i < n; i++) {
+    if (keep(i)) continue;
+    for (const z of ZONES) {
+      if (except && except(z)) continue;
+      const a = pts[i].angleTo(z.dir), want = (z.r + clear) / R;
+      if (a >= want) continue;
+      const perp = pts[i].clone().sub(z.dir.clone().multiplyScalar(z.dir.dot(pts[i])));
+      if (perp.lengthSq() < 1e-10) perp.set(1, 0, 0);
+      perp.normalize();
+      pts[i] = z.dir.clone().multiplyScalar(Math.cos(want)).addScaledVector(perp, Math.sin(want)).normalize();
+    }
+  }
+  return pts;
+}
+
 // the road network's sample points, known before anything is placed, so
 // nothing may be built on a carriageway
 const roadNetPts = [];
@@ -1038,12 +1145,7 @@ function nearRoad(d, units = 2.0) {
 {
   // gates: each landmark's waypoint shifts ~2.7 units to the side, so the
   // road runs past the plaza's edge instead of through its middle
-  const gates = LANDMARKS.map((lm, i) => {
-    const prev = LANDMARKS[(i - 1 + LANDMARKS.length) % LANDMARKS.length].dir;
-    const next = LANDMARKS[(i + 1) % LANDMARKS.length].dir;
-    const tang = next.clone().sub(prev.clone().multiplyScalar(prev.dot(next))).normalize();
-    return lm.dir.clone().applyAxisAngle(tang, 2.7 / R).normalize();
-  });
+  const gates = LANDMARKS.map((lm, i) => landmarkGate(i));
   let pts0 = [];
   for (let i = 0; i < gates.length; i++) {
     const a = gates[i], b = gates[(i + 1) % gates.length];
@@ -1057,6 +1159,11 @@ function nearRoad(d, units = 2.0) {
     }
     pts0 = out;
   }
+  // never across reserved ground — and AROUND the downtown core rather than
+  // through it (the city has its own street grid; the scenic loop skirts it)
+  ZONES.push({ dir: DOWNTOWN.clone(), r: 9.0, key: 'downtown-core' });
+  deflect(pts0, { closed: true });
+  ZONES.pop();
   RING_LOOP = pts0;
   roadNetPts.push(...pts0);
 }
@@ -1066,9 +1173,7 @@ for (const lm of LANDMARKS) {
   if (lm.museum) {
     // the museum faces the ring road that skirts its forecourt and stands
     // back from it; its footprint is big, so it settles over its whole plinth
-    let near = RING_LOOP[0];
-    for (const p of RING_LOOP) if (p.angleTo(lm.dir) < near.angleTo(lm.dir)) near = p;
-    const yaw = yawToFace(lm.dir, near);
+    const yaw = yawToFace(lm.dir, lm.facing);      // faces its road gate (see the reservation map)
     addSolid(lm.dir, 3.4, b);
     b.position.copy(settleOn(lm.dir, 3.2, 0.1));
     alignToSurface(b, lm.dir, yaw);
@@ -1200,6 +1305,8 @@ scatter(rockDeco, 26);
       .addScaledVector(bvE1, Math.sin(BLVD_ARC) * Math.cos(th))
       .addScaledVector(bvE2, Math.sin(BLVD_ARC) * Math.sin(th)).normalize());
   }
+  deflect(blvd, { closed: true });                 // around reserved ground, not through it
+  BLVD_PTS = blvd;
   roadLayers(blvd, true);
   roadNetPts.push(...blvd);
 
@@ -1214,7 +1321,10 @@ scatter(rockDeco, 26);
     const spur = [];
     for (let k = 0; k <= 26; k++) spur.push(slerpDir(DOWNTOWN, target, t0 + (t1 - t0) * (k / 26)));
     const spurPts = smoothLoop(spur, 3, false);
+    // around anything reserved on the way (its own district excepted)
+    deflect(spurPts, { keep: i => i === 0 || i >= spurPts.length - 2, except: z => z.dir.angleTo(target) * R < 18 });
     roadLayers(spurPts, false);
+    SPUR_PTS.set(target, spurPts);
     roadNetPts.push(...spurPts);
     // cul-de-sac: a dirt turning circle where the road arrives
     const end = spur[spur.length - 1];
@@ -1257,6 +1367,12 @@ const trackPts = [];
     for (let k = 0; k < n; k++) trackPts.push(slerpDir(a, b, k / n));
   }
   trackPts.push(STOP_DIRS.museumst.clone());
+  // the line bends around reserved ground between stations (it used to run
+  // straight through whatever lay on the great circle); stations stay pinned
+  {
+    const last = trackPts.length - 1;
+    deflect(trackPts, { clear: 1.2, keep: i => i % 26 === 0 || i === last, except: z => z.key.startsWith('stop:') });
+  }
 
   // open ribbon (no wraparound) — same trick as the road, raised a touch
   function railRibbon(offset, halfW, lift, color) {
@@ -1891,6 +2007,65 @@ mark('downtown:start');
   const cNorth = new THREE.Vector3().crossVectors(DOWNTOWN, cEast).normalize();
   const at = (x, y) => DOWNTOWN.clone().multiplyScalar(R)
     .addScaledVector(cEast, x).addScaledVector(cNorth, y).normalize();
+  const CITY_LANES = new URLSearchParams(location.search).get('lanes') !== '0';   // dev A/B
+  const OUTER_ROADS = roadNetPts.slice();          // ring loop, boulevard, spurs — laid before downtown
+  // the grown plan was baked on a 2.6-unit grid — with 2.2-wide avenues that
+  // left ~0.5-unit parcels, so every tower stood in the street. Spread it out
+  // (same organic shape, roomier blocks) and cap it to the free ground
+  // around downtown; the reservation map clips the rest.
+  const _cq = new URLSearchParams(location.search);
+  const CITY_MODE = _cq.get('city') || 'grid';
+  const CITY_SCALE = parseFloat(_cq.get('cityscale')) || 1.0;
+  const CITY_CAP = parseFloat(_cq.get('citycap')) || (CITY_MODE === 'grid' ? 13.5 : 17);
+  // DOWNTOWN AS A GRID THAT FITS. The free ground between the museum, the
+  // library, the mountain and the bay is only ~12 units in radius; the old
+  // grown plan packed 198 streets in there on a 2.6 grid, leaving parcels
+  // half a unit wide — every tower stood in the street. This is a legible
+  // grid instead: avenues and lanes 6 units apart, one proper building per
+  // block, shaped by the reservation map. (?city=grown restores the old plan.)
+  function gridPlan(P = parseFloat(_cq.get('pitch')) || 4.2, K = 3) {
+    const nodes = [], idx = new Map(), edges = [], lots = [];
+    const id = (i, j) => idx.get(i + ',' + j);
+    for (let i = -K; i <= K; i++) for (let j = -K; j <= K; j++) {
+      const x = i * P, y = j * P;
+      if (Math.hypot(x, y) > CITY_CAP) continue;
+      idx.set(i + ',' + j, nodes.length); nodes.push([x, y]);
+    }
+    for (let i = -K; i <= K; i++) for (let j = -K; j <= K; j++) {
+      const a = id(i, j); if (a === undefined) continue;
+      // avenues on even lines (wide), lanes on odd ones (narrow)
+      if (id(i + 1, j) !== undefined) edges.push([a, id(i + 1, j), Math.abs(j) % 2 === 1]);
+      if (id(i, j + 1) !== undefined) edges.push([a, id(i, j + 1), Math.abs(i) % 2 === 1]);
+    }
+    for (let i = -K; i < K; i++) for (let j = -K; j < K; j++) {
+      if ([id(i, j), id(i + 1, j), id(i, j + 1), id(i + 1, j + 1)].some(v => v === undefined)) continue;
+      const x0 = i * P, y0 = j * P, x1 = x0 + P, y1 = y0 + P;
+      lots.push({ c: [(x0 + x1) / 2, (y0 + y1) / 2], v: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], a: P * P });
+    }
+    return { nodes, edges, lots };
+  }
+  const CPL = CITY_MODE === 'grid' ? gridPlan() : {
+    nodes: CITY_PLAN.nodes.map(([x, y]) => [x * CITY_SCALE, y * CITY_SCALE]),
+    edges: CITY_PLAN.edges,
+    lots: CITY_PLAN.lots.map(l => ({ ...l, c: [l.c[0] * CITY_SCALE, l.c[1] * CITY_SCALE],
+      v: l.v.map(([x, y]) => [x * CITY_SCALE, y * CITY_SCALE]), a: l.a * CITY_SCALE * CITY_SCALE }))
+      .filter(l => Math.hypot(l.c[0], l.c[1]) < CITY_CAP),
+  };
+  // the grown street plan is clipped to the reservation map: a street that
+  // would run under the museum, a station, the mall or up the mountain is
+  // simply not built (painted floor, traffic and parcels all use this list)
+  const CP_EDGES = CPL.edges.filter(([ai, bi, minor]) => {
+    if (minor && CITY_LANES === false) return false;
+    const A = CPL.nodes[ai], B = CPL.nodes[bi];
+    if (Math.hypot(A[0], A[1]) > CITY_CAP || Math.hypot(B[0], B[1]) > CITY_CAP) return false;
+    const halfW = (minor ? LAYOUT.reference.minorW : LAYOUT.reference.majorW) / 2;   // its actual surface
+    const n = Math.max(2, Math.ceil(Math.hypot(B[0] - A[0], B[1] - A[1]) / 0.8));
+    for (let k = 0; k <= n; k++) {
+      const zh = zoneHit(at(A[0] + (B[0] - A[0]) * k / n, A[1] + (B[1] - A[1]) * k / n), halfW + 0.2);
+      if (zh) { if (TRACE) (window.__clipBy = window.__clipBy || {})[zh.key] = ((window.__clipBy || {})[zh.key] || 0) + 1; return false; }
+    }
+    return true;
+  });
 
   // Every dimension below is derived, not guessed. A person is 0.6 wide and a
   // jeep 1.5, so the carriageway and footway are sized from those and the
@@ -1952,13 +2127,13 @@ mark('downtown:start');
     // procedural road graph (josauder/procedural_city_generation, baked into
     // city_plan.js). Kerb underlay first, then asphalt, then centre dashes on
     // the major roads — same three layers the grid used to get.
-    const NP = CITY_PLAN.nodes;
+    const NP = CPL.nodes;
     const stroke = (w, col, dash, majorOnly) => {
       ctx.strokeStyle = col; ctx.lineWidth = w * u;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.setLineDash(dash || []);
       ctx.beginPath();
-      for (const [ai, bi, minor] of CITY_PLAN.edges) {
+      for (const [ai, bi, minor] of CP_EDGES) {
         if (majorOnly && minor) continue;
         ctx.moveTo(X(NP[ai][0]), Y(NP[ai][1]));
         ctx.lineTo(X(NP[bi][0]), Y(NP[bi][1]));
@@ -2104,8 +2279,8 @@ mark('downtown:start');
   const museumLm = LANDMARKS.find(l => l.key === 'artgarden');
   const museumDir = museumLm.dir;
   // the PCG roads must repel trees/terraces the same way painted roads do
-  for (const [ai, bi] of CITY_PLAN.edges) {
-    const A = CITY_PLAN.nodes[ai], B = CITY_PLAN.nodes[bi];
+  for (const [ai, bi] of CP_EDGES) {
+    const A = CPL.nodes[ai], B = CPL.nodes[bi];
     for (let k = 0; k <= 2; k++)
       roadNetPts.push(at(A[0] + (B[0] - A[0]) * k / 2, A[1] + (B[1] - A[1]) * k / 2));
   }
@@ -2123,10 +2298,24 @@ mark('downtown:start');
   // (foundation included — that's 1.2× the facade half) would come within
   // STREET of any building already placed. Fewer, bigger towers, and every
   // gap between them is a street a person (and the camera) fits through.
-  const STREET = 1.4;                                   // clear ground between footprints
+  const STREET = CITY_MODE === 'grid' ? 0.3 : 1.4;     // clear ground between footprints (in the grid the streets already separate blocks)
   const placed = [];                                    // {x, y, r} effective radii
-  const lotsBig = CITY_PLAN.lots.slice().sort((a, b) => b.a - a.a);
+  const lotsBig = CPL.lots.slice().sort((a, b) => b.a - a.a);
   const DISTRICT_CLEAR = [[MALL, 8.0], [RESORT, 7.5], [FARM_A, 8.0], [FARM_B, 8.0], [AIRPORT, 14.0]];
+  // clear distance from a plan point to the nearest street EDGE (its kerb)
+  let _kerbRej = 0;
+  const KERB_MAJ = LAYOUT.reference.majorW / 2, KERB_MIN = LAYOUT.reference.minorW / 2;
+  function kerbGap(x, y) {
+    let best = 1e9;
+    for (const [ai, bi, minor] of CP_EDGES) {
+      const A = CPL.nodes[ai], B = CPL.nodes[bi];
+      const vx = B[0] - A[0], vy = B[1] - A[1], L2 = vx * vx + vy * vy || 1;
+      const t = Math.max(0, Math.min(1, ((x - A[0]) * vx + (y - A[1]) * vy) / L2));
+      const d = Math.hypot(x - A[0] - vx * t, y - A[1] - vy * t) - (minor ? KERB_MIN : KERB_MAJ);
+      if (d < best) best = d;
+    }
+    return best;
+  }
   const fits = (x, y, r) => placed.every(p => Math.hypot(p.x - x, p.y - y) >= p.r + r + STREET);
   for (const lot of lotsBig) {
     const [cx, cy] = lot.c;
@@ -2144,6 +2333,7 @@ mark('downtown:start');
     // districts the grown city reaches (the Galleria sits ~8 units from the
     // centre) keep their ground too — towers were being built through the mall
     if (DISTRICT_CLEAR.some(([d, r]) => dd0.angleTo(d) < r / R)) continue;
+    if (zoneHit(dd0, 2.2)) continue;                 // the reservation map: never on reserved ground
     if (!isLand(dd0, 0.05)) continue;                // don't build into the strait
     const rr2 = Math.hypot(cx, cy);
     // ...and never onto the carriageway: distance from the centroid to the
@@ -2163,8 +2353,27 @@ mark('downtown:start');
     }
     // size from the parcel's own extents (28% setback); the neighbour gap is
     // no longer a size cap — the packing test below handles spacing
-    const half = Math.min(1.7, Math.max(0.55, Math.min(exMax, eyMax) * 0.72));
+    let half = Math.min(1.7, Math.max(0.55, Math.min(exMax, eyMax) * 0.72));
     if (Math.min(exMax, eyMax) * 0.72 < 0.3) continue;   // lot swallowed by the road
+    // the kerb test: the footprint (corner reach of the rotated box, or a
+    // terrace's half-length) must stop short of every street's actual width
+    // the kerb test: the footprint must stop short of every street's actual
+    // width. Parcels FRONT their streets by design, so a building is sized
+    // DOWN to fit its parcel rather than refused; only a sliver is skipped.
+    // buildings are squared to their parcel and streets run along parcel
+    // edges, so the facade (not the corner) is what meets the kerb line
+    const gap = kerbGap(cx, cy) - 0.05;
+    if (rr2 > MID_R) {
+      if (gap < 1.0) { _kerbRej++; continue; }      // terrace: its narrow end faces the street
+    } else {
+      half = Math.min(half, gap / 1.02);
+      if (half < 0.45) { _kerbRej++; continue; }
+    }
+    // …and clear of the through-roads that cross town (the scenic loop)
+    {
+      const lim = ((rr2 > MID_R ? 1.8 : half * 1.3) + 1.6) / R;
+      if (OUTER_ROADS.some(p => dd0.angleTo(p) < lim)) { _kerbRej++; continue; }
+    }
     if (rr2 <= CORE_R) {                             // ── core: towers
       if (!fits(cx, cy, half * 1.2)) continue;       // would choke a street → open ground
       placed.push({ x: cx, y: cy, r: half * 1.2 });
@@ -2316,13 +2525,14 @@ mark('downtown:start');
   }
   // adjacency over the grown graph → random-walk chains; traffic loops those
   // chains, so cars and pedestrians only ever travel the painted streets
-  const adj = CITY_PLAN.nodes.map(() => []);
-  for (const [ai, bi] of CITY_PLAN.edges) { adj[ai].push(bi); adj[bi].push(ai); }
+  const adj = CPL.nodes.map(() => []);
+  for (const [ai, bi] of CP_EDGES) { adj[ai].push(bi); adj[bi].push(ai); }
+  const liveNodes = adj.map((a, i) => (a.length ? i : -1)).filter(i => i >= 0);
   function makeChain(len) {
-    let cur = Math.floor(rand() * CITY_PLAN.nodes.length), prev = -1;
+    let cur = liveNodes[Math.floor(rand() * liveNodes.length)], prev = -1;   // a junction that still has streets
     const chain = [];
     for (let k = 0; k < len; k++) {
-      chain.push(at(CITY_PLAN.nodes[cur][0], CITY_PLAN.nodes[cur][1]));
+      chain.push(at(CPL.nodes[cur][0], CPL.nodes[cur][1]));
       const opts = adj[cur].filter(nn => nn !== prev);
       if (!opts.length) break;
       prev = cur; cur = opts[Math.floor(rand() * opts.length)];
@@ -2347,8 +2557,10 @@ mark('downtown:start');
       t: rand(), speed: 0.016 + rand() * 0.01, kind: 'ped', phase: n });
   }
 
+  if (TRACE) console.log('[layout] clipped by ' + JSON.stringify(window.__clipBy || {}));
+  if (TRACE) console.log(`[layout] downtown: ${placed.length} buildings, ${_kerbRej} lots refused at the kerb, ${CP_EDGES.length}/${CPL.edges.length} streets kept (${CITY_MODE})`);
   // street furniture at every third junction of the grown network
-  CITY_PLAN.nodes.forEach((nd, i) => {
+  CPL.nodes.forEach((nd, i) => {
     if (i % 3 || adj[i].length < 3) return;
     const dd = at(nd[0] + 0.9, nd[1] + 0.9);
     const lamp = streetLamp();
@@ -2556,7 +2768,17 @@ mark('bridge:start');
   }
 
   // ── the dock: a long jetty on pilings, with a shack and moored boats
-  const DOCK_LEN = 13;
+  // the jetty runs out only as far as there is water to stand in (the bay is
+  // small — a fixed 13 segments marched over dry land and into Farm B)
+  let DOCK_LEN = 0, wet = false;
+  for (let i = 0; i < 13; i++) {
+    const w = isWater(bAt(0, seaSign * (1.5 + i * 1.05)), 0.02);
+    if (w) wet = true;
+    else if (wet || i > 3) break;
+    DOCK_LEN = i + 1;
+  }
+  DOCK_LEN = Math.max(4, DOCK_LEN);
+  const DOCK_END = 1.5 + DOCK_LEN * 1.05;
   for (let i = 0; i < DOCK_LEN; i++) {
     const y = seaSign * (1.5 + i * 1.05);
     const d = bAt(0, y);
@@ -2607,6 +2829,7 @@ mark('bridge:start');
     [-1.15, seaSign * 4.2], [3.4, seaSign * 1.2], [-4.1, seaSign * 0.6],
   ];
   anglerSpots.forEach(([x, y], i) => {
+    if (Math.abs(y) > DOCK_END - 0.5 && Math.abs(x) < 1.6) return;   // no jetty out there
     const d = bAt(x, y);
     const onDock = Math.abs(x) < 1.6 && Math.abs(y) > 2;
     const p = makePerson([0x2d6ea8, 0xff7eb6, 0xffd23d, 0x2dd47b][i % 4], i % 2 ? 0x2d2138 : null);
@@ -2630,6 +2853,7 @@ mark('bridge:start');
 
   // ── moored fishing boats along the jetty
   for (const [x, y, hue] of [[2.1, seaSign * 5.0, 0xff4d6e], [-2.1, seaSign * 8.0, 0x4e8eff], [2.1, seaSign * 11.0, 0xffd23d]]) {
+    if (Math.abs(y) > DOCK_END - 0.5) continue;    // only alongside the jetty that exists
     const d = bAt(x, y);
     const g = new THREE.Group();
     const hull = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.42, 2.2), M(hue));
@@ -2652,6 +2876,7 @@ mark('bridge:start');
     const d = bAt(-9 + i * 3.1 + rand() * 1.4, -seaSign * (1.2 + rand() * 2.6));
     if (surfH(d) < SEA_H) continue;
     if (nearRoad(d, 3.0)) continue;                 // never on the hotel drive / turning circle
+    if (d.angleTo(RESORT) * R < 4.2) continue;      // nor on the hotel's own ground
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.15, 5), M(0xfffaf2));
     pole.position.copy(settleOn(d, 0.2, 0)); pole.translateY(0.55);
     alignToSurface(pole, d); scene.add(pole);
@@ -3401,8 +3626,13 @@ function buildFarm(anchor, label) {
 }
 // ── THE GAS STATION: halfway down the airport spur, just off the road ──
 {
-  const mid = slerpDir(DOWNTOWN, AIRPORT, LAYOUT.heroes.gasStation.t);
-  const toAir = AIRPORT.clone().sub(mid.clone().multiplyScalar(mid.dot(AIRPORT))).normalize();
+  // anchored to the airport road AS BUILT (smoothed, bent round reserved
+  // ground) — the idealised straight line put the forecourt on the tarmac
+  const sp = SPUR_PTS.get(AIRPORT);
+  const gi = Math.round((sp.length - 1) * LAYOUT.heroes.gasStation.t);
+  const mid = sp[gi].clone();
+  const toAir = sp[Math.min(gi + 1, sp.length - 1)].clone().sub(sp[Math.max(gi - 1, 0)]);
+  toAir.sub(mid.clone().multiplyScalar(mid.dot(toAir))).normalize();
   const lat = new THREE.Vector3().crossVectors(mid, toAir).normalize();
   GAS_DIR = mid.clone().applyAxisAngle(toAir, 0).applyAxisAngle(lat.clone().cross(mid).normalize(), 0);
   // shift ~2.3 units to the roadside
@@ -3467,7 +3697,7 @@ const CLUES = [
   { at: ll(24, -52), icon: '🧤', text: 'A dropped work glove near the museum service door.', points: 'driver' },
   { at: lmByKey0('artgarden').root.localToWorld(new THREE.Vector3(7.9, 0, -7.5)).normalize(), icon: '🪜',
     text: 'An aluminium ladder against the museum’s east wing — and up on the dome, one glass pane cut clean out.', points: 'driver' },
-  { at: ll(14, -96), icon: '🎨', text: 'A smear of fresh varnish on the kerb — still tacky.', points: 'cyclist' },
+  { at: ll(10, -91), icon: '🎨', text: 'A smear of fresh varnish on the kerb — still tacky.', points: 'cyclist' },
 ];
 function lmByKey0(k) { return LANDMARKS.find(l => l.key === k); }
 const foundClues = new Set(JSON.parse(localStorage.getItem('heist-clues') || '[]'));
@@ -4908,20 +5138,16 @@ function buildArrPath() {
   // cross-country and never touched the painted road (or the gas station)
   for (let k = 0; k < 6; k++) pts.push(slerpDir(apron, AIRPORT, k / 6));
   for (let k = 0; k < 18; k++) pts.push(slerpDir(AIRPORT, eA, k / 18));
-  // around the ring boulevard, the short way — NEVER across downtown
-  const bE1 = new THREE.Vector3(0, 1, 0).cross(DOWNTOWN).normalize();
-  const bE2 = new THREE.Vector3().crossVectors(DOWNTOWN, bE1).normalize();
-  const azi = (d) => Math.atan2(d.dot(bE2), d.dot(bE1));
-  const thA = azi(eA), thR = azi(eR);
-  let dth = thR - thA;
-  while (dth > Math.PI) dth -= Math.PI * 2;
-  while (dth < -Math.PI) dth += Math.PI * 2;
-  const BARC = RING_BLVD_ARC;
-  for (let k = 0; k <= 24; k++) {
-    const th = thA + dth * (k / 24);
-    pts.push(DOWNTOWN.clone().multiplyScalar(Math.cos(BARC))
-      .addScaledVector(bE1, Math.sin(BARC) * Math.cos(th))
-      .addScaledVector(bE2, Math.sin(BARC) * Math.sin(th)).normalize());
+  // around the ring boulevard, the short way — NEVER across downtown. Walk the
+  // boulevard AS BUILT (it bends around reserved ground) from the airport
+  // gate to the kerb nearest the resort.
+  {
+    const B = BLVD_PTS, n = B.length;
+    const nearest = (d) => { let bi = 0; for (let i = 1; i < n; i++) if (B[i].angleTo(d) < B[bi].angleTo(d)) bi = i; return bi; };
+    const i0 = nearest(eA), i1 = nearest(insideRing(RESORT) ? RESORT : eR);
+    const fwd = (i1 - i0 + n) % n, back = (i0 - i1 + n) % n;
+    const step = fwd <= back ? 1 : -1, cnt = Math.min(fwd, back);
+    for (let k = 0; k <= cnt; k++) pts.push(B[(i0 + step * k + n) % n].clone());
   }
   // the resort sits inside the ring: the boulevard loop above already ends at
   // its kerb. (Only a district beyond the ring gets the spur leg.)
@@ -6114,7 +6340,7 @@ function updateWorldAmbient(dt, t) {
 // known event-mover is merged per material, like the decoration above.
 const _batch = { phase: 0, t0: 0, snap: null };
 function batchStaticScene(t) {
-  if (_batch.phase === 2) return;
+  if (_batch.phase === 2 || NO_BATCH) return;
   const dyn = new Set([courier, limo, rocketG, airportPlane, gasDriver, arrivalPax, cabin, compass, targetRing,
     mooredBoat, subwayInt, stationG, camera, sky, skyStars, ocean, planet, landmarkGroup, deco,
     ...npcs, ...traffic.map(v => v.obj), ...starItems.map(s => s.mesh), ...CLUES.map(c => c.marker),
@@ -6150,12 +6376,19 @@ const DEV_CAM = (() => {
   const q = new URLSearchParams(location.search).get('shotcam');
   if (!q) return null;
   const [k, ...n] = q.split(','); const [x, y, z, ly, lz] = n.map(Number);
-  return () => {
-    const root = lmByKey[k]?.root ?? { hotel: resortHotel }[k]; if (!root) return;
+  const fn = () => {
+    if (k === 'downtown' && !DEV_CAM.dt) {          // a surface frame at the city centre
+      DEV_CAM.dt = new THREE.Object3D();
+      DEV_CAM.dt.position.copy(posOn(DOWNTOWN, 0));
+      alignToSurface(DEV_CAM.dt, DOWNTOWN);
+      DEV_CAM.dt.updateMatrixWorld(true);
+    }
+    const root = k === 'downtown' ? DEV_CAM.dt : lmByKey[k]?.root ?? { hotel: resortHotel, ...stopStructures }[k]; if (!root) return;
     camera.position.copy(root.localToWorld(new THREE.Vector3(x, y, z)));
     camera.up.copy(root.position).normalize();
     camera.lookAt(root.localToWorld(new THREE.Vector3(0, ly || 0, lz || 0)));
   };
+  return fn;
 })();
 function animate() {
   requestAnimationFrame(animate);
@@ -6691,6 +6924,10 @@ function footprintOf(o) {
     const f = footprintOf(c);
     if (!f) continue;
     let hit = structs.some(S => S.c.distanceTo(f.c) < S.rad * 0.9 + f.rad * 0.5);
+    if (!hit && f.h > 0.4) {                                       // nothing decorative on a road or the rails
+      const cd = f.c.clone().normalize(), lim = (f.rad * 0.6 + 1.3) / R;
+      hit = roadNetPts.some(p => cd.angleTo(p) < lim) || trackPts.some(p => cd.angleTo(p) < (f.rad * 0.6 + 0.8) / R);
+    }
     if (!hit && mus?.root) {                                       // the museum is a long rectangle
       loc.copy(c.position); mus.root.worldToLocal(loc);
       hit = (Math.abs(loc.x) < 8.0 && loc.z < 1.2 && loc.z > -12.4) || Math.hypot(loc.x, loc.z + 0.3) < 4.4;
@@ -6698,6 +6935,71 @@ function footprintOf(o) {
     if (hit) { deco.remove(c); removed++; }
   }
   if (TRACE) console.log('[layout] decoration removed from inside structures:', removed);
+  // a collectible star inside a building can never be collected: walk it out
+  // to open ground just beyond the structure's edge
+  for (const st of starItems) {
+    const S = structs.find(S => S.c.clone().normalize().angleTo(st.dir) * R < S.rad * 0.95);
+    if (!S) continue;
+    const cdir = S.c.clone().normalize();
+    const perp = st.dir.clone().sub(cdir.clone().multiplyScalar(cdir.dot(st.dir)));
+    if (perp.lengthSq() < 1e-10) perp.set(0, 1, 0).sub(cdir.clone().multiplyScalar(cdir.y));
+    perp.normalize();
+    const a = (S.rad + 1.2) / R;
+    st.dir = cdir.clone().multiplyScalar(Math.cos(a)).addScaledVector(perp, Math.sin(a)).normalize();
+    st.mesh.position.copy(posOn(st.dir, HOVER + 0.55));
+  }
+}
+// ── oriented footprint: the object's ground rectangle in ITS OWN axes (so a
+// rotated rectangle stays a rectangle), returned as 4 world-space corners
+function orientedFootprint(o) {
+  o.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(o.matrixWorld).invert();
+  const bb = new THREE.Box3(), v = new THREE.Vector3(), M4 = new THREE.Matrix4();
+  o.traverse(m => {
+    if (!m.isMesh || !m.geometry.attributes.position || m.userData.noCollide || m.userData.gpSkip) return;
+    if (!m.visible || gpBoilMats.includes(m.material)) return;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    const g = m.geometry.boundingBox;
+    M4.multiplyMatrices(inv, m.matrixWorld);
+    for (let i = 0; i < 8; i++) {
+      v.set(i & 1 ? g.max.x : g.min.x, i & 2 ? g.max.y : g.min.y, i & 4 ? g.max.z : g.min.z).applyMatrix4(M4);
+      if (v.y > -0.3) bb.expandByPoint(v);          // ignore underground foundations
+    }
+  });
+  if (bb.isEmpty()) return null;
+  const y = Math.max(bb.min.y, 0);
+  const corners = [[bb.min.x, bb.min.z], [bb.max.x, bb.min.z], [bb.max.x, bb.max.z], [bb.min.x, bb.max.z]]
+    .map(([x, z]) => new THREE.Vector3(x, y, z).applyMatrix4(o.matrixWorld));
+  return { corners, h: (bb.max.y - bb.min.y) * o.getWorldScale(v).y, local: bb };
+}
+// ?layout=1 (dev): window.__layout() returns every road sample and every
+// structure's oriented footprint in lat/lon, for the planning map
+if (new URLSearchParams(location.search).get('layout') === '1') {
+  window.__layout = () => {
+    const LL = (p) => { const d = p.clone().normalize(); return [+(Math.asin(d.y) * 180 / Math.PI).toFixed(3), +(Math.atan2(d.z, d.x) * 180 / Math.PI).toFixed(3)]; };
+    const names = new Map();
+    for (const lm of LANDMARKS) if (lm.root) names.set(lm.root, lm.name);
+    for (const [k, v] of Object.entries(stopStructures)) if (v) names.set(v, 'station:' + k);
+    if (resortHotel) names.set(resortHotel, 'Hotel');
+    if (airportPlane) names.set(airportPlane, 'Jet');
+    if (rocketG) names.set(rocketG, 'Rocket');
+    if (mooredBoat) names.set(mooredBoat, 'Boat');
+    const items = [];
+    const add = (o, tag) => {
+      if (!o.isObject3D || o.isLight || o.isCamera || o.isSprite || o.isPoints) return;
+      if (o === planet || o === ocean || o === sky || o === skyStars || o === landmarkGroup || o === deco) return;
+      if (o.position.length() < R * 0.5) return;
+      const f = orientedFootprint(o);
+      if (!f) return;
+      let col = ''; o.traverse(m => { if (!col && m.isMesh && m.material?.color) col = '#' + m.material.color.getHexString(); });
+      items.push({ name: names.get(o) || '', tag, col, h: +f.h.toFixed(2), c: f.corners.map(LL),
+        dyn: npcs.includes(o) || traffic.some(t => t.obj === o) || starItems.some(s => s.mesh === o) });
+    };
+    for (const c of scene.children) add(c, 'scene');
+    for (const c of deco.children) add(c, 'deco');
+    for (const c of landmarkGroup.children) add(c, 'landmark');
+    return { roads: roadNetPts.map(LL), rails: trackPts.map(LL), zones: ZONES.map(z => ({ c: LL(z.dir), r: z.r, key: z.key })), items, R };
+  };
 }
 // ?audit=1 (dev): list every pair of placed objects whose footprints overlap —
 // the "things inside other things" report. Footprints are measured in each
@@ -6767,7 +7069,10 @@ function matSig(m) {
     m.vertexColors, m.userData?.gp, m.polygonOffset, m.depthWrite].join('|');
   return sig;
 }
+// layout tooling needs the individual objects: ?layout=1 / ?audit=1 skip batching
+const NO_BATCH = /[?&](layout|audit)=1/.test(location.search);
 function mergeStatic(root, { skip = () => false, tag = null } = {}) {
+  if (NO_BATCH) return { before: 0, after: 0, victims: [] };
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const buckets = new Map();
