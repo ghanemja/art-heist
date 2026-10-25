@@ -16,7 +16,7 @@ then runs `netlify deploy --prod` against the `shelfie-jg` site id.
 
 ## Gotchas
 
-- **Bump the cache token.** `index.html` loads `planet.js?cb=pNN`. Bump `NN`
+- **Bump the cache token.** `index.html` (the main app) loads `v2/js/main.js?cb=NN`; `classic.html` loads `planet.js?cb=pNN`. Bump `NN`
   whenever `planet.js` changes, or browsers/CDN keep the stale bundle (new CSS +
   old JS = "nothing changed").
 - **Check the link.** This folder's Netlify CLI has been mis-linked to other

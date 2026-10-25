@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>The Vanishing Gallery (classic)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Permanent+Marker&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #2d2138;
+    --ink-dim: #7a6f8a;
+    --panel: #fffaf2;
+    --panel-edge: #e8d9ea;
+    --accent: #ff8a5c;
+    --accent-2: #8f7ae8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #d9c4f2; color: var(--ink);
+    font-family: "Fredoka", "Nunito", system-ui, sans-serif;
+    touch-action: none; -webkit-user-select: none; user-select: none; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* ── loader ── */
+  #loader {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: linear-gradient(180deg, #a8c8f0 0%, #d9c4f2 55%, #ffd9b8 100%);
+    transition: opacity 0.7s ease;
+  }
+  #loader.hide { opacity: 0; pointer-events: none; }
+  #loader .planet-dot {
+    width: 68px; height: 68px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, #b6e3b0, #7fbf8b 60%, #5f9e77);
+    box-shadow: 0 10px 40px rgba(90, 70, 140, 0.35);
+    animation: bob 1.6s ease-in-out infinite;
+  }
+  @keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-10px) } }
+  #loader .bar { width: 220px; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.5); overflow: hidden; }
+  #loader .bar i { display: block; height: 100%; width: 0%; border-radius: 999px;
+    background: var(--accent); transition: width 0.3s ease; }
+  #loader p { color: #5d5375; font-weight: 600; font-size: 14px; letter-spacing: 0.04em; }
+
+  /* ── title screen ── */
+  #title {
+    position: fixed; inset: 0; z-index: 40;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding-bottom: 7vh; gap: 10px; pointer-events: none;
+    transition: opacity 0.7s ease;
+  }
+  #title.hide { opacity: 0; }
+  /* THE TITLE IS PAINTED, and you watch it happen. A cartoon brush loads
+     colour off a palette, paints a word along a curve, comes back for the
+     next colour. Choreographed in JS so the bristle tip sits exactly on the
+     paint front (see the title script at the bottom of this file). */
+  @keyframes word-appear { to { opacity: 1 } }
+
+  #enter-btn {
+    pointer-events: auto; cursor: pointer; margin-top: 22px;
+    opacity: 0; animation: word-appear 0.6s ease 3.0s forwards, t-pulse 2s ease-in-out 3.4s infinite;
+    font-family: inherit; font-weight: 700; font-size: clamp(20px, 3vw, 26px);
+    letter-spacing: 0.08em; color: var(--ink);
+    background: #ffd23d; border: 3px solid var(--ink); border-radius: 14px;
+    padding: 13px 54px; transform: rotate(-1.5deg);
+    box-shadow: 0 6px 0 var(--ink), 0 12px 24px rgba(45, 33, 56, 0.3);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  #enter-btn:hover { transform: rotate(-1.5deg) translateY(2px); box-shadow: 0 4px 0 var(--ink), 0 8px 18px rgba(45, 33, 56, 0.3); }
+  #enter-btn:active { transform: rotate(-1.5deg) translateY(5px); box-shadow: 0 1px 0 var(--ink); }
+  @keyframes t-pulse { 0%, 100% { filter: brightness(1) } 50% { filter: brightness(1.09) } }
+  /* the line under the painted title: what the game IS, in one breath */
+  #title .t-sub {
+    font-family: "Permanent Marker", "Comic Sans MS", cursive; font-weight: 400;
+    font-size: clamp(17px, 2.6vw, 26px); color: var(--ink); text-align: center;
+    padding: 6px 18px; margin: 0 16px; border-radius: 12px;
+    background: rgba(255, 250, 242, 0.82); box-shadow: 0 4px 0 rgba(45, 33, 56, 0.18);
+    transform: rotate(-1deg);
+    opacity: 0; animation: word-appear 0.6s ease 2.6s forwards;
+  }
+  #title .t-sub b { color: #e0176f; font-weight: 400; }
+  #title .t-by {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(45, 33, 56, 0.75); text-align: center; margin: 0 16px;
+    padding: 3px 12px; border-radius: 999px; background: rgba(255, 250, 242, 0.7);
+    opacity: 0; animation: word-appear 0.6s ease 2.8s forwards;
+  }
+  #title .t-hint {
+    font-size: 12px; font-weight: 600; color: rgba(45, 33, 56, 0.55); margin-top: 6px;
+    opacity: 0; animation: word-appear 0.5s ease 3.4s forwards;
+  }
+  body.title-mode #hud, body.title-mode #quest,
+  body.title-mode #controls-hint, body.title-mode #stick, body.title-mode #card,
+  body.title-mode #nav {
+    opacity: 0 !important; pointer-events: none !important; transition: opacity 0.4s ease;
+  }
+  /* the art-style and vibe switchers stay reachable from the landing screen —
+     they change what you are looking at right now */
+  body.title-mode #reset-progress, body.title-mode #phone-btn {
+    display: none;
+  }
+
+  /* ── detective notebook, clue toast ── */
+  #note-btn {
+    position: fixed; left: 20px; bottom: 20px; z-index: 22; cursor: pointer;
+    width: 52px; height: 52px; border-radius: 50%; border: 3px solid var(--ink);
+    background: #ffd23d; font-size: 22px; box-shadow: 0 4px 0 var(--ink);
+  }
+  #note-btn #note-count {
+    position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px;
+    background: #ff2e88; color: #fff; border-radius: 999px; font-size: 12px;
+    font-weight: 700; line-height: 20px; text-align: center; border: 2px solid #fffaf2;
+  }
+  body.title-mode #note-btn { display: none; }
+  #toast {
+    position: fixed; left: 50%; bottom: 88px; transform: translate(-50%, 12px);
+    z-index: 23; max-width: min(520px, 88vw);
+    background: rgba(20, 15, 26, 0.9); color: #fffaf2;
+    font-family: "Permanent Marker", cursive; font-weight: 400; letter-spacing: 0.01em;
+    font-size: 15px; padding: 11px 18px; border-radius: 14px;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s, transform 0.3s;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #notebook {
+    position: fixed; left: 20px; bottom: 84px; z-index: 24;
+    width: min(360px, calc(100vw - 40px)); max-height: 62vh; overflow: auto;
+    background: var(--panel); border: 3px solid var(--ink); border-radius: 18px;
+    padding: 14px 16px; box-shadow: 0 18px 50px rgba(45,33,56,0.35);
+    opacity: 0; pointer-events: none; transform: translateY(12px);
+    transition: opacity 0.25s, transform 0.25s;
+  }
+  #notebook.show { opacity: 1; pointer-events: auto; transform: none; }
+  .nb-head { font-weight: 700; font-size: 16px; color: var(--ink); display: flex; justify-content: space-between; align-items: center; }
+  #note-close { border: none; background: none; font-size: 22px; color: var(--ink-dim); cursor: pointer; }
+  ul.ni { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  ul.ni li { font-size: 13px; line-height: 1.4; color: var(--ink); display: flex; gap: 8px;
+    background: #f6f0ea; border-radius: 10px; padding: 8px 10px; }
+  ul.ni li.locked { color: #b3a8c0; font-style: italic; background: #f0ecf4; }
+  .ni-ic { font-size: 16px; }
+  .ni-hint { font-size: 12px; color: var(--ink-dim); margin-top: 10px; }
+  #solve-btn, #solve-retry {
+    margin-top: 12px; width: 100%; cursor: pointer; font-family: inherit; font-weight: 700;
+    font-size: 14px; color: #fff6ec; background: var(--accent); border: none;
+    border-radius: 12px; padding: 11px; box-shadow: 0 3px 0 #d96a40;
+  }
+  .solve-q { font-weight: 700; font-size: 15px; margin: 4px 0 10px; }
+  .suspects { display: flex; flex-direction: column; gap: 8px; }
+  .suspect { cursor: pointer; font-family: inherit; font-weight: 700; font-size: 14px; text-align: left;
+    background: #f0eafc; border: 2px solid var(--panel-edge); border-radius: 12px; padding: 10px 12px; }
+  .suspect span { font-size: 20px; margin-right: 8px; }
+  .suspect:hover { background: #fff2ea; }
+  .verdict { font-size: 14px; line-height: 1.5; padding: 10px; border-radius: 12px; }
+  .verdict.win { background: #e6f7ec; color: #1c6b3a; }
+  .verdict.lose { background: #fdeaea; color: #a02a2a; }
+  .solved { margin-top: 10px; color: #1c6b3a; font-weight: 700; font-size: 13px; }
+
+  /* ── camera zoom slider + rotate ── */
+  #cam-controls {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 16;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255, 250, 242, 0.9); border: 2px solid var(--panel-edge);
+    border-radius: 999px; padding: 6px 10px; backdrop-filter: blur(8px);
+  }
+  #cam-controls button {
+    cursor: pointer; border: none; background: #f0eafc; color: var(--ink);
+    width: 30px; height: 30px; border-radius: 50%; font-size: 16px; font-weight: 700;
+  }
+  #cam-controls button:hover { background: #e4d9f4; }
+  .zoom-wrap { display: flex; align-items: center; gap: 7px; }
+  .zoom-ic { font-size: 13px; }
+  #zoom-slider { width: clamp(90px, 22vw, 180px); accent-color: var(--accent); }
+  #zoom-val { font-size: 12px; font-weight: 700; color: var(--ink); min-width: 34px; text-align: right; }
+  body.title-mode #cam-controls { display: none; }
+  @media (max-width: 640px) { #cam-controls { bottom: 84px; } }
+
+  /* ── the arrival cinematic caption + skip ── */
+  #arrival-ui { position: fixed; inset: 0; z-index: 44; pointer-events: none; }
+  #arr-caption {
+    position: absolute; left: 50%; top: 8%; transform: translateX(-50%);
+    font-family: "Permanent Marker", cursive; font-weight: 400; letter-spacing: 0.01em;
+    font-size: clamp(16px, 3vw, 26px); color: #fffaf2;
+    background: rgba(20, 15, 26, 0.6); padding: 8px 24px; border-radius: 16px;
+    backdrop-filter: blur(6px); white-space: nowrap;
+    transition: opacity 0.5s ease; opacity: 0;
+  }
+  #arr-skip {
+    position: absolute; right: 20px; bottom: 20px; pointer-events: auto; cursor: pointer;
+    font-family: inherit; font-weight: 700; font-size: 13px; color: #2d2138;
+    background: rgba(255, 250, 242, 0.85); border: 2px solid #e8d9ea;
+    padding: 8px 16px; border-radius: 999px;
+  }
+  #arrival-ui:not(.on) #arr-skip { display: none; }
+  /* cinematic: the whole game HUD goes dark, black letterbox bars frame the shot */
+  body.cine-mode #hud, body.cine-mode #quest, body.cine-mode #toggles,
+  body.cine-mode #controls-hint, body.cine-mode #stick, body.cine-mode #card,
+  body.cine-mode #nav, body.cine-mode #cam-controls, body.cine-mode #note-btn,
+  body.cine-mode #toast, body.cine-mode #notebook, body.cine-mode #comfort-frame,
+  body.cine-mode #comfort-fx {
+    display: none !important;
+  }
+  #arrival-ui::before, #arrival-ui::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 0; background: #0f0b14;
+    transition: height 0.6s ease;
+  }
+  #arrival-ui::before { top: 0; }
+  #arrival-ui::after { bottom: 0; }
+  #arrival-ui.on::before, #arrival-ui.on::after { height: 11vh; }
+  #arrival-ui.on #arr-caption { top: 13vh; }
+
+  /* ── the phone: texts, then maps. shown at ground level ── */
+  #phone {
+    position: fixed; inset: 0; z-index: 45;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.5s ease;
+    /* a real handset: crisp modern system UI, not the game's rounded marker */
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+      "Inter", Roboto, "Helvetica Neue", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; letter-spacing: -0.01em;
+  }
+  /* on a wide screen the phone sits to one side so you can see the critic
+     holding it up, rather than the handset covering them */
+  @media (min-width: 820px) {
+    #phone { justify-content: flex-end; padding-right: 9vw; }
+  }
+  #phone.show { opacity: 1; pointer-events: auto; }
+  #phone .p-frame {
+    position: relative; width: min(330px, calc(100vw - 40px)); height: min(660px, calc(100vh - 56px));
+    background: #14101c; border-radius: 40px; padding: 13px 11px;
+    border: 3px solid #000;
+    box-shadow: 0 30px 70px rgba(20, 12, 30, 0.55), inset 0 0 0 2px #37304a;
+    animation: ph-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes ph-rise { from { transform: translateY(80px) rotate(3deg); opacity: 0 } to { transform: none; opacity: 1 } }
+  #phone .p-notch { position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    width: 92px; height: 8px; background: #000; border-radius: 999px; z-index: 3; }
+  #phone .p-screen {
+    position: absolute; inset: 13px 11px; border-radius: 30px; overflow: hidden;
+    background: #fff; display: none; flex-direction: column;
+  }
+  #phone .p-screen.on { display: flex; animation: scr-in 0.4s ease; }
+  @keyframes scr-in { from { opacity: 0; transform: translateX(22px) } to { opacity: 1; transform: none } }
+
+  /* messages */
+  .ios-bar { flex: 0 0 auto; padding: 30px 12px 9px; display: flex; align-items: center; gap: 8px;
+    background: #f7f7f9; border-bottom: 1px solid #e3e3e8; font-size: 12.5px; font-weight: 700; color: #111; }
+  .ios-back { color: #0a84ff; font-size: 21px; line-height: 1; }
+  .ios-title { flex: 1; text-align: center; }
+  .ios-thread { flex: 1; padding: 12px 11px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+  .bub { max-width: 84%; padding: 9px 13px; border-radius: 18px; font-size: 13.5px; line-height: 1.4;
+    background: #e9e9eb; color: #111; align-self: flex-start; border-bottom-left-radius: 5px;
+    opacity: 0; transform: translateY(10px); animation: bub-in 0.35s cubic-bezier(0.22,1,0.36,1) forwards; }
+  .bub b { font-weight: 800; }
+  @keyframes bub-in { to { opacity: 1; transform: none } }
+  .b1 { animation-delay: 0.35s } .b2 { animation-delay: 1.15s } .b3 { animation-delay: 2.0s }
+  .typing { align-self: flex-start; display: flex; gap: 4px; padding: 11px 14px; border-radius: 18px;
+    background: #e9e9eb; opacity: 0; animation: bub-in 0.3s ease 2.7s forwards; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%; background: #9b9ba1; animation: dot 1.2s ease-in-out infinite; }
+  .typing i:nth-child(2) { animation-delay: 0.15s } .typing i:nth-child(3) { animation-delay: 0.3s }
+  @keyframes dot { 0%,60%,100% { opacity: 0.35 } 30% { opacity: 1 } }
+  .ios-reply {
+    flex: 0 0 auto; margin: 10px; padding: 13px; border: none; cursor: pointer;
+    background: #0a84ff; color: #fff; border-radius: 20px; font-family: inherit;
+    font-weight: 700; font-size: 14.5px;
+    opacity: 0; animation: bub-in 0.4s ease 3.3s forwards;
+  }
+  .ios-reply:active { filter: brightness(0.92); }
+
+  /* maps */
+  .gm-search { flex: 0 0 auto; margin: 26px 9px 0; padding: 10px 13px; display: flex; align-items: center; gap: 10px;
+    background: #fff; border-radius: 999px; box-shadow: 0 2px 7px rgba(0,0,0,0.22); font-size: 13.5px; color: #202124; font-weight: 600; }
+  .gm-back { color: #5f6368; font-size: 16px; }
+  .gm-modes { flex: 0 0 auto; display: flex; gap: 2px; padding: 9px 6px 7px; background: #fff; }
+  .gm-modes button {
+    flex: 1; cursor: pointer; font-family: inherit; padding: 6px 2px 5px;
+    background: none; border: none; border-bottom: 3px solid transparent; color: #5f6368;
+  }
+  .gm-modes button b { display: block; font-size: 15px; line-height: 1.1; filter: grayscale(1) opacity(0.75); }
+  .gm-modes button span { display: block; font-size: 9px; font-weight: 700; margin-top: 2px; }
+  .gm-modes button.sel { color: #1a73e8; border-bottom-color: #1a73e8; }
+  .gm-modes button.sel b { filter: none; }
+  .gm-map { flex: 1; position: relative; background: #e8eaed; }
+  .gm-map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #gm-route { stroke-dasharray: 400; stroke-dashoffset: 400; animation: gm-draw 0.9s ease forwards; }
+  @keyframes gm-draw { to { stroke-dashoffset: 0 } }
+  #gm-pin { animation: pin-drop 0.5s cubic-bezier(0.22, 1.6, 0.4, 1) 0.7s backwards; }
+  @keyframes pin-drop { from { transform: translate(196px, 78px); opacity: 0 } }
+  .gm-card { flex: 0 0 auto; padding: 11px 14px 14px; background: #fff; box-shadow: 0 -2px 10px rgba(0,0,0,0.12); }
+  .gm-row { display: flex; align-items: baseline; gap: 8px; }
+  .gm-row b { font-size: 19px; color: #188038; font-weight: 700; }
+  .gm-row span { font-size: 13px; color: #5f6368; font-weight: 600; }
+  .gm-sub { font-size: 11.5px; color: #5f6368; margin-top: 1px; font-weight: 600; }
+  #p-go {
+    width: 100%; margin-top: 10px; cursor: pointer; font-family: inherit;
+    background: #1a73e8; color: #fff; border: none; border-radius: 999px;
+    padding: 12px; font-size: 15px; font-weight: 700; letter-spacing: 0.02em;
+  }
+  #p-go:disabled { background: #c6c8cc; cursor: default; }
+
+  /* ── corner navigator (the phone, still guiding you) ── */
+  #nav {
+    position: fixed; right: 18px; bottom: 18px; z-index: 14;
+    width: 205px; padding: 10px 12px 11px;
+    background: #1c1626; border-radius: 18px; border: 2px solid var(--ink);
+    box-shadow: 0 10px 30px rgba(45, 33, 56, 0.35);
+    color: #fffaf2; transform: rotate(1.2deg);
+  }
+  #nav .n-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 700; }
+  #nav #nav-eta { font-size: 11px; color: #b9aed0; }
+  #nav #nav-next { margin-top: 4px; font-size: 13.5px; font-weight: 700; color: #ffd23d; }
+  /* the whole itinerary, always visible, so you can see the route ahead */
+  #nav #nav-route { list-style: none; margin: 7px 0 0; padding: 0;
+    border-left: 2px solid #3a3350; margin-left: 5px; }
+  #nav #nav-route li { position: relative; padding: 2px 0 2px 13px;
+    font-size: 11px; font-weight: 600; color: #7d7392; line-height: 1.35; }
+  #nav #nav-route li::before {
+    content: ''; position: absolute; left: -6px; top: 7px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #3a3350; border: 2px solid #1c1626;
+  }
+  #nav #nav-route li.done { color: #6f8f76; text-decoration: line-through; }
+  #nav #nav-route li.done::before { background: #4caf7d; }
+  #nav #nav-route li.now { color: #ffd23d; font-weight: 700; }
+  #nav #nav-route li.now::before { background: #ffd23d; box-shadow: 0 0 0 3px rgba(255,210,61,0.22); }
+  #nav #nav-route li.last::after { content: ' 🏛️'; }
+  #nav #nav-bag { margin-top: 5px; font-size: 11px; color: #b9aed0; }
+  @media (max-width: 640px) { #nav { right: 12px; bottom: 150px; width: 172px; }
+    #nav #nav-route li { font-size: 10px; } }
+
+  /* ── NPC dialogue ── */
+  #dlg {
+    position: fixed; left: 50%; bottom: 30px; transform: translate(-50%, 24px); z-index: 25;
+    width: min(460px, calc(100vw - 32px));
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--panel); border: 2px solid var(--panel-edge); border-radius: 20px;
+    padding: 16px 18px;
+    box-shadow: 0 18px 50px rgba(70, 50, 110, 0.3);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #dlg.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #dlg .d-face {
+    flex: 0 0 auto; width: 54px; height: 54px; border-radius: 50%;
+    background: #f0eafc; border: 2px solid var(--panel-edge);
+    display: flex; align-items: center; justify-content: center; font-size: 28px;
+  }
+  #dlg .d-body { flex: 1; }
+  #dlg b { font-size: 13px; color: var(--accent-2); letter-spacing: 0.03em; }
+  #dlg p { font-size: 14.5px; line-height: 1.5; color: var(--ink); margin-top: 3px; min-height: 44px; }
+  #dlg button {
+    margin-top: 9px; cursor: pointer; font-family: inherit; font-weight: 700; font-size: 13px;
+    color: #fff6ec; background: var(--accent); border: none; border-radius: 10px;
+    padding: 8px 18px; box-shadow: 0 3px 0 #d96a40;
+  }
+
+  /* ── HUD ── */
+  #hud { position: fixed; top: 20px; left: 24px; z-index: 10; pointer-events: none; }
+  #hud h1 { font-size: 20px; font-weight: 700; color: var(--ink); text-shadow: 0 1px 0 rgba(255,255,255,0.5); }
+  #hud p { font-size: 12.5px; color: #5d5375; margin-top: 3px; font-weight: 600; }
+
+  #controls-hint {
+    position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 10;
+    padding: 8px 16px; border-radius: 999px; pointer-events: none;
+    background: rgba(255, 250, 242, 0.75); backdrop-filter: blur(8px);
+    border: 2px solid var(--panel-edge);
+    color: #5d5375; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    transition: opacity 0.5s ease;
+  }
+  #controls-hint kbd { background: var(--panel-edge); color: var(--ink); padding: 1px 7px;
+    border-radius: 999px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  #controls-hint.hide { opacity: 0; }
+
+  /* ── project card ── */
+  #card {
+    position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 24px); z-index: 20;
+    width: min(400px, calc(100vw - 36px));
+    background: var(--panel); border: 2px solid var(--panel-edge); border-radius: 20px;
+    padding: 20px 22px 18px;
+    box-shadow: 0 18px 50px rgba(70, 50, 110, 0.28);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #card.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #card .c-tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--accent-2); background: #f0eafc;
+    padding: 3px 10px; border-radius: 999px; }
+  #card h2 { font-size: 24px; font-weight: 700; margin-top: 8px; }
+  #card p { font-size: 14px; line-height: 1.55; color: var(--ink-dim); margin-top: 6px; }
+  #card .c-actions { display: flex; gap: 10px; margin-top: 14px; }
+  #card a {
+    flex: 1; text-align: center; padding: 11px 12px; border-radius: 12px;
+    text-decoration: none; font-weight: 700; font-size: 14px;
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  #card a:hover { transform: translateY(-1px); filter: brightness(1.06); }
+  #card a.primary { background: var(--accent); color: #fff6ec; box-shadow: 0 3px 0 #d96a40; }
+  #card a.secondary { background: #efe7f7; color: var(--ink); box-shadow: 0 3px 0 #d5c5e2; }
+  #card .c-close { position: absolute; top: 10px; right: 14px; border: none; background: none;
+    font-size: 20px; color: var(--ink-dim); cursor: pointer; }
+
+  /* ── quest pill ── */
+  #quest {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 11;
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 18px 5px; border-radius: 14px;
+    background: var(--panel); border: 2.5px solid var(--ink);
+    box-shadow: 0 4px 0 var(--ink);
+    font-family: "Permanent Marker", cursive; font-weight: 400;
+    font-size: 14.5px; letter-spacing: 0.01em; color: var(--ink); white-space: nowrap;
+  }
+  #quest .q-icon { font-size: 15px; }
+  #quest #quest-count {
+    background: var(--accent); color: #fff6ec; border-radius: 999px;
+    font-size: 11.5px; padding: 2px 9px;
+  }
+  #quest #star-count {
+    background: #fdf0c2; color: #8a6d1a; border-radius: 999px;
+    font-size: 11.5px; padding: 2px 9px;
+  }
+  @media (max-width: 640px) {
+    #quest { top: auto; bottom: 150px; font-size: 12px; }
+  }
+
+  /* ── top-right toggles ── */
+  #toggles {
+    position: fixed; top: 20px; right: 24px; z-index: 12;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+  }
+  /* painted stickers, not frosted pills — solid paper, ink outline, hand-drop
+     shadow, marker lettering, each nudged a hair off-square like it was placed
+     by hand */
+  #toggles button {
+    border: 2.5px solid var(--ink); cursor: pointer;
+    background: var(--panel);
+    color: var(--ink); font-family: "Permanent Marker", cursive; font-weight: 400;
+    font-size: 14.5px; letter-spacing: 0.01em; line-height: 1.15;
+    padding: 6px 15px 4px; border-radius: 13px;
+    box-shadow: 0 4px 0 var(--ink);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  }
+  #toggles button:nth-child(odd) { transform: rotate(-1.2deg); }
+  #toggles button:nth-child(even) { transform: rotate(1deg); }
+  #toggles button:hover { transform: translateY(2px) rotate(0deg); background: #fff; box-shadow: 0 2px 0 var(--ink); }
+  #toggles button:active { transform: translateY(4px) rotate(0deg); box-shadow: 0 0 0 var(--ink); }
+
+  /* ── comfort mode: motion-sickness reducers ── */
+  #comfort-fx {
+    position: fixed; inset: 0; z-index: 9; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse 62% 62% at 50% 50%,
+      rgba(0,0,0,0) 44%, rgba(0,0,0,0.34) 78%, rgba(0,0,0,0.72) 100%);
+    transition: opacity 0.05s linear;
+    will-change: opacity;
+  }
+  #comfort-frame { position: fixed; inset: 0; z-index: 9; pointer-events: none; display: none; }
+  body.comfort #comfort-frame { display: block; }
+  /* faint fixed horizon tick — a stable reference frame the eye can lock onto */
+  #comfort-frame::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: 46px; height: 2px; margin: -1px 0 0 -23px;
+    background: rgba(255,255,255,0.18); border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.10);
+  }
+  body.title-mode #comfort-frame, body.title-mode #comfort-fx { display: none !important; }
+
+  /* ── mobile joystick ── */
+  #stick {
+    position: fixed; z-index: 15; width: 110px; height: 110px; border-radius: 50%;
+    background: rgba(255, 250, 242, 0.35); border: 2px solid rgba(255,255,255,0.55);
+    backdrop-filter: blur(4px); display: none;
+  }
+  #stick .knob {
+    position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255, 250, 242, 0.9); border: 2px solid var(--panel-edge);
+    transform: translate(-50%, -50%);
+  }
+  body.touch #stick { display: block; left: 24px; bottom: 24px; }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- comfort mode: turn-tunnel vignette + fixed horizon reference -->
+  <div id="comfort-fx"></div>
+  <div id="comfort-frame"></div>
+
+  <div id="loader">
+    <div class="planet-dot"></div>
+    <div class="bar"><i id="loader-bar"></i></div>
+    <p id="loader-msg">warming up the planet…</p>
+  </div>
+
+  <div id="title">
+    <p class="t-sub">45 real paintings, stolen in one night. <b>Get them back.</b></p>
+    <p class="t-by">an art heist on janelle ghanem's tiny planet</p>
+    <button id="enter-btn">start the case</button>
+    <span class="t-hint">or press ⏎</span>
+  </div>
+
+  <div id="arrival-ui">
+    <div id="arr-caption"></div>
+    <button id="arr-skip">skip intro ⏭</button>
+  </div>
+
+  <button id="note-btn" title="detective's notebook">🔎<span id="note-count" style="display:none">0</span></button>
+  <div id="toast"></div>
+  <div id="notebook">
+    <div class="nb-head">🕵️ Case Notebook<button id="note-close">×</button></div>
+    <div id="note-list"></div>
+  </div>
+
+  <div id="cam-controls">
+    <button id="rot-left" title="rotate left (Q)">⟲</button>
+    <div class="zoom-wrap">
+      <span class="zoom-ic">🔍</span>
+      <input id="zoom-slider" type="range" min="0.5" max="2.5" step="0.1" value="1" />
+      <span id="zoom-val">1.0×</span>
+    </div>
+    <button id="rot-right" title="rotate right (E)">⟳</button>
+  </div>
+
+  <div id="phone">
+    <div class="p-frame">
+      <div class="p-notch"></div>
+
+      <!-- SCREEN 1: the texts that start the whole night -->
+      <div class="p-screen" id="scr-msg">
+        <div class="ios-bar"><span class="ios-back">‹</span><span class="ios-title">Editor · The Chronicle</span><span class="ios-av">📰</span></div>
+        <div class="ios-thread">
+          <div class="bub in b1">You landed? Good. Tonight's opening at the Downtown Museum is <b>off</b>.</div>
+          <div class="bub in b2">🖼️ All 45 paintings were stolen at six. Every frame on the walls — empty. Police have nothing.</div>
+          <div class="bub in b3">You know every one of those canvases stroke by stroke. Find them before they leave the planet at midnight. 🕵️</div>
+          <div class="typing b4"><i></i><i></i><i></i></div>
+        </div>
+        <button class="ios-reply" id="msg-reply">on it. 🔎</button>
+      </div>
+
+      <!-- SCREEN 2: maps, for real this time -->
+      <div class="p-screen" id="scr-map">
+        <div class="gm-search"><span class="gm-back">←</span><span class="gm-dest">The Downtown Museum</span></div>
+        <div class="gm-modes">
+          <button data-t="jeep"><b>🚗</b><span id="eta-jeep">12 min</span></button>
+          <button data-t="train"><b>🚆</b><span id="eta-train">9 min</span></button>
+          <button data-t="bike"><b>🚲</b><span id="eta-bike">21 min</span></button>
+          <button data-t="walk"><b>🚶</b><span id="eta-walk">46 min</span></button>
+          <button data-t="boat"><b>⛵</b><span id="eta-boat">28 min</span></button>
+          <button data-t="rocket"><b>🚀</b><span id="eta-rocket">6 min</span></button>
+        </div>
+        <div class="gm-map">
+          <svg viewBox="0 0 300 260" preserveAspectRatio="xMidYMid slice">
+            <rect width="300" height="260" fill="#e8eaed"/>
+            <g stroke="#fff" fill="none">
+              <path d="M-10 70 H310" stroke-width="9"/><path d="M-10 168 H310" stroke-width="7"/>
+              <path d="M64 -10 V270" stroke-width="8"/><path d="M196 -10 V270" stroke-width="6"/>
+              <path d="M-10 220 H310" stroke-width="5"/><path d="M132 -10 V270" stroke-width="4"/>
+            </g>
+            <g fill="#d3e8d3">
+              <rect x="200" y="80" width="70" height="70" rx="4"/>
+              <rect x="10" y="180" width="44" height="34" rx="4"/>
+            </g>
+            <rect x="0" y="228" width="300" height="40" fill="#aadaff"/>
+            <path id="gm-route" d="M64 232 L64 168 L132 168 L132 70 L196 70 L196 108" fill="none"
+                  stroke="#1a73e8" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="64" cy="232" r="7" fill="#fff" stroke="#1a73e8" stroke-width="4"/>
+            <g id="gm-pin" transform="translate(196 108)">
+              <path d="M0 0 C -11 -16 -15 -20 -15 -28 A 15 15 0 1 1 15 -28 C 15 -20 11 -16 0 0 Z" fill="#ea4335"/>
+              <circle cx="0" cy="-28" r="6" fill="#fff"/>
+            </g>
+          </svg>
+        </div>
+        <div class="gm-card">
+          <div class="gm-row"><b id="gm-time">12 min</b><span id="gm-dist">3.2 km</span></div>
+          <div class="gm-sub" id="gm-via">fastest route now · via the coast road</div>
+          <button id="p-go" disabled>Go</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="nav">
+    <div class="n-head"><span id="nav-mode">🚙</span><span id="nav-eta">—</span></div>
+    <div id="nav-next">—</div>
+    <ol id="nav-route"></ol>
+    <div id="nav-bag"></div>
+  </div>
+
+  <div id="dlg">
+    <div class="d-face" id="dlg-face">📚</div>
+    <div class="d-body">
+      <b id="dlg-name">—</b>
+      <p id="dlg-text"></p>
+      <button id="dlg-ok">got it! →</button>
+    </div>
+  </div>
+
+  <div id="hud">
+    <h1>The Vanishing Gallery</h1>
+    <p>an art heist on janelle's tiny planet</p>
+  </div>
+
+  <div id="quest">
+    <span class="q-icon">🔎</span>
+    <span id="quest-text">🕵️ the vanishing gallery</span>
+    <span id="quest-count">stop 1/6</span>
+    <span id="star-count">⭐ 0/18</span>
+  </div>
+
+  <div id="toggles">
+    <button id="vibe-toggle" title="switch vibes">💖 barbie</button>
+    <button id="gfx-toggle" title="switch graphics style">✏️ sketchbook</button>
+    <button id="comfort-toggle" title="reduce motion sickness: locks the horizon, kills camera bob, dims edges while turning">🟢 comfort: on</button>
+    <button id="snd-toggle" title="toggle ambient sound">🔊 sound</button>
+    <button id="phone-btn" title="check your phone — change how you're travelling">📱 phone</button>
+    <button id="reset-progress" title="restart the case">↺ restart</button>
+  </div>
+
+  <div id="controls-hint">
+    <kbd>WASD</kbd> / <kbd>←↑↓→</kbd> move &nbsp;·&nbsp; click ground to travel &nbsp;·&nbsp; 🟡 evidence tents = clues
+  </div>
+
+  <div id="card" aria-hidden="true">
+    <button class="c-close" aria-label="close">×</button>
+    <span class="c-tag" id="card-tag">project</span>
+    <h2 id="card-title">—</h2>
+    <p id="card-desc">—</p>
+    <div class="c-actions">
+      <a id="card-visit" class="primary" target="_blank" rel="noopener">visit live →</a>
+      <a id="card-enter" class="secondary">step inside →</a>
+    </div>
+  </div>
+
+  <div id="stick"><div class="knob" id="stick-knob"></div></div>
+
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.4/build/index.module.js"
+    }
+  }
+  </script>
+  <script type="module" src="./planet.js?cb=p98"></script>
+</body>
+</html>
