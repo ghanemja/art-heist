@@ -37,11 +37,11 @@ export function headShapeFor(P = {}) {
     return out.set(x * (0.95 - 0.03 * long) * HR, y * (1.07 + 0.1 * long) * HR, z * HR).add(HC);
   };
 }
-const dirOf = (u, v, zs = 1) => new THREE.Vector3(u, v, zs * Math.sqrt(Math.max(0, 1 - u * u - v * v))).normalize();
+export const dirOf = (u, v, zs = 1) => new THREE.Vector3(u, v, zs * Math.sqrt(Math.max(0, 1 - u * u - v * v))).normalize();
 
 // a sphere pushed onto the head shape. mask(d) → keep this vertex (hair/beard region);
 // masked-out vertices sink inside the head, which leaves a clean, tapered hairline.
-function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, color = null } = {}) {
+export function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, color = null, post = null } = {}) {
   const g = new THREE.SphereGeometry(1, wSeg, hSeg);
   const p = g.attributes.position, v = new THREE.Vector3(), o = new THREE.Vector3();
   const col = color ? new Float32Array(p.count * 3) : null, c = new THREE.Color();
@@ -53,6 +53,7 @@ function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, color = nul
     // hairline is a smooth curve, not the sphere's grid stepping
     const k = mask ? THREE.MathUtils.lerp(0.9, inflate(v), ss(mask(v), -0.07, 0.07)) : inflate(v);
     o.sub(HC).multiplyScalar(k).add(HC);
+    if (post) post(o, v);
     p.setXYZ(i, o.x, o.y, o.z);
   }
   if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -139,6 +140,12 @@ function noseGeo(type, k) {
   g.scale(k, k, k); g.deleteAttribute('uv');
   const w = mergeVertices(g, 1e-6); w.computeVertexNormals();
   return w;
+}
+
+// a line round the head by azimuth: front → side → back (for hat brims, hairlines)
+export function lineAt(d, front, side, back) {
+  const t = Math.abs(Math.atan2(d.x, d.z)) / Math.PI;
+  return t < 0.5 ? THREE.MathUtils.lerp(front, side, ss(t, 0.1, 0.5)) : THREE.MathUtils.lerp(side, back, ss(t, 0.5, 0.92));
 }
 
 // ── hair: hairline by azimuth (front → side → back), a parting, sideburns, volume on top ──

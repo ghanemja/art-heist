@@ -43,6 +43,8 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
    the character (anxious, sleepy, cheerful, smug). Hair grows from the scalp inside a
    hairline mask with a smooth edge — never a cap or a ball stuck on the head. Hair has
    texture: combed strands flowing toward where it's gathered, a sheen streak, darker roots.
+7d. **Hats are made from the head they sit on** (`sculpt` the wearer's head shape, or fit a
+   band to its measured width/depth). Never a generic shape dropped on top.
 7c. **Necks grow out of the body.** A neck flares into the shoulders and tucks under the
    jaw, its outline fades at both ends (`inkW`), and it rises out of a collar.
 7b. **No emoji, anywhere in the UI.** People's faces are painted portraits rendered
