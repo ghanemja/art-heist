@@ -15,32 +15,65 @@ const MODES = {
   jeep: { max: 11, accel: 6, turn: 2.4, camD: 9.5, camH: 3.6, look: 1.2, radius: 0.8, follow: 3.0 },
 };
 
-// ── the jeep: soft, rounded, ink-lined — a toy you'd want to drive ──
-function buildJeep() {
+// ── the car: a little vintage roadster. The body is its side silhouette —
+// rounded deck, long bonnet, a nose, two wheel arches — extruded across its
+// width with a deep bevel, so every edge is soft and the arches are real cut-outs.
+function buildCar() {
   const g = new THREE.Group();
-  const body = paint(PAL.accent), dark = paint(PAL.ink, { hatch: 0 }), cream = paint(PAL.kerb);
+  const body = paint(0xd9573f), cream = paint(0xf1e4c6), chrome = paint(0xe6e0d2, { hatch: 0 });
+  const dark = paint(0x2a2230, { hatch: 0 }), seatM = paint(0xb07a52), cab = paint(0x3b2f3a, { hatch: 0 });
   const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
-  m(rbox(1.5, 0.55, 2.4, 0.22, 3), body, 0, 0.62, 0);                    // tub
-  m(rbox(1.36, 0.22, 0.9, 0.1, 2), body, 0, 0.98, 0.72);                  // bonnet
-  m(rbox(1.3, 0.08, 0.6, 0.04), paint(0xcfe6ea, { opacity: 0.7, hatch: 0 }), 0, 1.22, 0.28).rotation.x = -0.5;
-  for (const s of [-1, 1]) {
-    m(lathe([[0.001, 0], [0.12, 0], [0.12, 0.04], [0.001, 0.05]], 14), paint(0xfff1c8, { emissive: 0xffe2a0, hatch: 0 }), s * 0.45, 0.78, 1.21).rotation.x = Math.PI / 2;
-    m(rbox(0.1, 0.52, 0.1, 0.04), dark, s * 0.6, 1.25, -0.42);           // roll bar posts
+  const WR = 0.33, WZ = 0.86, AR = 0.47;                       // wheel radius, axle offset, arch radius (before bevel)
+  const sh = new THREE.Shape();
+  sh.moveTo(-1.28, 0.3);
+  sh.quadraticCurveTo(-1.42, 0.33, -1.4, 0.56);                // rear bumper bulge
+  sh.quadraticCurveTo(-1.36, 0.82, -1.02, 0.84);               // round rear deck
+  sh.lineTo(0.34, 0.84);                                       // the cockpit sill
+  sh.quadraticCurveTo(1.0, 0.83, 1.22, 0.7);                   // long bonnet
+  sh.quadraticCurveTo(1.43, 0.62, 1.4, 0.42);                  // the nose
+  sh.quadraticCurveTo(1.38, 0.3, 1.3, 0.29);
+  sh.absarc(WZ, WR, AR, -0.12, Math.PI + 0.12, false);         // front arch
+  sh.absarc(-WZ, WR, AR, -0.12, Math.PI + 0.12, false);        // rear arch
+  sh.lineTo(-1.28, 0.3);
+  const D = 1.12;
+  const bodyGeo = new THREE.ExtrudeGeometry(sh, { depth: D, bevelEnabled: true, bevelThickness: 0.15, bevelSize: 0.1, bevelSegments: 5, curveSegments: 28 });
+  bodyGeo.translate(0, 0, -D / 2).rotateY(-Math.PI / 2);
+  bodyGeo.deleteAttribute('uv');
+  m(bodyGeo, body);
+  // the open cockpit, seats and a steering wheel
+  m(rbox(1.08, 0.05, 1.12, 0.03), cab, 0, 0.93, -0.24);
+  for (const x of [-0.3, 0.3]) {
+    const back = m(rbox(0.46, 0.44, 0.14, 0.07), seatM, x, 1.1, -0.62); back.rotation.x = -0.18;
+    m(rbox(0.46, 0.08, 0.4, 0.04), seatM, x, 0.96, -0.42);
   }
-  m(rbox(1.3, 0.1, 0.1, 0.04), dark, 0, 1.52, -0.42);
-  for (const s of [-1, 1]) m(rbox(0.5, 0.4, 0.5, 0.12), cream, s * 0.36, 1.0, -0.1);   // seats
-  m(rbox(1.5, 0.14, 0.14, 0.06), cream, 0, 0.38, 1.24);                  // bumpers
-  m(rbox(1.5, 0.14, 0.14, 0.06), cream, 0, 0.38, -1.24);
-  const tyre = lathe([[0.18, -0.12], [0.33, -0.12], [0.36, -0.06], [0.36, 0.06], [0.33, 0.12], [0.18, 0.12]], 18);
+  const wheel = m(new THREE.TorusGeometry(0.13, 0.02, 6, 20), dark, 0.3, 1.08, 0.12); wheel.rotation.x = -0.9;
+  // windshield: chrome frame + pale glass, leaning back
+  const ws = new THREE.Group(); ws.position.set(0, 0.94, 0.38); ws.rotation.x = -0.32; g.add(ws);
+  ws.add(new THREE.Mesh(rbox(1.12, 0.36, 0.03, 0.012), paint(0xcfe6ea, { opacity: 0.55, hatch: 0 })).translateY(0.2));
+  ws.add(new THREE.Mesh(rbox(1.18, 0.04, 0.05, 0.02), chrome).translateY(0.39));
+  for (const x of [-0.58, 0.58]) ws.add(new THREE.Mesh(rbox(0.05, 0.42, 0.05, 0.02), chrome).translateX(x).translateY(0.19));
+  // the face: round lamps on the wings, a cream grille, chrome bumpers
+  for (const x of [-0.46, 0.46]) {
+    const lamp = m(lathe([[0.001, 0], [0.12, 0], [0.12, 0.05], [0.09, 0.09], [0.001, 0.1]], 16), chrome, x, 0.66, 1.3); lamp.rotation.x = Math.PI / 2;
+    const glass = m(new THREE.SphereGeometry(0.095, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), paint(0xfff1c8, { emissive: 0xffe2a0, hatch: 0 }), x, 0.66, 1.39); glass.rotation.x = Math.PI / 2;
+    m(rbox(0.16, 0.08, 0.05, 0.02), paint(0xe2483a, { emissive: 0x7a1710, hatch: 0 }), x, 0.6, -1.5);   // tail lamps
+  }
+  m(rbox(0.5, 0.2, 0.06, 0.05), cream, 0, 0.46, 1.47);
+  for (let i = -2; i <= 2; i++) m(rbox(0.02, 0.14, 0.02, 0.008), dark, i * 0.08, 0.46, 1.5);
+  m(rbox(1.5, 0.1, 0.12, 0.05), chrome, 0, 0.3, 1.5);
+  m(rbox(1.5, 0.1, 0.12, 0.05), chrome, 0, 0.3, -1.52);
+  // wheels: fat rounded tyres, whitewalls, domed hubcaps
+  const tyre = lathe([[0.2, -0.11], [0.3, -0.11], [WR, -0.07], [WR + 0.005, 0], [WR, 0.07], [0.3, 0.11], [0.2, 0.11]], 22);
   tyre.rotateZ(Math.PI / 2);
   const wheels = [];
-  for (const [x, z] of [[-0.78, 0.78], [0.78, 0.78], [-0.78, -0.8], [0.78, -0.8]]) {
-    const w = m(tyre, dark, x, 0.36, z);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.26, 12).rotateZ(Math.PI / 2), cream);
-    w.add(hub); wheels.push(w);
+  for (const [x, z] of [[-0.6, WZ], [0.6, WZ], [-0.6, -WZ], [0.6, -WZ]]) {
+    const w = m(tyre, dark, x, WR, z);
+    const s = Math.sign(x);
+    const wall = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.035, 6, 22).rotateY(Math.PI / 2), cream); wall.position.x = s * 0.1; w.add(wall);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-s * Math.PI / 2), chrome); hub.position.x = s * 0.09; w.add(hub);
+    wheels.push(w);
   }
-  const spare = m(tyre, dark, 0, 0.8, -1.35); spare.rotation.y = Math.PI / 2;
-  g.add(blobShadow(1.0, 1.5));
+  g.add(blobShadow(1.0, 1.6));
   g.userData.wheels = wheels;
   return ink(g, 'mid');
 }
@@ -50,7 +83,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
   const squash = new THREE.Group();          // squash & stretch lives here
   root.add(squash);
   scene.add(root);
-  const bodies = { walk: new THREE.Group(), jeep: buildJeep() };
+  const bodies = { walk: new THREE.Group(), jeep: buildCar() };
   for (const b of Object.values(bodies)) { squash.add(b); b.visible = false; }
   const critic = { inst: null };
   // a simple stand-in until the model streams in (never visible for long)
@@ -64,7 +97,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // the critic also drives the jeep
     const rider = makeHuman(glb, LOOKS.critic);
     sit(rider);
-    const seat = new THREE.Group(); seat.position.set(0.36, 0.66, -0.12); seat.add(rider.rig);
+    const seat = new THREE.Group(); seat.position.set(0.3, 0.42, -0.36); seat.add(rider.rig);
     bodies.jeep.add(seat);
   });
 

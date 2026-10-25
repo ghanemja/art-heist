@@ -20,6 +20,10 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - Rig fixed: poses are now written in the model's own axes and converted per bone, so legs/arms swing forward-back (they swung sideways before). Real stride with knee bend, arm counter-swing, a run lean; the critic sits properly at the jeep's wheel.
   - Floors: the museum forecourt and station platform register as walkable floors (`addFloor`/`groundAt`) — no more sinking.
   - Camera: keeps its own facing (no more chasing your turns into a spiral), eases behind you only while you walk forward, chase cam in the jeep, lower and closer.
+- 🟡 **Townspeople were clones of the main character → each their own person; fix the car model; apply the critic colour fix from the original game.**
+  - `folk.js`: a jointed toon body per person with their own build, face (eyes, brows, nose, blush, mouth), hair and outfit — Vivi (bun, glasses, long burgundy coat), Otto (broad guard in a peaked cap and belted uniform), Pia (courier: helmet, ponytail, hi-vis vest, short sleeves), Rex (framer: beard, flat cap, canvas apron). Same height as the critic; they idle, turn to face you, gesture while talking.
+  - Car: a vintage roadster — extruded, deep-bevelled body with real wheel arches, long bonnet, round lamps, grille, chrome bumpers, windshield, seats, whitewall tyres; the critic sits at the wheel.
+  - Critic colours: hands repainted skin (they were baked into the jeans mesh) and nape hair repainted hair, on top of the model's own vertex colours.
 - ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 

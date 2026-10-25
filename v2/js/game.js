@@ -95,7 +95,7 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
     const pr = $('prompt');
     if (!nearest) { show(pr, false); return; }
     const label = nearest.kind === 'person' ? `talk to ${PEOPLE.find(p => p.id === nearest.id).name.split(',')[0]}`
-      : nearest.kind === 'jeep' ? 'get in the jeep' : nearest.kind === 'exit' ? 'get out' : 'look closer';
+      : nearest.kind === 'jeep' ? 'get in the car' : nearest.kind === 'exit' ? 'get out' : 'look closer';
     pr.innerHTML = `<kbd>E</kbd>${label}`;
     show(pr);
   }

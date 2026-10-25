@@ -1,4 +1,4 @@
-// ─── PEOPLE: everyone in town is drawn from the same rigged body ────────────
+// ─── PEOPLE: the critic's rig (the player), plus the townsfolk (folk.js) ───
 // critic.glb is built from flat colour materials (beret, hair, skin, sweater,
 // jeans, shoe, sole), so one rig, re-coloured, gives the whole cast at the
 // right human scale. Poses are written in the MODEL's axes (+X forward,
@@ -8,23 +8,57 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { paint, ink, blobShadow } from './style.js';
+import { makeFolk, poseFolk } from './folk.js';
 
 export const HUMAN_SCALE = 0.13;           // ≈1.2 units tall
 const FOOT = 4.593;                        // model units from the origin down to the soles
 
 let _glb = null;
 export function loadHuman() {
-  if (!_glb) _glb = new Promise((res, rej) => new GLTFLoader().load('../models/critic.glb', res, undefined, rej));
+  if (!_glb) _glb = new Promise((res, rej) => new GLTFLoader().load('../models/critic.glb', (g) => { fixColors(g.scene); res(g); }, undefined, rej));
   return _glb;
 }
 
-// colours by material name; anything left out keeps the critic's own
+// critic.glb authoring bug (fixed the same way in the original game): the hands
+// are baked into the JEANS mesh (so they render blue) and the nape hair into the
+// SWEATER mesh (grey). Repaint just the verts those bones drive with the right
+// colour as vertex colours; clones share the geometry, so this runs once.
+const REPAINT = { jeans: { bones: ['handL', 'handR'], to: 'skin' }, sweater: { bones: ['head'], to: 'hair' } };
+function fixColors(root) {
+  const colOf = {};
+  root.traverse(o => { if (o.material?.name) colOf[o.material.name] = o.material.color; });
+  root.traverse(o => {
+    if (!o.isSkinnedMesh) return;
+    const rule = REPAINT[o.material.name], tgt = rule && colOf[rule.to];
+    const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    if (!tgt || !si) return;
+    const pick = new Set();
+    o.skeleton.bones.forEach((b, i) => { if (rule.bones.includes(b.name.replace(/\./g, ''))) pick.add(i); });
+    // the model already carries baked vertex colours (COLOR_0); keep them, and
+    // fold the material colour in so these two meshes can drop it (absolute colours)
+    const n = g.attributes.position.count, col = new Float32Array(n * 3), bc = o.material.color, old = g.attributes.color;
+    for (let v = 0; v < n; v++) {
+      let w = 0; for (let k = 0; k < 4; k++) if (pick.has(si.getComponent(v, k))) w += sw.getComponent(v, k);
+      const c = w > 0.5 ? tgt : bc;
+      const f = (i) => old ? old.getComponent(v, i) : 1;
+      col[v * 3] = c.r * f(0); col[v * 3 + 1] = c.g * f(1); col[v * 3 + 2] = c.b * f(2);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.userData.absColor = true;
+  });
+}
+
+// the critic keeps her own colours; everyone else is their own person (folk.js)
 export const LOOKS = {
   critic: {},
-  vivi: { hair: 0x2b1d1a, beret: 0x2b1d1a, skin: 0xc68b62, sweater: 0xb8443a, jeans: 0x3a3340, shoe: 0x2a2230, height: 1.03 },
-  otto: { hair: 0x9a9490, beret: 0x24304a, skin: 0xe6c3a5, sweater: 0x33435f, jeans: 0x2a3040, width: 1.12 },
-  pia: { hair: 0x1d1a1a, beret: 0xe0b445, skin: 0x8d5a3b, sweater: 0x3f8f88, jeans: 0x3b4a5e, sole: 0xe0b445, height: 0.96 },
-  rex: { hair: 0x7a4a2a, beret: 0x5b4636, skin: 0xe0b48e, sweater: 0xc9953a, jeans: 0x5a4636, width: 1.06 },
+  vivi: { folk: true, skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', glasses: true, top: 0x8e2f3a, outfit: 'coat', accent: 0xf3ead7,
+    bottom: 0x2a2230, shoes: 0x1f1a22, height: 1.05, build: 0.94 },
+  otto: { folk: true, skin: 'rose', hair: 0x9a9490, hairStyle: 'crop', hat: 'cap', hatColor: 0x24304a, top: 0x3a4a68, outfit: 'uniform',
+    bottom: 0x262c3c, height: 0.98, build: 1.22, belly: 1 },
+  pia: { folk: true, skin: 'brown', hair: 0x1d1a1a, hairStyle: 'pony', hat: 'helmet', hatColor: 0xe0b445, top: 0x3f8f88, sleeve: 'short',
+    outfit: 'vest', accent: 0xd6e04c, bottom: 0x3b4a5e, shoes: 0xe9e2d0, height: 0.95, build: 0.9 },
+  rex: { folk: true, skin: 'fair', hair: 0x7a4a2a, hairStyle: 'crop', beard: true, hat: 'flat', hatColor: 0x5b4636, top: 0x6f8a6a,
+    outfit: 'apron', accent: 0xd8c9a8, bottom: 0x4a3a2c, height: 1.02, build: 1.08, belly: 0.4 },
 };
 
 const AX = { fwd: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0), side: new THREE.Vector3(0, 0, 1) };
@@ -37,7 +71,8 @@ export function makeHuman(glb, look = {}) {
     if (!o.isMesh) return;
     o.frustumCulled = false;
     const m = o.material, name = m.name;
-    o.material = paint(look[name] ?? m.color.getHex(), { hatch: 1 });
+    o.material = o.geometry.userData.absColor ? paint(0xffffff, { vertexColors: true })
+      : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color });
   });
   ink(rig, 'fine');
   const s = HUMAN_SCALE * (look.height ?? 1);
@@ -76,6 +111,7 @@ const BONES = ['hips', 'spine1', 'spine2', 'neck', 'head', 'upperlegL', 'lowerle
 
 // k: 0 standing … 1 full walk. talk: 0…1 a little hand gesture while speaking
 export function pose(inst, dt, k, { talk = 0, run = 0 } = {}) {
+  if (inst.kind === 'folk') return poseFolk(inst, dt, k, { talk });
   if (!inst.bones.hips) return 0;
   inst.t += dt;
   inst.wc += dt * (5.6 + 2.4 * run) * (0.35 + 0.9 * k);
@@ -122,6 +158,12 @@ export function person(look) {
   const turnG = new THREE.Group(); g.add(turnG);
   g.add(blobShadow(0.3));
   g.userData.turn = turnG;
+  if (look.folk) {
+    const inst = makeFolk(look);
+    turnG.add(inst.rig);
+    g.userData.human = inst;
+    return g;
+  }
   loadHuman().then(glb => {
     const inst = makeHuman(glb, look);
     turnG.add(inst.rig);
