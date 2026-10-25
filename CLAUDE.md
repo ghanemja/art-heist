@@ -25,6 +25,13 @@ modes (top-right toggle): **Classic** (lit 3D), **Sketchbook** (inked/cel), and
   `userData._gpForce = true` to bypass the size/slab skips. If a new thing shows
   up in Wasteland with no ink around it, it wasn't registered.
 
+## People models
+
+Making a person (townsfolk, crowd, any character)? Follow the rules in
+[`AGENTS.md`](AGENTS.md#making-people-models-v2-v2jsfolkjs): never a clone of the
+critic, her scale, shoes on the ground, smooth skinned joints, shoulders grown from
+the torso, real hands, a face, idle life, and verify up close.
+
 ## Bevels vs. the browser — the balance to hold
 
 The models must read **curved, smooth and real** — bevelled edges, smooth

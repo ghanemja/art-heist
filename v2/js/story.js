@@ -179,7 +179,7 @@ export function buildCase(scene, W) {
   for (const p of PEOPLE) {
     const d = at[p.id];
     const m = person(LOOKS[p.id]);
-    place(m, d, yawToFace(d, mF(0, 6)));
+    settle(m, d, 0.25, 0, yawToFace(d, mF(0, 6))); scene.add(m);   // people stand ON the ground (no sink)
     items.push({ kind: 'person', id: p.id, dir: d, obj: m });
     W.solid(d, 0.35);
   }

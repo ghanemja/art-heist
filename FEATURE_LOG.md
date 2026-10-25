@@ -24,6 +24,11 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - `folk.js`: a jointed toon body per person with their own build, face (eyes, brows, nose, blush, mouth), hair and outfit — Vivi (bun, glasses, long burgundy coat), Otto (broad guard in a peaked cap and belted uniform), Pia (courier: helmet, ponytail, hi-vis vest, short sleeves), Rex (framer: beard, flat cap, canvas apron). Same height as the critic; they idle, turn to face you, gesture while talking.
   - Car: a vintage roadster — extruded, deep-bevelled body with real wheel arches, long bonnet, round lamps, grille, chrome bumpers, windshield, seats, whitewall tyres; the critic sits at the wheel.
   - Critic colours: hands repainted skin (they were baked into the jeans mesh) and nape hair repainted hair, on top of the model's own vertex colours.
+- 🟡 **People: missing feet, abrupt thigh→calf joints; then fix hands + shoulders; add a people-model rule to AGENTS.md.**
+  - Each arm and leg is now one skinned tube whose weights blend across the knee/elbow, so joints curve; profiles are Catmull-Rom smoothed.
+  - Shoes with soles that sit on the ground (people are placed with no sink); shoes contrast with trousers.
+  - Shoulders slope out of the torso, the arm joint sits inside the curve (no shoulder balls); mitten hands with a palm, finger curl and thumb.
+  - New `AGENTS.md` "Making people models" rules, linked from CLAUDE.md.
 - ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 

@@ -52,9 +52,9 @@ function fixColors(root) {
 export const LOOKS = {
   critic: {},
   vivi: { folk: true, skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', glasses: true, top: 0x8e2f3a, outfit: 'coat', accent: 0xf3ead7,
-    bottom: 0x2a2230, shoes: 0x1f1a22, height: 1.05, build: 0.94 },
+    bottom: 0x2a2230, shoes: 0x6e2a2e, height: 1.05, build: 0.94 },
   otto: { folk: true, skin: 'rose', hair: 0x9a9490, hairStyle: 'crop', hat: 'cap', hatColor: 0x24304a, top: 0x3a4a68, outfit: 'uniform',
-    bottom: 0x262c3c, height: 0.98, build: 1.22, belly: 1 },
+    bottom: 0x262c3c, shoes: 0x1e1a1c, sole: 0x6a5e54, height: 0.98, build: 1.22, belly: 1 },
   pia: { folk: true, skin: 'brown', hair: 0x1d1a1a, hairStyle: 'pony', hat: 'helmet', hatColor: 0xe0b445, top: 0x3f8f88, sleeve: 'short',
     outfit: 'vest', accent: 0xd6e04c, bottom: 0x3b4a5e, shoes: 0xe9e2d0, height: 0.95, build: 0.9 },
   rex: { folk: true, skin: 'fair', hair: 0x7a4a2a, hairStyle: 'crop', beard: true, hat: 'flat', hatColor: 0x5b4636, top: 0x6f8a6a,
