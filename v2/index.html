@@ -60,6 +60,12 @@
   #way svg { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); filter: drop-shadow(2px 3px 0 rgba(42,34,48,.5)); animation: wayBob 1.1s ease-in-out infinite; }
   #way span { position: absolute; left: 0; top: 26px; transform: translateX(-50%); white-space: nowrap; font-size: 17px; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--sketch); padding: 0 8px; }
   @keyframes wayBob { 50% { margin-top: -5px; } }
+  /* someone the car just met */
+  #bubbles { position: fixed; inset: 0; pointer-events: none; z-index: 8; overflow: hidden; }
+  .bub { position: absolute; left: 0; top: 0; white-space: nowrap; padding: 0 14px 2px; font-family: 'Caveat', cursive; font-weight: 700; font-size: 30px; will-change: transform; }
+  .bub.yell { font-size: 34px; color: var(--accent); }
+  .bub.wail { font-size: 42px; letter-spacing: .02em; }
+  .bub.grumble { font-family: 'Patrick Hand', cursive; font-weight: 400; font-size: 19px; padding: 2px 12px; }
   #nbBtn { right: 16px; top: 14px; font-size: 20px; }
   #nbBtn i { font-style: normal; display: inline-block; min-width: 22px; margin-left: 6px; background: var(--accent); color: #fff; border-radius: 50%; text-align: center; font-size: 15px; }
   #hint { left: 14px; bottom: 14px; font-size: 15px; padding: 4px 12px; max-width: calc(100vw - 200px); line-height: 1.6; opacity: .92; }
@@ -139,6 +145,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=18"></script>
+<script type="module" src="./js/main.js?cb=20"></script>
 </body>
 </html>

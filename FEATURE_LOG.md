@@ -7,6 +7,15 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"Road paths are slightly broken in some areas, like to the right of the museum; in the museum, show more ornate frames for the ones that got stolen; at the top of the glass by the ladder, show a rope and broken glass."** Done, verified by headless renders; the original game still loads clean (museum.js is shared).
+  - Roads: each ribbon is now draped across its width too (one height per cross-section tilted it on the museum's levelled slope, so grass bit through one edge and the other floated) and sits on the highest ground near each vertex.
+  - Frames: a carved, gilded frame (cushion moulding, raised lip, pearl bead, shell-and-boss corners, scrolls) on the forecourt easel, plus two more empty ones leaned behind it; the stolen paintings on the exhibition banners sit in painted gilt frames.
+  - The dome: the pane is smashed — jagged teeth of glass inked round the hole, hairline cracks into the next panes; a grappling hook caught on the rib above it; a thick knotted rope down the dome, across the roof, over the east wing's parapet to the top of the ladder; shards on both roofs.
+- 🟡 **"Keep the car on the road so it's easier to drive; if you hit a person they fly away, land on the ground screaming (oooohhh!) or something fun."** Done in v2, verified headlessly (no off-road samples under full-lock steering; full knock-over cycles).
+  - The car is held on the road: it slides along the kerb instead of leaving it, and eases into line with the road when you're not steering (never more than ~50°, so junction turns are yours). It parks at the kerb by the plaza. Lamps and people no longer stop it.
+  - Hit someone: they launch flailing with a WAAAH!, tumble, bounce once, land flat on their back with a sung, falling "oooOOOHHH…" (Web Audio), lie there, get up with a grumble ("My INSURANCE!", "Oi! Mind the paintwork!"…) and walk back to their spot. The story's people always come home; you can't talk to anyone mid-air.
+  - New townsfolk out walking Main Street (`crowd.js`): Mabel (retired teacher), Sam (student with a café coffee), Dot (dress + beanie) — each their own person per AGENTS.md, looping the pavements and crossing the road.
+
 - 🟡 **"Make the gameplay clearer; the car doesn't show up at first; the camera controls could be better."** Done in v2, verified by headless play-throughs (start → Vivi → suspects → clues → notebook → verdict, plus driving); deploy with `./deploy.sh`.
   - Case board (top left) replaces the one-line goal: 1 · find Vivi → 2 · question Otto, Pia, Rex (with where each one is) + "look around" with finds counted per place (museum, Main Street, harbour, station — never what they mean) → 3 · name the thief → case closed. Click any line to follow it.
   - Waypoint: a sketched arrow pins your current lead (or sits on the screen edge pointing the way) with the distance; it follows the next lead on its own.

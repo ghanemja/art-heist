@@ -186,6 +186,34 @@ export function onRoad(d, pad = 0) {
   for (const rd of ROADS) for (const p of rd.pts) if (arc(d, p) < rd.half + pad) return true;
   return false;
 }
+// the nearest road to a direction: which carriageway, how far from its centre
+// line, which way it runs there. The car uses it to stay on the road. All the
+// centre-line samples are packed once (after the town is built) for speed.
+let _rp = null, _rn = 0;
+export function nearestRoad(d) {
+  const n = ROADS.reduce((a, r) => a + r.pts.length, 0);
+  if (!_rp || _rn !== n) {
+    _rp = { xyz: new Float32Array(n * 3), half: new Float32Array(n), road: new Int32Array(n), idx: new Int32Array(n) };
+    let k = 0;
+    ROADS.forEach((r, ri) => r.pts.forEach((p, pi) => { _rp.xyz.set([p.x, p.y, p.z], k * 3); _rp.half[k] = r.half; _rp.road[k] = ri; _rp.idx[k] = pi; k++; }));
+    _rn = n;
+  }
+  // the road whose edge is nearest (most inside): minimise distance − half-width
+  let best = -1, bestEx = 1e9, bestA = 0;
+  const { xyz, half } = _rp;
+  for (let k = 0; k < n; k++) {
+    const dot = d.x * xyz[k * 3] + d.y * xyz[k * 3 + 1] + d.z * xyz[k * 3 + 2];
+    if (dot < 0.97) continue;                                   // > ~10 units away
+    const a = Math.acos(Math.min(1, dot)) * R, ex = a - half[k];
+    if (ex < bestEx) { bestEx = ex; best = k; bestA = a; }
+  }
+  if (best < 0) return null;
+  const rd = ROADS[_rp.road[best]], i = _rp.idx[best], P = rd.pts;
+  const p = P[i], a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+  const tangent = b.clone().sub(a).projectOnPlane(p).normalize();
+  return { point: p, dist: bestA, half: rd.half, tangent };
+}
+
 // a road ribbon laid ON the terrain, with a pale kerb underlay and a dashed
 // centre line for the wide ones — painted, not modelled
 const roadMat = paint(PAL.road, { hatch: 0 });
@@ -196,21 +224,35 @@ roadMat.polygonOffsetFactor = -2; roadMat.polygonOffsetUnits = -2;
 kerbMat.polygonOffsetFactor = -1; kerbMat.polygonOffsetUnits = -1;
 dashMat.polygonOffsetFactor = -3; dashMat.polygonOffsetUnits = -3;
 function ribbon(pts, half, lift, closed, mat, dashed = false) {
-  const pos = [], idx = [], lat = new THREE.Vector3();
+  // Draped ACROSS its width too: one height per cross-section tilted the strip
+  // on a side-slope (the museum's levelled plane), so grass bit through one
+  // edge and the other floated. Each vertex sits on the highest ground near it,
+  // which also keeps it above the planet mesh's flat triangles on concave ground.
+  const pos = [], idx = [], lat = new THREE.Vector3(), a1 = new THREE.Vector3(), a2 = new THREE.Vector3(), q = new THREE.Vector3();
   const n = pts.length, N = closed ? n + 1 : n;
+  const L = dashed ? 1 : Math.max(2, Math.ceil((half * 2) / 0.45));
+  const drape = (dir) => {
+    a1.crossVectors(dir, Math.abs(dir.y) < 0.9 ? UP : lat).normalize(); a2.crossVectors(dir, a1);
+    let r = radiusAt(dir);
+    for (const [u, v] of [[0.38, 0], [-0.38, 0], [0, 0.38], [0, -0.38]]) r = Math.max(r, radiusAt(q.copy(dir).multiplyScalar(R).addScaledVector(a1, u).addScaledVector(a2, v).normalize()));
+    return r;
+  };
   for (let k = 0; k < N; k++) {
     const i = k % n;
     const d = pts[i], dn = pts[closed ? (i + 1) % n : Math.min(i + 1, n - 1)], dp = pts[closed ? (i - 1 + n) % n : Math.max(i - 1, 0)];
     const tang = dn.clone().sub(dp).normalize();
     lat.crossVectors(d, tang).normalize();
-    const r = radiusAt(d) + lift;
-    const c = d.clone().multiplyScalar(r);
-    pos.push(...c.clone().addScaledVector(lat, half).toArray(), ...c.clone().addScaledVector(lat, -half).toArray());
+    for (let j = 0; j <= L; j++) {
+      const dir = d.clone().multiplyScalar(R).addScaledVector(lat, half - (2 * half * j) / L).normalize();
+      pos.push(...dir.multiplyScalar(drape(dir.clone()) + lift).toArray());
+    }
   }
   for (let k = 0; k < N - 1; k++) {
     if (dashed && (k % 3) !== 0) continue;
-    const a = k * 2, b = a + 2;
-    idx.push(a, b, a + 1, a + 1, b, b + 1);
+    for (let j = 0; j < L; j++) {
+      const a = k * (L + 1) + j, b = a + L + 1;
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

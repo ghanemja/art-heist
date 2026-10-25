@@ -4,7 +4,9 @@
 // with one buzz of the phone telling you why you're here. After that the game
 // never explains a clue — you look, you listen, you decide.
 import * as THREE from 'three';
-import { arc, radiusAt, settle, yawToFace } from './world.js';
+import { R, arc, radiusAt, settle, yawToFace, nearestRoad } from './world.js';
+import { buildWalkers, tickWalkers, walkerHome, WALKERS } from './crowd.js';
+import { createBumps } from './bump.js';
 import { CLUES, PEOPLE, SUSPECTS, PLACES, judge, buildCase, sketchProp } from './story.js';
 import { paintPeople, paintThings } from './portraits.js';
 import { LOOKS } from './human.js';
@@ -30,12 +32,39 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
 
   // ── a parked jeep you can walk up to ──
   const parked = player.bodies.jeep.clone(true);
-  // beside the plaza, in view when you start — not behind you where the camera sits
-  const jeepSpot = town.museumFrame(5.4, 2.2);
-  settle(parked, jeepSpot, 1.0, 0.02, yawToFace(jeepSpot, town.museumFrame(5.4, 12)));
+  // beside the plaza, in view when you start — not behind you where the camera sits —
+  // and ON the road, pulled in to the kerb, pointing along it (the car keeps to roads)
+  let jeepSpot = town.museumFrame(5.4, 2.2), jeepFace = town.museumFrame(5.4, 12);
+  {
+    const nr = nearestRoad(jeepSpot);
+    if (nr && nr.dist < 6) {
+      const lat = new THREE.Vector3().crossVectors(nr.point, nr.tangent).normalize();
+      const sg = Math.sign(lat.dot(jeepSpot.clone().sub(nr.point))) || 1;
+      jeepSpot = nr.point.clone().multiplyScalar(R).addScaledVector(lat, sg * nr.half * 0.45).normalize();
+      jeepFace = jeepSpot.clone().multiplyScalar(R).addScaledVector(nr.tangent, 5).normalize();
+    }
+  }
+  settle(parked, jeepSpot, 1.0, 0.02, yawToFace(jeepSpot, jeepFace));
   parked.visible = true;                 // the player's car body starts hidden (you're on foot), and so did its clone
   scene.add(parked);
   let jeepDir = jeepSpot.clone();
+
+  // ── townsfolk out walking, and what happens when the car meets anyone ──
+  const walkers = buildWalkers(scene, town);
+  const bumps = createBumps({ camera, player });
+  const VOICE = {
+    vivi: { pitch: 380, line: 'My INSURANCE!' }, otto: { pitch: 150, line: 'I was on my BREAK!' },
+    pia: { pitch: 350, line: 'Watch it — I\'m the courier here!' }, rex: { pitch: 190, line: 'Oi! Mind the paintwork!' },
+  };
+  for (const it of items) {
+    if (it.kind !== 'person') continue;
+    const pos = it.obj.position.clone(), q = it.obj.quaternion.clone();
+    bumps.add(it.obj, { ...VOICE[it.id], home: () => it.dir,
+      onAway: () => { it.knocked = true; },
+      onBack: () => { it.obj.position.copy(pos); it.obj.quaternion.copy(q); it.knocked = false; } });
+  }
+  for (const w of walkers) bumps.add(w.obj, { pitch: WALKERS[w.id].pitch, line: WALKERS[w.id].line,
+    home: () => walkerHome(w), onAway: () => { w.paused = true; }, onBack: () => { w.paused = false; } });
 
   // ── title ──
   show($('loader'), false);
@@ -102,6 +131,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     let best = 1e9;
     if (player.st.mode === 'walk') {
       for (const it of items) {
+        if (it.knocked) continue;                    // can't chat to someone mid-air
         const lim = it.kind === 'person' ? 2.4 : 2.1;
         const d = arc(here, it.dir);
         if (d < lim && d < best) { best = d; nearest = it; }
@@ -341,7 +371,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const _pv = new THREE.Vector3();
   function tickPeople(dt) {
     for (const it of items) {
-      if (it.kind !== 'person') continue;
+      if (it.kind !== 'person' || it.knocked) continue;
       const h = it.obj.userData.human; if (!h) continue;
       const talking = G.ui === 'talk' && G.talkWho?.id === it.id;
       h.talkK = (h.talkK || 0) + ((talking ? 1 : 0) - (h.talkK || 0)) * (1 - Math.exp(-5 * dt));
@@ -355,6 +385,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   function update(dt, t) {
     tickPeople(dt);
+    tickWalkers(walkers, dt);
+    if (G.state === 'play') bumps.update(dt);
     if (G.state === 'cold') {
       const e = performance.now() / 1000 - G.t0;
       let acc = 0, i = 0;
@@ -384,5 +416,5 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     updateWaypoint();
     return false;
   }
-  return { G, update, items, FACE, SKETCH, jeepSpot: () => jeepDir.clone() };
+  return { G, update, items, FACE, SKETCH, bumps, walkers, jeepSpot: () => jeepDir.clone() };
 }

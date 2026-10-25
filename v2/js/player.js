@@ -4,7 +4,7 @@
 // most adventure games live or die by. On foot, controls are camera-relative;
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
-import { R, radiusAt, groundAt, standAt, isWater, arc } from './world.js';
+import { R, radiusAt, groundAt, standAt, isWater, arc, nearestRoad, slerpDir } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
 import { loadHuman, makeHuman, pose, sit, LOOKS } from './human.js';
@@ -145,8 +145,29 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
   const key = (...c) => c.some(k => st.keys.has(k));
   const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _w = new THREE.Vector3(), _m = new THREE.Matrix4();
 
+  // ── the car stays on the road: it slides along the kerb instead of leaving
+  // it, and when you're not steering it eases into line with the road. You can
+  // always turn off at a junction — the assist never pulls more than ~50°.
+  // (Get in off-road and it's free until it finds a road, then it's held.)
+  function keepOnRoad(dt) {
+    const nr = nearestRoad(st.dir);
+    if (!nr) { st.roadLock = false; return; }
+    const lim = nr.half * 0.75 + 0.1;
+    const tg = nr.tangent.clone(); if (tg.dot(st.heading) < 0) tg.negate();
+    if (nr.dist <= lim) st.roadLock = true;
+    else if (st.roadLock || nr.dist < lim + 1.2) {
+      st.dir.copy(slerpDir(nr.point, st.dir, lim / nr.dist));
+      st.heading.lerp(tg, 0.2).normalize();                  // scrape along the edge
+      st.speed *= 0.985;
+      st.roadLock = true;
+    }
+    if (st.roadLock && Math.abs(st.steerIn || 0) < 0.2 && Math.abs(st.speed) > 0.5 && st.heading.angleTo(tg) < 0.9)
+      st.heading.lerp(tg, 1 - Math.exp(-1.8 * dt)).normalize();
+  }
+
   function setMode(m) {
     st.mode = m;
+    st.roadLock = false;
     for (const [k, b] of Object.entries(bodies)) b.visible = k === m;
     st.speed *= 0.3;
     st.camInit = false;                      // cut to the new framing rather than swinging over the roof
@@ -179,6 +200,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       } else {
         const thr = (key('KeyW', 'ArrowUp') ? 1 : 0) - (key('KeyS', 'ArrowDown') ? 0.6 : 0);
         const steer = (key('KeyD', 'ArrowRight') ? 1 : 0) - (key('KeyA', 'ArrowLeft') ? 1 : 0);
+        st.steerIn = steer;
         target = thr * M.max;
         st.steer += (steer - st.steer) * (1 - Math.exp(-8 * dt));
         const turnRate = M.turn * st.steer * Math.min(1, Math.abs(st.speed) / 3) * Math.sign(st.speed || 1);
@@ -195,8 +217,11 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       if (!isWater(nd, 0.1)) {
         st.dir.copy(nd);
       } else st.speed *= 0.3;
-      // collide: slide out of every footprint
+      if (st.mode === 'jeep') keepOnRoad(dt);
+      // collide: slide out of every footprint (the car ploughs past lamps and
+      // people — people get knocked flying instead, see bump.js)
       for (const c of colliders) {
+        if (st.mode === 'jeep' && c.r < 0.4) continue;
         const a = arc(st.dir, c.dir), lim = c.r + M.radius;
         if (a >= lim || a < 1e-5) continue;
         const perp = st.dir.clone().sub(c.dir.clone().multiplyScalar(c.dir.dot(st.dir))).normalize();
@@ -206,6 +231,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       }
       // the jeep is long: its nose collides too
       if (st.mode === 'jeep') for (const c of colliders) {
+        if (c.r < 0.4) continue;
         const nose = st.dir.clone().multiplyScalar(R).addScaledVector(st.heading, 0.9).normalize();
         const a = arc(nose, c.dir), lim = c.r + 0.55;
         if (a >= lim || a < 1e-5) continue;
