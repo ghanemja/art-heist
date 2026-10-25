@@ -85,6 +85,7 @@ function makeHand(s, skin) {
   thumb.rotation.x = 0.55; thumb.rotation.z = -s * 0.35;
   for (const o of [palm, ...g.children]) o.userData.noInk = false;
   g.userData = { fingers, thumb, s };
+  g.scale.setScalar(1.3);                 // a hand is about as long as the face
   return g;
 }
 // curl the fingers toward the palm (0 open … 1 a fist round a handle)
@@ -131,23 +132,23 @@ const PROPS = {
 // hold: a PROPS key + its placement in the fist. `free`: the hand that gestures in talk.
 export const STANCES = {
   clipboard: { free: 'R',      // the director: clipboard to her chest, pen in the other hand
-    L: { fwd: 0.32, out: -0.02, twist: 1.05, bend: 1.75, wrist: 0.1, grip: 0.85, hold: ['clipboard', [0.0, -0.03, 0.03], [0.15, Math.PI / 2, 0.0]] },
-    R: { fwd: 0.4, out: 0.0, twist: 0.65, bend: 1.55, wrist: -0.2, grip: 0.9, hold: ['pen', [0.004, -0.04, 0.0], [0, 0, 0]] },
+    L: { fwd: 0.32, out: -0.2, twist: 1.05, bend: 1.75, wrist: 0.1, grip: 0.85, hold: ['clipboard', [0.0, -0.03, 0.03], [0.15, Math.PI / 2, 0.0]] },
+    R: { fwd: 0.4, out: -0.18, twist: 0.65, bend: 1.55, wrist: -0.2, grip: 0.9, hold: ['pen', [0.004, -0.04, 0.0], [0, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { const tap = Math.max(0, Math.sin(t * 0.7)) ** 6; p.bend += 0.12 * tap * Math.sin(t * 14); } } },
   torch: { free: 'L',          // the guard: thumb in his belt, torch pointed at the ground
-    L: { fwd: 0.18, out: 0.02, twist: 1.25, bend: 1.3, wrist: 0, grip: 0.45 },
-    R: { fwd: 0.55, out: 0.12, twist: 0.1, bend: 0.55, wrist: 0.25, grip: 1, hold: ['torch', [0.0, -0.045, 0.0], [Math.PI - 0.7, 0, 0]] },
+    L: { fwd: 0.04, out: 0.42, twist: 1.5, bend: 0.8, wrist: 0.2, grip: 0.4 },   // hand on the belt at his hip
+    R: { fwd: 0.55, out: -0.04, twist: 0.1, bend: 0.55, wrist: 0.25, grip: 1, hold: ['torch', [0.0, -0.045, 0.0], [Math.PI - 0.7, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { p.twist += 0.12 * Math.sin(t * 0.6); p.fwd += 0.05 * Math.sin(t * 0.43); } } },
   coffee: { free: 'L',         // the courier: a coffee from the café, other hand on her hip
-    L: { fwd: -0.12, out: 0.75, twist: 1.6, bend: 1.35, wrist: 0.2, grip: 0.3 },
-    R: { fwd: 0.3, out: 0.05, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 1, hold: ['cup', [-0.026, -0.04, 0.01], [2.2, 0, 0]] },
+    L: { fwd: -0.12, out: 0.56, twist: 1.6, bend: 1.35, wrist: 0.2, grip: 0.3 },
+    R: { fwd: 0.3, out: -0.14, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 1, hold: ['cup', [-0.026, -0.04, 0.01], [2.2, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { const sip = Math.max(0, Math.sin(t * 0.55)) ** 10; p.bend += 0.5 * sip; p.fwd += 0.25 * sip; } } },
   crossed: { free: 'R',        // the framer: arms crossed, defensive
-    L: { fwd: 0.62, out: 0.0, twist: 1.35, bend: 2.0, wrist: 0, grip: 0.6 },
-    R: { fwd: 0.7, out: -0.02, twist: 1.35, bend: 1.88, wrist: 0, grip: 0.6 },
+    L: { fwd: 0.62, out: -0.2, twist: 1.35, bend: 2.0, wrist: 0, grip: 0.6 },
+    R: { fwd: 0.7, out: -0.22, twist: 1.35, bend: 1.88, wrist: 0, grip: 0.6 },
     anim: (side, t, p) => { if (side === 'L') p.fwd += 0.02 * Math.sin(t * 1.1); } },
 };
-const TALK_POSE = { fwd: 0.55, out: 0.12, twist: 0.25, bend: 1.45, wrist: -0.3, grip: 0.15 };
+const TALK_POSE = { fwd: 0.55, out: 0.0, twist: 0.25, bend: 1.45, wrist: -0.3, grip: 0.15 };
 
 function bone(parent, x, y, z) { const b = new THREE.Bone(); b.position.set(x, y, z); parent.add(b); return b; }
 
@@ -228,10 +229,17 @@ export function makeFolk(spec) {
   // ── spine + torso ──
   J.spine = joint(J.hips, 0, 0.02, 0);
   // the shoulder line slopes from the neck into the arms (no bolt-on shoulder balls)
-  const torso = new THREE.Mesh(lathe(smooth([[0.001, -0.01], [0.112, 0.0], [0.125 + 0.03 * S.belly, 0.1], [0.12 + 0.05 * S.belly, 0.17],
+  const torso = new THREE.Mesh(lathe(smooth([[0.001, -0.01], [0.112, 0.0], [0.125, 0.1], [0.122, 0.17],
     [0.13, 0.25], [0.128, 0.29], [0.105, 0.33], [0.06, 0.358], [0.001, 0.368]], 32), 28), top);
-  torso.scale.set(B * 1.0, 1, 0.78 + 0.12 * S.belly);
+  const TZ = 0.78 + 0.08 * S.belly;                  // torso depth
+  torso.scale.set(B, 1, TZ);
   J.spine.add(torso);
+  // a belly pushes FORWARD (never out to the sides, where the arms hang)
+  if (S.belly > 0.05) {
+    const k = 0.7 + 0.4 * S.belly;
+    const bel = new THREE.Mesh(lathe(smooth([[0.001, -0.11], [0.07, -0.09], [0.11, -0.02], [0.105, 0.05], [0.06, 0.1], [0.001, 0.11]], 20), 22), top);
+    bel.scale.set(0.95 * B, 0.95, 0.7 * k); at(bel, 0, 0.12, (0.02 + 0.05 * S.belly)); J.spine.add(bel);
+  }
   // ── neck + head ──
   J.neck = joint(J.spine, 0, 0.35, 0);
   J.neck.add(at(cap(0.04, 0.05, skin, 10), 0, 0.03, 0));
@@ -325,7 +333,7 @@ export function makeFolk(spec) {
     const tie = new THREE.Mesh(new THREE.TorusGeometry(r0 * 1.01, 0.008, 5, 26), paint(0x8a6a52)); tie.rotation.x = Math.PI / 2; tie.scale.y = 0.86; at(tie, 0, 0.06, 0); J.hips.add(tie);
     const pk = new THREE.Mesh(rbox(0.11, 0.05, 0.012, 0.004), paint(0x8a6a52)); at(pk, 0, -0.1, r0 * 1.06 * 0.86 + 0.004); J.hips.add(pk);
   } else if (S.outfit === 'uniform') {
-    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.12 * B, 0.018, 6, 22), dark); belt.rotation.x = Math.PI / 2; belt.scale.set(1, 0.82 + 0.12 * S.belly, 1); at(belt, 0, 0.04, 0); J.spine.add(belt);
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.12 * B, 0.018, 6, 22), dark); belt.rotation.x = Math.PI / 2; belt.scale.set(1.02, TZ * 1.02, 1); at(belt, 0, 0.04, 0); J.spine.add(belt);
     const badge = ball(0.018, paint(0xe4b84f), 8, 6); at(badge, -0.06, 0.25, 0.1); J.spine.add(badge);
   } else if (S.outfit === 'vest') {   // a courier's high-vis vest
     const v = new THREE.Mesh(lathe([[0.122, 0], [0.135, 0.12], [0.135, 0.26], [0.1, 0.32]], 20), acc);
@@ -337,7 +345,10 @@ export function makeFolk(spec) {
   for (const o of faceBits) o.userData.noInk = true;   // eyes, brows, cheeks: drawn, not outlined
   root.traverse(o => { if (o.isMesh) { o.castShadow = false; } });
   ink(root, 'fine');
-  const armOut = 0.17 + 0.04 * (B - 1) + (S.outfit === 'coat' || S.outfit === 'dress' ? 0.1 : 0) + 0.06 * S.belly;
+  // arms hang just clear of the waist: solve the angle from this body's own widths
+  const shoulderX = 0.112 * B, waistHalf = 0.125 * B, armR = 0.045 * Math.sqrt(B), drop = 0.19;
+  const armOut = Math.atan2(waistHalf + armR * 0.55 - shoulderX, drop) + 0.03
+    + (S.outfit === 'coat' || S.outfit === 'dress' ? 0.09 : 0);
   // arms twist about their own length first (XZY), so a forearm can cross the body
   for (const k of ['L', 'R']) J['arm' + k].rotation.order = 'XZY';
   const stance = STANCES[S.stance] || null;
@@ -364,12 +375,14 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   const st = inst.stance;
   for (const side of ['L', 'R']) {
     const sg = side === 'L' ? -1 : 1;
-    const p = { fwd: 0.06, out: inst.armOut, twist: 0, bend: 0.25, wrist: 0, grip: 0.25, ...(st?.[side] || {}) };
+    const p = { fwd: 0.06, out: 0, twist: 0, bend: 0.25, wrist: 0, grip: 0.25, ...(st?.[side] || {}) };
+    p.out += inst.armOut;                                     // stance `out` is relative to this body's clearance
     st?.anim?.(side, t, p);
     p.out += idle * 0.015 * Math.sin(t * 1.3 + sg);
     p.fwd += (side === 'L' ? 1 : -1) * armA * s;
     if (talk && st?.free === side || talk && !st && side === 'R') for (const key in TALK_POSE) {
-      const g = key === 'fwd' ? TALK_POSE.fwd + 0.12 * Math.sin(t * 3.1) : key === 'bend' ? TALK_POSE.bend + 0.25 * Math.sin(t * 4.3) : TALK_POSE[key];
+      const g = key === 'fwd' ? TALK_POSE.fwd + 0.12 * Math.sin(t * 3.1) : key === 'bend' ? TALK_POSE.bend + 0.25 * Math.sin(t * 4.3)
+        : key === 'out' ? TALK_POSE.out + inst.armOut : TALK_POSE[key];
       p[key] += (g - p[key]) * talk;
     }
     J['arm' + side].rotation.set(-p.fwd, -sg * p.twist, sg * p.out);

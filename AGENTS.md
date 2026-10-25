@@ -22,7 +22,11 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
    whose weights blend across the knee/elbow, so bends curve. Never build limbs from
    separate stacked segments; never leave a visible seam or step at a joint.
    Profiles go through `smooth()` (Catmull-Rom) so silhouettes are round, not faceted.
-5. **Shoulders grow out of the torso.** The torso's profile slopes from the neck into
+5. **Arms clear the body.** A belly pushes forward, never out to the sides where the
+   arms hang; each body solves its arm-hang angle from its own waist width (`armOut`).
+   Stance `out` values are relative to that, so a broad person's arms don't sink in.
+   Close-up check: no part of an arm or hand may be inside the torso.
+5b. **Shoulders grow out of the torso.** The torso's profile slopes from the neck into
    the shoulder; the arm joint sits *inside* that curve so the top of the arm forms
    the deltoid. No bolt-on shoulder balls or pads.
 6. **Real hands.** A palm facing the thigh, four fingers that curl to grip (`gripHand`),
