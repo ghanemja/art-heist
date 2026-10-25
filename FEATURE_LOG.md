@@ -7,6 +7,10 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"The left side of her head is still missing, and her chin is still coloured like the sweater."** Done in v2, checked from ten angles (incl. the game's own camera) and by picking the exact pixels; story run clean.
+  - The "missing" side: her skin mesh was drawn double-sided, so through a gap in her hair you saw the INSIDE of her face (and the temples were painted skin). Skin is now front-only with a hair-coloured back-face twin, so hair-lock backs and the inside of the head read as hair; only the forward-facing face oval is skin.
+  - Chin: from the game's slightly-down camera the collar still covered everything below the mouth. The chin is now a real one (~0.25 below the mouth at the centre, rising to the jaw) with the collar's front turned down under it.
+
 - 🟡 **"Now her chin is missing."** Done in v2: the turtleneck rode up over her whole lower face, so the face ended in a flat line. Her face's bottom edge is now a rounded chin just under the mouth, and the collar's front is turned down beneath it (the back of the collar is unchanged). Checked front / three-quarter / side / from below, in the harness and in-game; story run clean.
 
 - 🟡 **"It's still there (flat band under the beret) and her chin is messed up."** Done in v2, checked by toggling each geometry step on/off in a side-by-side harness, picking the exact pixels, and close-ups from ten angles incl. from below; story run clean.

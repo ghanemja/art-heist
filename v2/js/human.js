@@ -53,6 +53,7 @@ function fixColors(root) {
   const mesh = {}; root.traverse(o => { if (o.isSkinnedMesh) mesh[o.material.name] = o; });
   const C = (hex) => new THREE.Color(hex);
   const skin = C(CRITIC_SKIN), hair = mesh.hair.material.color.clone(), eye = C(EYE);
+  root.userData.hairCol = hair.getHex();
   const paintVerts = (o, colourOf) => {
     const g = o.geometry, n = g.attributes.position.count, col = new Float32Array(n * 3), old = g.attributes.color, mc = o.material.color;
     for (let v = 0; v < n; v++) {   // default: the material colour × the model's baked shading
@@ -94,10 +95,10 @@ function fixColors(root) {
     const rim = new Float32Array(NA).fill(-9);
     for (const v of body.verts) if (SP.getY(v) > body.max.y - 0.35) { const k = az(SP.getX(v), SP.getZ(v)); rim[k] = Math.max(rim[k], SP.getY(v)); }
     // a CHIN: the face's bottom edge becomes a rounded U under the mouth (the mouth sits at
-    // ≈3.0, so the chin's tip is at ≈2.87), and the turtleneck's front is turned down
+    // ≈3.0; the chin's tip is at ≈2.74), and the turtleneck's front is turned down
     // beneath it — the collar used to ride up over her whole lower face
     let fz = 0; for (const v of face.verts) fz += P.getZ(v); fz /= face.verts.length;
-    const chinY = (z) => 2.87 + 1.4 * (z - fz) ** 2;
+    const chinY = (z) => 2.74 + 0.95 * (z - fz) ** 2;        // a proper chin: ~0.25 below the mouth at the centre, rising to the jaw
     for (const v of face.verts) {
       const y = P.getY(v); if (y > 2.99 || !edgeKeys.has(key(v))) continue;
       P.setY(v, Math.min(y, chinY(P.getZ(v))));
@@ -121,7 +122,13 @@ function fixColors(root) {
     for (const p of skP) {
       if (p === face) {                      // the face piece is the whole skull: only its front is face
         const P = sk.geometry.attributes.position;
-        for (const v of p.verts) set(v, P.getX(v) < 0.22 || P.getY(v) > 3.78 ? hair : skin);
+        const N = sk.geometry.attributes.normal;
+        for (const v of p.verts) {        // skin only inside the face oval; temples, crown and the back are hair
+          const z = P.getZ(v) / 0.5, y = (P.getY(v) - 3.27) / 0.56;
+          // …and only where the surface faces forward: the sides of the forehead show through
+          // the gaps in her hair from behind, so they read as hair
+          set(v, P.getX(v) > 0.22 && z * z + y * y < 1 && N.getX(v) > 0.45 ? skin : hair);
+        }
         continue;
       }
       const c = p.max.y < 1.5 ? knit : isEye(p) ? eye : hair;
@@ -251,7 +258,7 @@ export function makeHuman(glb, look = {}) {
     o.userData.part = name;                  // the model's part name (beret, hair, skin, sweater…) outlives the repaint
     // the hair locks are single-sided sheets: seen from behind they were culled and only
     // their outline drew (solid black) — so anything that carries hair is double-sided
-    const side = ['hair', 'skin', 'sweater'].includes(name) ? THREE.DoubleSide : THREE.FrontSide;
+    const side = ['hair', 'sweater'].includes(name) ? THREE.DoubleSide : THREE.FrontSide;
     const soft = ['skin', 'hair', 'sweater'].includes(name);      // the pieces that carry her face and hair
     o.material = o.geometry.userData.absColor ? paint(0xffffff, { vertexColors: true, side, soft, hatch: soft ? 0.3 : 1 })
       : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color, side, soft, hatch: soft ? 0.3 : 1 });
@@ -287,6 +294,15 @@ export function makeHuman(glb, look = {}) {
       }
     }
   }
+  // the SKIN mesh holds hair locks too (single sheets): their backs, and the inside of the
+  // head seen through gaps in her hair, are drawn as hair by a back-face twin
+  rig.traverse(o => {
+    if (!o.isSkinnedMesh || o.userData.part !== 'skin' || o.userData.backTwin) return;
+    const twin = new THREE.SkinnedMesh(o.geometry, paint(glb.scene.userData.hairCol ?? 0xc2a889, { side: THREE.BackSide, soft: true, hatch: 0.3 }));
+    twin.bind(o.skeleton, o.bindMatrix); twin.frustumCulled = false;
+    twin.userData.noInk = true; twin.userData.backTwin = true; o.userData.backTwin = true;
+    o.parent.add(twin); twin.position.copy(o.position); twin.quaternion.copy(o.quaternion); twin.scale.copy(o.scale);
+  });
   ink(rig, 'fine');
   const s = HUMAN_SCALE * (look.height ?? 1);
   rig.scale.set(s * (look.width ?? 1), s, s * (look.width ?? 1));
