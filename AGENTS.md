@@ -33,14 +33,28 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
    drawn round the shoulder or hip. Sleeves end in a crisp hem (`hem:`), never a colour smear.
 6. **Real hands.** A palm facing the thigh, four fingers that curl to grip (`gripHand`),
    a thumb forward — skin-coloured, sized to the wrist (≈0.03). Never a ball or a blob.
-7. **A face.** Eyes, brows, nose, mouth (and cheeks) — small and soft. Face details
-   are `noInk` (drawn, not outlined); the head itself is inked.
+7. **A head, not a ball — and a face.** Heads use `headShape` (skull back, nape tucked in,
+   flat face with brow ridge and eye sockets, jaw narrowing to a chin, neck behind the
+   jaw). Check the SIDE PROFILE. Features and hair are placed on that surface (`headPt`,
+   `shapedSphere`). Eyes, brows, nose, mouth, cheeks are small, soft and `noInk`.
+7a. **Every face is different, and has a personality.** Build heads with `buildHead`
+   (faces.js) and give each person their own `face`: shape (jaw/chin/cheeks/long/skull/
+   brow), nose type, mouth expression, eyes, brows, hair style, beard. Cast the face to
+   the character (anxious, sleepy, cheerful, smug). Hair grows from the scalp inside a
+   hairline mask with a smooth edge — never a cap or a ball stuck on the head. Hair has
+   texture: combed strands flowing toward where it's gathered, a sheen streak, darker roots.
+7c. **Necks grow out of the body.** A neck flares into the shoulders and tucks under the
+   jaw, its outline fades at both ends (`inkW`), and it rises out of a collar.
+7b. **No emoji, anywhere in the UI.** People's faces are painted portraits rendered
+   from their own model (`portraits.js`); clues are painted sketches of the real prop.
 8. **Doing something, not just standing.** Every person gets a `stance` (`STANCES` in
    folk.js) that fits where they are and who they are — the director holds a clipboard
    and pen, the guard a torch with his thumb in his belt, the courier a café coffee with a
    hand on her hip, the suspect stands arms-crossed. Arms never just dangle at random.
    Props go in the hand (`hold`), the fingers grip them, and the stance has a small
-   loop of life (a sip, a pen tap, a torch sweep). The hand that talks is the free one.
+   loop of life (a sip, writing, a torch sweep) that plays on its own, visibly — not only
+   when the player moves. The hand that talks is the free one. Precise hand work (writing)
+   uses `ikArm` so the hand lands exactly on the target, and the head looks at the task.
 9. **Shoes have an S profile.** From the side the topline dips at the ankle, rises over
    the tongue, dips across the vamp and swells over the toe; the sole springs up at the toe.
 10. **Alive, not posed.** Idle breathing, weight shift and glances (`poseFolk`), turn to

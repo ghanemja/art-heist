@@ -51,14 +51,26 @@ function fixColors(root) {
 // the critic keeps her own colours; everyone else is their own person (folk.js)
 export const LOOKS = {
   critic: {},
-  vivi: { folk: true, skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', glasses: true, stance: 'clipboard', top: 0x8e2f3a, outfit: 'coat', accent: 0xf3ead7,
-    bottom: 0x2a2230, shoes: 0x6e2a2e, height: 1.05, build: 0.94 },
+  vivi: { folk: true, skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', glasses: true, stance: 'writing', top: 0x8e2f3a, outfit: 'coat', accent: 0xf3ead7,
+    bottom: 0x2a2230, shoes: 0x6e2a2e, height: 1.05, build: 0.94,
+    // the director: an oval face, worried brows, a tight anxious mouth, lashes, glasses, a sleek bun with a centre part
+    face: { shape: { jaw: 0.25, chin: 0.45, cheeks: 0.25, long: 0.35, skull: 0.5, brow: 0.35 }, nose: 'straight', noseSize: 0.85, mouth: 'worried',
+      eyes: 'round', brows: 'worried', browW: 0.8, lashes: true, glasses: true, hair: 'bun', blush: 0.7 } },
   otto: { folk: true, skin: 'rose', hair: 0x9a9490, hairStyle: 'crop', hat: 'cap', hatColor: 0x24304a, stance: 'torch', top: 0x3a4a68, outfit: 'uniform',
-    bottom: 0x262c3c, shoes: 0x1e1a1c, sole: 0x6a5e54, height: 0.98, build: 1.16, belly: 0.8 },
+    bottom: 0x262c3c, shoes: 0x1e1a1c, sole: 0x6a5e54, height: 0.98, build: 1.16, belly: 0.8,
+    // the night guard: a round, jowly face, heavy-lidded sleepy eyes, bushy grey brows, a big button nose, ruddy cheeks
+    face: { shape: { jaw: 0.85, chin: 0.3, cheeks: 0.95, long: -0.25, skull: 0.4, brow: 0.6 }, nose: 'button', noseSize: 1.35, mouth: 'flat',
+      eyes: 'sleepy', brows: 'heavy', browW: 1.6, browColor: 0x9a9490, hair: 'sides', blush: 1.3, blushColor: 0xe0806e } },
   pia: { folk: true, skin: 'brown', hair: 0x1d1a1a, hairStyle: 'pony', hat: 'helmet', hatColor: 0xe0b445, stance: 'coffee', top: 0x3f8f88, sleeve: 'short',
-    outfit: 'vest', accent: 0xd6e04c, bottom: 0x3b4a5e, shoes: 0xe9e2d0, height: 0.95, build: 0.9 },
+    outfit: 'vest', accent: 0xd6e04c, bottom: 0x3b4a5e, shoes: 0xe9e2d0, height: 0.95, build: 0.9,
+    // the courier: a heart-shaped face, bright eyes, raised brows, a snub nose and a big grin
+    face: { shape: { jaw: 0.15, chin: 0.6, cheeks: 0.6, long: 0.0, skull: 0.55, brow: 0.4 }, nose: 'snub', noseSize: 0.95, mouth: 'grin',
+      eyes: 'round', eyeSize: 1.1, brows: 'raised', lashes: true, hair: 'pony', blush: 0.8, blushColor: 0xc86a5a } },
   rex: { folk: true, skin: 'fair', hair: 0x7a4a2a, hairStyle: 'crop', beard: true, stance: 'crossed', hat: 'flat', hatColor: 0x5b4636, top: 0x6f8a6a,
-    outfit: 'apron', accent: 0xd8c9a8, bottom: 0x4a3a2c, height: 1.02, build: 1.08, belly: 0.4 },
+    outfit: 'apron', accent: 0xd8c9a8, bottom: 0x4a3a2c, height: 1.02, build: 1.08, belly: 0.4,
+    // the framer (and suspect): a square jaw, a Roman nose, narrowed eyes, one brow up, a smirk in a trimmed beard
+    face: { shape: { jaw: 1.0, chin: 0.85, cheeks: 0.35, long: 0.15, skull: 0.6, brow: 0.85 }, nose: 'roman', noseSize: 1.0, mouth: 'smirk',
+      eyes: 'narrow', browsL: 'frown', browsR: 'raised', browW: 1.3, hair: 'crop', beard: true, blush: 0 } },
 };
 
 const AX = { fwd: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0), side: new THREE.Vector3(0, 0, 1) };

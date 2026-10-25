@@ -69,8 +69,8 @@ through buildings, towers in streets, a station inside the museum). Now:
 
 **v2 (`v2/`) — curvature.** The planet is radius 40, so anything flat and wide
 floats at its ends. Build structures in `v2/js/buildings.js` and set them down with
-`placeOnPlanet()` (bakes per material, splits long faces, bends every vertex onto the
-curve, inks). Batch a row of them with `batchPlaced()`; register walkable tops with
+`placeOnPlanet()` (bakes per material, splits long faces, lays every vertex onto the
+terrain under it — the curve, and any levelled plane or slope — then inks). Batch a row of them with `batchPlaced()`; register walkable tops with
 `addFloor()`.
 
 ## Asset pipeline

@@ -28,7 +28,10 @@ const F = {
 export const SEA = 0.0;                                         // sea level above R
 const LAND = 0.45;                                              // the plateau's level
 const extraFlats = [];                                          // {d, r, h} — sites level their own ground
-export function flatten(d, r, h = LAND) { extraFlats.push({ d: d.clone(), r, h }); }
+// plane: a tangent point (unit dir). Then the ground is levelled to a true flat PLANE
+// touching the planet there, not a curved shell: on a radius-40 planet a 14-unit
+// building's edges would otherwise sit ~0.6 above the ground (floating, looking slanted).
+export function flatten(d, r, h = LAND, { plane = null } = {}) { extraFlats.push({ d: d.clone(), r, h, plane: plane?.clone() }); }
 
 export function surfH(d) {
   // rolling hills: three soft, incommensurate waves
@@ -44,7 +47,10 @@ export function surfH(d) {
   h += (LAND - h) * (1 - ss(F.plateau.r, F.plateau.r + 7, dp));
   for (const f of extraFlats) {
     const df = arc(d, f.d);
-    if (df < f.r + 6) h += (f.h - h) * (1 - ss(f.r, f.r + 5, df));
+    if (df < f.r + 6) {
+      const target = f.plane ? (R + f.h) / Math.max(0.5, d.dot(f.plane)) - R : f.h;
+      h += (target - h) * (1 - ss(f.r, f.r + 5, df));
+    }
   }
   // water last: the sea and its bay carve below everything
   for (const w of [F.sea, F.bay]) {
@@ -86,7 +92,9 @@ export function slerpDir(a, b, t) {
 // each is an object on the planet plus a test in its local frame → the floor's
 // local height there, or null. groundAt() is the terrain or the highest floor.
 export const FLOORS = [];
-export function addFloor(obj, test) { obj.updateWorldMatrix(true, false); FLOORS.push({ obj, test, inv: obj.matrixWorld.clone().invert(), dir: obj.position.clone().normalize(), reach: 12 }); }
+// a building laid onto the terrain (buildings.js `conform`) sets userData.conform
+// to its sink: its floor heights are then read above the ground under the point
+export function addFloor(obj, test) { obj.updateWorldMatrix(true, false); FLOORS.push({ obj, test, inv: obj.matrixWorld.clone().invert(), dir: obj.position.clone().normalize(), reach: 12, conform: obj.userData.conform }); }
 const _fp = new THREE.Vector3();
 export function groundAt(d) {
   let r = radiusAt(d);
@@ -94,7 +102,7 @@ export function groundAt(d) {
     if (f.dir.dot(d) < 0.95) continue;
     _fp.copy(d).multiplyScalar(r).applyMatrix4(f.inv);
     const y = f.test(_fp.x, _fp.z);
-    if (y != null) r = Math.max(r, f.obj.position.length() + y);
+    if (y != null) r = Math.max(r, f.conform != null ? radiusAt(d) + y - f.conform : f.obj.position.length() + y);
   }
   return r;
 }
@@ -162,6 +170,18 @@ export function smooth(pts, passes = 3, closed = false) {
 
 // ── roads: every carriageway's centre-line samples, so nothing builds on one ──
 export const ROADS = [];          // {pts, half}
+// the painted road ribbons sit a hair above the ground: people stand ON them
+const ROAD_TOP = 0.05, KERB_TOP = 0.035;
+export function roadLift(d) {
+  let lift = 0;
+  for (const rd of ROADS) for (const p of rd.pts) {
+    const a = arc(d, p);
+    if (a < rd.half) return ROAD_TOP;
+    if (a < rd.half + 0.28) lift = KERB_TOP;
+  }
+  return lift;
+}
+export const standAt = (d) => groundAt(d) + roadLift(d);
 export function onRoad(d, pad = 0) {
   for (const rd of ROADS) for (const p of rd.pts) if (arc(d, p) < rd.half + pad) return true;
   return false;

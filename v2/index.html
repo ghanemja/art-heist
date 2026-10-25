@@ -54,7 +54,9 @@
 
   /* a found thing: a sketchbook card */
   #card { left: 50%; top: 50%; width: min(440px, 88vw); transform: translate(-50%, -50%) rotate(-1.2deg); padding: 20px 24px 18px; z-index: 20; }
-  #card .ic { font-size: 44px; float: left; margin: 2px 14px 4px 0; }
+  img.pt { width: 76px; height: 76px; display: block; }
+  img.pt.sm { width: 40px; height: 40px; } img.pt.xs { width: 28px; height: 28px; display: inline-block; vertical-align: middle; margin: -4px 2px -4px -6px; }
+  #card .ic { float: left; margin: 0 14px 4px -4px; } #card .ic img.pt { width: 96px; height: 96px; }
   #card h3 { font-family: 'Caveat', cursive; font-size: 34px; margin: 0 0 6px; }
   #card p { font-size: 20px; line-height: 1.35; margin: 0 0 12px; }
   #card .note { font-size: 15px; color: var(--ink2); }
@@ -62,7 +64,7 @@
 
   /* someone talks */
   #talk { left: 50%; bottom: 22px; width: min(640px, 92vw); transform: translateX(-50%); padding: 14px 20px; z-index: 20; display: flex; gap: 14px; align-items: flex-start; }
-  #talk .face { font-size: 46px; line-height: 1; }
+  #talk .face { flex: 0 0 auto; margin: -6px 0 -6px -6px; }
   #talk b { font-family: 'Caveat', cursive; font-size: 28px; display: block; line-height: 1; margin-bottom: 4px; }
   #talk p { font-size: 20px; margin: 0 0 8px; line-height: 1.32; }
   #talk .row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
@@ -74,7 +76,7 @@
   #nb .x { float: right; font-size: 18px; padding: 2px 12px; }
   #nb ul { list-style: none; padding: 0; margin: 4px 0 14px; }
   #nb li { font-size: 19px; line-height: 1.4; margin: 6px 0; display: flex; gap: 10px; }
-  #nb li .i { font-size: 22px; }
+  #nb li .i { flex: 0 0 auto; }
   #nb li.pick { cursor: pointer; border-radius: 8px; padding: 2px 6px; }
   #nb li.pick.on { background: rgba(228,184,79,.45); }
   #nb .empty { color: var(--ink2); font-style: italic; }
@@ -122,6 +124,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=11"></script>
+<script type="module" src="./js/main.js?cb=15"></script>
 </body>
 </html>

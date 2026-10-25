@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import { buildPlanet, buildSky, buildLights, buildClouds } from './world.js';
+import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES } from './world.js';
 import { styleTick } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
@@ -41,8 +41,8 @@ const atmosphere = {
 
 const mf = town.museum.frame;
 const player = createPlayer(scene, camera, town.colliders, mf(0.8, 3.4), mf(0, -6));
-const game = createGame({ scene, camera, town, player, atmosphere });
-window.__v2 = { scene, camera, renderer, town, player, game };
+const game = createGame({ scene, camera, town, player, atmosphere, renderer });
+window.__v2 = { scene, camera, renderer, town, player, game, ROADS, ZONES };
 
 const clock = new THREE.Clock();
 function loop() {

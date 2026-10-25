@@ -111,6 +111,16 @@ function makeInk(weight = 1, color = PAL.ink) {
   });
 }
 const INK = { heavy: makeInk(1.25), mid: makeInk(1.0), fine: makeInk(0.7) };
+// the same stroke, faded per vertex by an `inkW` attribute (no line where one part grows out of another)
+const INK_FADE = {};
+function fadeInk(weight) {
+  if (INK_FADE[weight]) return INK_FADE[weight];
+  const m = (INK[weight] || INK.mid).clone();
+  m.uniforms = { ...inkUniforms, uWeight: (INK[weight] || INK.mid).uniforms.uWeight, uColor: (INK[weight] || INK.mid).uniforms.uColor };
+  m.vertexShader = m.vertexShader.replace('uniform float uTime,', 'attribute float inkW;\n      uniform float uTime,')
+    .replace('float w = uWidth * uWeight *', 'float w = inkW * uWidth * uWeight *');
+  return (INK_FADE[weight] = m);
+}
 
 // ink(obj): give every mesh under obj its outline. Hull reuses the mesh's own
 // geometry (no copy), so the cost is one extra draw per inked mesh.
@@ -124,7 +134,7 @@ export function ink(root, weight = 'mid') {
     list.push(o);
   });
   for (const o of list) {
-    const line = new THREE.Mesh(o.geometry, o.isSkinnedMesh ? mat : mat);
+    const line = new THREE.Mesh(o.geometry, o.geometry.attributes.inkW ? fadeInk(weight) : mat);
     line.userData.isInk = true;
     line.raycast = () => {};
     line.renderOrder = -1;

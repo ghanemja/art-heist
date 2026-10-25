@@ -4,7 +4,7 @@
 // most adventure games live or die by. On foot, controls are camera-relative;
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
-import { R, radiusAt, groundAt, isWater, arc } from './world.js';
+import { R, radiusAt, groundAt, standAt, isWater, arc } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
 import { loadHuman, makeHuman, pose, sit, LOOKS } from './human.js';
@@ -198,7 +198,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     }
     st.heading.sub(st.dir.clone().multiplyScalar(st.heading.dot(st.dir))).normalize();
     // place + orient: on the terrain, or on whatever floor you're standing on
-    const gr = groundAt(st.dir);
+    const gr = standAt(st.dir);                                // terrain, floors, or the road ribbon
     if (!st.gr) st.gr = gr;
     st.gr += (gr - st.gr) * (1 - Math.exp(-16 * dt));         // step up/down, don't pop
     root.position.copy(st.dir).multiplyScalar(st.gr);

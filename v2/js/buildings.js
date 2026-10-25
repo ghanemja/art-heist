@@ -15,7 +15,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
-import { settle } from './world.js';
+import { settle, radiusAt } from './world.js';
 import { windowWall, pick, rnd } from './props.js';
 
 // ── geometry kit ─────────────────────────────────────────────────────────────
@@ -1174,19 +1174,35 @@ function bake(g, roots = [g]) {
   }
   return out;
 }
-// drop every vertex by the planet's sagitta at its distance from the origin,
-// so the whole building lies on the curved ground instead of a flat tangent.
-// Long faces (a platform top, a parking lot) are split first: a bend only
+// lay every vertex onto the ground under it: on level ground that is the
+// planet's curve (a flat slab would float at its ends); where the terrain
+// rises or dips (the museum's levelled plane runs into Main Street) it
+// follows that too, the way the road ribbons do. The ground is sampled on a
+// small grid in the building's frame and read back bilinearly.
+// Long faces (a platform top, a parking lot) are split first: this only
 // moves vertices, and a slab with none in its middle would stay flat there.
 const _tess = new TessellateModifier(1.6, 6);
-function bend(g, Rg) {
+function conform(g, sink) {
+  g.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  for (const m of g.children) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox); }
+  const S = 0.3, x0 = box.min.x - S, z0 = box.min.z - S;
+  const nx = Math.ceil((box.max.x - x0) / S) + 2, nz = Math.ceil((box.max.z - z0) / S) + 2;
+  const grid = new Float32Array(nx * nz), v = new THREE.Vector3(), inv = g.matrixWorld.clone().invert();
+  for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) {
+    v.set(x0 + i * S, 0, z0 + k * S).applyMatrix4(g.matrixWorld).normalize();
+    v.multiplyScalar(radiusAt(v)).applyMatrix4(inv);
+    grid[i * nz + k] = v.y;
+  }
+  const at = (x, z) => {
+    const fx = Math.min(nx - 1.001, Math.max(0, (x - x0) / S)), fz = Math.min(nz - 1.001, Math.max(0, (z - z0) / S));
+    const i = Math.floor(fx), k = Math.floor(fz), u = fx - i, w = fz - k;
+    return (grid[i * nz + k] * (1 - u) + grid[(i + 1) * nz + k] * u) * (1 - w) + (grid[i * nz + k + 1] * (1 - u) + grid[(i + 1) * nz + k + 1] * u) * w;
+  };
   for (const m of g.children) {
     m.geometry = _tess.modify(m.geometry);
     const p = m.geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const r2 = p.getX(i) ** 2 + p.getZ(i) ** 2;
-      p.setY(i, p.getY(i) - (Rg - Math.sqrt(Math.max(0, Rg * Rg - r2))));
-    }
+    for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) + at(p.getX(i), p.getZ(i)) - sink);
     p.needsUpdate = true;
     m.geometry.computeBoundingSphere();
     m.geometry.computeBoundingBox();
@@ -1197,7 +1213,8 @@ function bend(g, Rg) {
 export function placeOnPlanet(raw, d, yaw, { weight = 'mid', sink = 0.04, inked = true } = {}) {
   const g = bake(raw);
   settle(g, d, 0.25, sink, yaw);
-  bend(g, g.position.length() + sink);
+  conform(g, sink);
+  g.userData.conform = sink;                   // floors on it read heights above the terrain
   return inked ? ink(g, weight) : g;
 }
 // batch placed buildings that share materials (a street of shops) into one
