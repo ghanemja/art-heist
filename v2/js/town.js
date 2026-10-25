@@ -7,11 +7,21 @@ import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
-import { house, block, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
+import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../../museum.js';
+import { MAIN_STREET, buildShop, stripMall, station, townBlock, placeOnPlanet, batchPlaced } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
+// Main Street runs along the town frame's y = 0 line, museum end → east. Its
+// two rows of shops front onto it at |y| = SHOP_Y; the minor streets that
+// would cut the terraces are left out, so the frontages run unbroken.
+const SHOP_Y = 2.75, SHOP_D = 2.7;
+const P0 = PLAN.town.pitch;
+const minorCut = (axis, i, x, y) => i % 2 !== 0 && (axis === 0 || Math.abs(y) < 2 * P0 - ROAD_MAJOR);
+const inShops = (x, y, pad = 0) => Math.abs(y) > SHOP_Y - 1.5 - pad && Math.abs(y) < SHOP_Y + SHOP_D + pad &&
+  [...MAIN_STREET.north, ...MAIN_STREET.south].some(t => x > t.x[0] - pad && x < t.x[1] + pad);
+const MALL = PLAN.town.mall;
 
 // restyle a model built with standard materials into the gouache look
 export function restyle(root) {
@@ -37,7 +47,12 @@ export function planTown() {
   reserve(mF(0, -0.3), 4.4, 'museum-plaza');
   reserve(mF(0, -7.0), 8.4, 'museum');
   flatten(mF(0, -6), 12, 0.45, { plane: mDir });          // the museum stands on a true plane
-  for (const [k, s] of Object.entries(PLAN.sites)) { reserve(llv(s.at), s.r, 'site:' + k); flatten(llv(s.at), s.r + 1); }
+  for (const [k, s] of Object.entries(PLAN.sites)) {
+    const c = s.shift ? frame(llv(s.at), TOWN_C)(0, s.shift) : llv(s.at);
+    reserve(c, s.r, 'site:' + k); flatten(c, s.r + 1);
+  }
+  const fT = frame(TOWN_C);
+  reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
   for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 4.4); }
 }
 
@@ -68,7 +83,7 @@ export function buildTown(scene) {
       for (let j = -K * 4; j <= K * 4; j++) {
         const t = j * P / 4;
         const x = axis ? i * P : t, y = axis ? t : i * P;
-        if (inTown(x, y) && free(x, y, half)) run.push(fC(x, y));
+        if (inTown(x, y) && free(x, y, half) && !minorCut(axis, i, x, y)) run.push(fC(x, y));
         else { if (run.length > 4) lines.push({ pts: run, half }); run = []; }
       }
       if (run.length > 4) lines.push({ pts: run, half });
@@ -105,39 +120,83 @@ export function buildTown(scene) {
     out.museum = { ...mus, dir: mDir, frame: mF };
     for (let z = -3.4; z >= -11; z -= 2.2) for (let x = -5.6; x <= 5.6; x += 2.8) solid(mF(x, z), 1.55);
   }
-  // downtown blocks: one building per block, sized to the block, towers in the middle
-  // two blocks the story needs: the café (open tables) and Frame & Co. (a shop)
-  const CAFE = [-1, 0], FRAMECO = [1, -1];
-  out.cafeSpot = [(CAFE[0] + 0.5) * P, (CAFE[1] + 0.5) * P];
-  out.vanSpot = [2 * P - 0.55, (FRAMECO[1] + 0.5) * P];
+  // ── Main Street: two terraces of shops facing each other across y = 0 ──
+  // Units are laid by true arc length along each frontage, so neighbours meet
+  // wall to wall, and each is bent onto the planet where it stands.
+  out.shops = [];
+  const terrace = (t, side) => {                      // side +1: north row (faces −y); −1: south row
+    const Y = side * SHOP_Y, N = 60, cum = [0];
+    let prev = fC(t.x[0], Y);
+    for (let k = 1; k <= N; k++) { const q = fC(t.x[0] + (t.x[1] - t.x[0]) * k / N, Y); cum.push(cum[k - 1] + arc(prev, q)); prev = q; }
+    const sc = cum[N] / t.shops.reduce((a, sp) => a + sp.w, 0);
+    let acc = 0;
+    t.shops.forEach((spec, i) => {
+      const w = spec.w * sc, mid = acc + w / 2; acc += w;
+      let k = 1; while (k < N && cum[k] < mid) k++;
+      const x = t.x[0] + (t.x[1] - t.x[0]) * (k - 1 + (mid - cum[k - 1]) / (cum[k] - cum[k - 1])) / N;
+      // local +x runs with frame +x on the north side and against it on the south;
+      // the end units carry the pavement round to the side-street kerb
+      const lo = i === 0, hi = i === t.shops.length - 1;
+      const pave = side > 0 ? [lo ? 0.26 : 0, hi ? 0.26 : 0] : [hi ? 0.26 : 0, lo ? 0.26 : 0];
+      const d = fC(x, Y);
+      const g = placeOnPlanet(buildShop({ ...spec, w, pave }), d, yawToFace(d, fC(x, 0)), { inked: false });
+      out.shops.push({ ...spec, dir: d, root: g });
+      addFloor(g, (lx, lz) => lz > -0.05 && lz < 1.42 && lx > -w / 2 - pave[0] && lx < w / 2 + pave[1] ? 0.07 : null);
+      const depth = spec.special === 'library' ? 3.0 : 2.4, n = Math.max(1, Math.round(w / 2));
+      for (let c = 0; c < n; c++) solid(fC(x - w / 2 + (c + 0.5) * w / n, side * (SHOP_Y + depth / 2)), Math.min(1.2, Math.max(w / n, depth) / 2 + 0.05));
+      if (spec.kind === 'cafe') out.cafeSpot = [x, side * (SHOP_Y - 0.72)];
+    });
+  };
+  for (const t of MAIN_STREET.north) terrace(t, 1);
+  for (const t of MAIN_STREET.south) terrace(t, -1);
+  add(batchPlaced(out.shops.map(sp => sp.root)));      // the shops stay as frames for their floors
+  // Main Street's lamps stand at the kerb; bunting is strung across the street
+  for (const t of [...MAIN_STREET.north, ...MAIN_STREET.south]) {
+    const n = Math.max(1, Math.round((t.x[1] - t.x[0]) / 2.8)), s = MAIN_STREET.north.includes(t) ? 1 : -1;
+    for (let k = 0; k < n; k++) {
+      const x = t.x[0] + (t.x[1] - t.x[0]) * (k + 0.5) / n, y = s * (SHOP_Y - 1.2);
+      if (out.cafeSpot && Math.abs(x - out.cafeSpot[0]) < 1.2 && Math.sign(out.cafeSpot[1]) === s) continue;
+      add(settle(lamp(), fC(x, y), 0.2, 0.02));
+      solid(fC(x, y), 0.15);
+    }
+  }
+  for (const x of [-4.4, 4.4, -7.2, 7.2, 1.6, -1.6]) add(bunting(fC, x, SHOP_Y));
+  // the story's shopfronts: the café (tables out front) and Frame & Co. (the van)
+  out.vanSpot = [2 * P - 0.55, -(0.5) * P];
   out.vanYaw = yawToFace(fC(...out.vanSpot), fC(out.vanSpot[0], out.vanSpot[1] + 5));
+  // downtown behind Main Street: one building per block, towers in the middle
   for (let i = -K; i < K; i++) for (let j = -K; j < K; j++) {
     const x = (i + 0.5) * P, y = (j + 0.5) * P;
-    if (!inTown(x, y)) continue;
-    if (i === CAFE[0] && j === CAFE[1]) continue;           // the café's tables go here
+    if (!inTown(x, y) || j === 0 || j === -1) continue;   // Main Street's rows are the terraces
     const d = fC(x, y);
     const room = P - 2 * ROAD_MAJOR - 0.5;                  // a block's buildable width
-    if (zoneHit(d, room * 0.75) || onRoad(d, room * 0.45)) continue;
+    if (zoneHit(d, room * 0.75) || onRoad(d, room * 0.45) || inShops(x, y, room * 0.45)) continue;
     const rr = Math.hypot(x, y) / CAP;
     const r = rnd();
     let b;
-    if (i === FRAMECO[0] && j === FRAMECO[1]) b = shopSign(block({ w: room * 0.9, d: room * 0.9, h: 3.4, color: PAL.cream }), 'FRAME & CO.', room);
-    else if (r < 0.12) { b = park(); }
-    else if (rr < 0.45) b = block({ w: room * 0.9, d: room * 0.9, h: 6 + rnd() * 4 });
-    else if (rr < 0.8) b = block({ w: room * 0.9, d: room * 0.85, h: 3 + rnd() * 1.8 });
+    if (r < 0.12) { b = park(); }
+    else if (rr < 0.45) b = townBlock({ w: room * 0.9, d: room * 0.9, h: 6 + rnd() * 4 });
+    else if (rr < 0.8) b = townBlock({ w: room * 0.9, d: room * 0.85, h: 3.1 + rnd() * 1.7 });
     else b = house({ w: room * 0.75, d: room * 0.6, h: 1.7 });
-    settle(b, d, room * 0.45, 0.05, yawToFace(d, fC(x, y + 5)) + (rnd() > 0.5 ? Math.PI : 0));
-    add(b);
+    add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5)) + (rnd() > 0.5 ? Math.PI : 0), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
     if (r >= 0.12) solid(d, room * 0.5);
   }
   // street lamps at junctions, trees along the boulevard verge
   for (let i = -K; i <= K; i++) for (let j = -K; j <= K; j++) {
     if ((i + j) % 2) continue;
     const x = i * P + 1.6, y = j * P + 1.6;
-    if (!inTown(x, y)) continue;
+    if (!inTown(x, y) || inShops(x, y, 0.5)) continue;
     const d = fC(x, y);
     if (zoneHit(d, 0.4) || onRoad(d, 0.35)) continue;
     add(settle(lamp(), d, 0.2, 0.02));
+  }
+  // Maple Plaza: the strip mall out past the boulevard, its lot opening onto it
+  {
+    const d = fC(...MALL.at), g = add(placeOnPlanet(stripMall(), d, yawToFace(d, fC(MALL.at[0] - 10, MALL.at[1]))));
+    out.mall = { dir: d, root: g };
+    addFloor(g, g.userData.floor);
+    for (let k = -2; k <= 2; k++) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 2.3), 1.3);
+    for (const k of [-1, 1]) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 5.1), 0.8);
   }
   for (let k = 0; k < out.boulevard.length; k += 7) {
     const p = out.boulevard[k], q = out.boulevard[(k + 1) % out.boulevard.length];
@@ -162,7 +221,14 @@ export function buildTown(scene) {
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const d = llv(s.at);
     out.sites[k] = { ...s, dir: d, frame: frame(d, TOWN_C) };
-    if (k !== 'airport' && k !== 'launchpad') spur(d, s.r + 0.6, 'site:' + k);
+    if (k !== 'airport' && k !== 'launchpad') spur(d, s.stop ?? s.r + 0.6, 'site:' + k);
+    if (k === 'station') {
+      const g = add(placeOnPlanet(station(), d, yawToFace(d, TOWN_C)));
+      addFloor(g, g.userData.floor);
+      // the station's footprint is in its own local frame (x is mirrored in the site frame)
+      for (const [[x, z], r] of g.userData.solids) solid(out.sites[k].frame(-x, z), r);
+      continue;
+    }
     const g = site(k, out.sites[k].frame);
     if (g) { settle(g, d, s.r * 0.8, 0.06, yawToFace(d, TOWN_C)); add(g);
       if (g.userData.floor) addFloor(g, g.userData.floor); for (const c of g.userData.solids || []) solid(out.sites[k].frame(...c[0]), c[1]); }
@@ -188,36 +254,11 @@ export function buildTown(scene) {
   return out;
 }
 
-// a hand-lettered sign over a shop's awning
-function shopSign(g, text, room) {
-  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
-  const c = cv.getContext('2d');
-  c.fillStyle = '#2a2230'; c.fillRect(0, 0, 512, 128);
-  c.fillStyle = '#f6eedb'; c.font = '700 64px "Patrick Hand", "Comic Sans MS", cursive'; c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillText(text, 256, 68);
-  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(room * 0.8, room * 0.2), paint(0xffffff, { map: t, hatch: 0 }));
-  sign.position.set(0, 1.62, room * 0.45 + 0.08); sign.userData.noInk = true;
-  g.add(sign);
-  return g;
-}
-
-// ── the story's sites: a station and a harbour you can actually stand in ──
+// ── the story's sites: the harbour (Central Station is modelled in buildings.js) ──
 function site(kind, F) {
   const g = new THREE.Group();
   const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
-  if (kind === 'station') {
-    m(rbox(9, 0.5, 3.2, 0.12), paint(PAL.kerb), 0, 0.25, -1.2);                        // platform
-    for (let x = -3.6; x <= 3.6; x += 2.4) m(rbox(0.16, 2.4, 0.16, 0.05), paint(PAL.ink, { hatch: 0 }), x, 1.7, -0.2);
-    const roof = m(rbox(9.4, 0.16, 2.6, 0.06), paint(PAL.roofGreen), 0, 2.95, -0.9); roof.rotation.x = 0.08;
-    m(rbox(3.4, 2.6, 2.4, 0.15), paint(PAL.terracotta), 0, 1.55, -3.6);                // the hall
-    m(rbox(1.0, 1.5, 0.12, 0.05), paint(PAL.bark), 0, 1.0, -2.37);
-    const clock = m(new THREE.CylinderGeometry(0.42, 0.42, 0.1, 24).rotateX(Math.PI / 2), paint(0xfffaf0), 0, 2.4, -2.36);
-    g.add(new THREE.Mesh(rbox(0.04, 0.3, 0.02, 0.01), paint(PAL.ink, { hatch: 0 })).translateY(2.47).translateZ(-2.3));
-    g.userData.solids = [[[0, -3.6], 2.0]];
-    g.userData.floor = (x, z) => Math.abs(x) < 4.5 && Math.abs(z + 1.2) < 1.6 ? 0.5 : null;
-    void clock;
-  } else if (kind === 'harbour') {
+  if (kind === 'harbour') {
     const wood = paint(PAL.bark), deck = paint(0xc8a47c);
     m(rbox(2.2, 0.16, 7.5, 0.05), deck, 0, 0.45, -3.2);                                  // the pier, out over the bay
     for (let z = 0; z >= -6.8; z -= 1.7) for (const x of [-0.95, 0.95]) m(lathe([[0.001, -1.5], [0.12, -1.5], [0.12, 0.5], [0.001, 0.55]], 10), wood, x, 0.3, z);
@@ -228,6 +269,24 @@ function site(kind, F) {
     g.userData.solids = [[[-3.4, 0.8], 1.7]];
   } else return null;
   return ink(g, 'mid');
+}
+
+// bunting strung across Main Street from facade to facade, sagging in the middle
+function bunting(fC, x, Y) {
+  const g = new THREE.Group(), N = 24, line = [], flags = [[], [], [], []];
+  const at = (t) => { const d = fC(x, Y - 2 * Y * t); return d.multiplyScalar(radiusAt(d) + 3.75 - 0.45 * Math.sin(Math.PI * t)); };
+  for (let k = 0; k <= N; k++) line.push(at(k / N));
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(line), 32, 0.012, 4), paint(PAL.ink, { hatch: 0 })));
+  for (let k = 1; k < 14; k++) {
+    const t = k / 14, p = at(t), tan = at(t + 0.01).sub(at(t - 0.01)).normalize(), up = p.clone().normalize();
+    flags[k % 4].push(...p.clone().addScaledVector(tan, -0.09).toArray(), ...p.clone().addScaledVector(tan, 0.09).toArray(), ...p.clone().addScaledVector(up, -0.2).toArray());
+  }
+  flags.forEach((f, i) => {
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(f, 3)); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, paint([PAL.accent, PAL.gold, PAL.teal, 0xf6eedb][i], { side: THREE.DoubleSide }));
+    m.userData.noInk = true; g.add(m);
+  });
+  return g;
 }
 
 // a small park: lawn, a tree, a bench

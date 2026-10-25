@@ -23,11 +23,14 @@ export default {
     radius: 12.5,     // the street grid fits inside this
     pitch: 4.4,       // block spacing
     boulevard: 17,    // the ring road around town
+    // Maple Plaza, the strip mall: town-frame [x, y] of its shopfront line, and
+    // the reserved circle (kept clear of the boulevard so the ring isn't pushed)
+    mall: { at: [27.4, 0.5], zone: [24.8, 0.5], r: 6.0 },
   },
   museum: { at: [13, 25], facing: 'town' },
   // the story's places
   sites: {
-    station:   { at: [-10, -18], r: 4.5, name: 'Central Station' },
+    station:   { at: [-10, -18], r: 7.4, shift: -1.45, stop: 3.5, name: 'Central Station' },  // hall + platform + track
     harbour:   { at: [-20, 10], r: 4.0, name: 'The Harbour' },
     airport:   { at: [30, 92], r: 14, name: 'Airport' },
     launchpad: { at: [-8, -150], r: 5, name: 'Cape Far Side' },
