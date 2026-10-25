@@ -33,6 +33,10 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - Shoes are now drawn from a side silhouette (heel counter, collar, instep, round toe) on a separate sole, toe wider than heel, ~15% of body height; trouser hems end inside the collar.
   - Arms hang away from the body (more over coats, dresses and bellies), hands just ahead of the hips.
   - Main character walk: fixed in v2 earlier (model-axis poses); now ported to the ORIGINAL game's `procWalk` in planet.js too (`criticBindFrames` + model-axis turns), cache token p98.
+- 🟡 **Shoes curve up at the ankle (should be an S from the side); fix the hands; put everyone's arms in natural positions, doing something in the environment.**
+  - Shoes: S-shaped side profile (collar dips at the ankle, tongue, vamp dip, toe box) on a sole with toe spring.
+  - Hands: palm + four fingers that curl round what they hold + a thumb.
+  - Stances: Vivi holds a clipboard and taps a pen; Otto has his thumb in his belt and a torch on the ground; Pia sips a café coffee, hand on hip; Rex stands arms-crossed in a waist apron. The free hand gestures when they talk. Rules added to AGENTS.md.
 - ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 
