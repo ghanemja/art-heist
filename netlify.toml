@@ -5,6 +5,13 @@
   # `netlify deploy --build`; the manual path is guarded by ./deploy.sh.)
   command = "node scripts/validate-critic.mjs"
 
+# v2 lives in its own folder; force the trailing slash so its relative ./js paths resolve
+[[redirects]]
+  from = "/v2"
+  to = "/v2/"
+  status = 301
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
