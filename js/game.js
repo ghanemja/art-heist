@@ -618,7 +618,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     player.st.enabled = false;
     document.body.classList.add('cine');
     const loader = new THREE.TextureLoader();
-    cape.crates.forEach((c, i) => loader.load('../artworks/' + ARTS[i % ARTS.length], (tx) => {
+    cape.crates.forEach((c, i) => loader.load('./artworks/' + ARTS[i % ARTS.length], (tx) => {
       tx.colorSpace = THREE.SRGBColorSpace;
       c.userData.art.material = new THREE.MeshBasicMaterial({ map: tx });
     }));

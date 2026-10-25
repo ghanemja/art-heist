@@ -16,7 +16,7 @@ const FOOT = 4.593;                        // model units from the origin down t
 
 let _glb = null;
 export function loadHuman() {
-  if (!_glb) _glb = new Promise((res, rej) => new GLTFLoader().load('../models/critic.glb', (g) => { fixColors(g.scene); res(g); }, undefined, rej));
+  if (!_glb) _glb = new Promise((res, rej) => new GLTFLoader().load('./models/critic.glb', (g) => { fixColors(g.scene); res(g); }, undefined, rej));
   return _glb;
 }
 

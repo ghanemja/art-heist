@@ -39,7 +39,7 @@ export default {
   // Janelle's projects: buildings around town, each a portfolio piece
   projects: [
     { key: 'library',   name: 'The Library', tag: 'the bookshelf', at: [44, 2], style: 'library',
-      desc: 'A cozy room holding all my repos as books on a shelf — plus a walkable gallery of my paintings.', enter: '../room.html' },
+      desc: 'A cozy room holding all my repos as books on a shelf — plus a walkable gallery of my paintings.', enter: './room.html' },
     { key: 'yarnflow',  name: 'YarnFlow', tag: 'hobby · social', at: [34, 53], style: 'dome',
       desc: 'A crochet studio — patterns as threads you can share, fork, and remix.', url: 'https://ghanemja.github.io/crochet/' },
     { key: 'inbox',     name: 'Inbox Zero', tag: 'tool', at: [2, 58], style: 'tower',

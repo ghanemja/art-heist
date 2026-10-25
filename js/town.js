@@ -8,7 +8,7 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../../museum.js';
+import { buildMuseum } from '../museum.js';
 import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
@@ -116,7 +116,7 @@ export function buildTown(scene) {
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
   {
-    const mus = buildMuseum({ lite: false, glowMats: [], artBase: '../artworks/' });
+    const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/' });
     restyle(mus.group);
     ink(mus.group, 'mid');
     settle(mus.group, mDir, 6, 0.1, yawToFace(mDir, TOWN_C));
