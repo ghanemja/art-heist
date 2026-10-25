@@ -24,7 +24,12 @@ export function loadHuman() {
 // SWEATER mesh (grey). Repaint just the verts those bones drive with the right
 // colour as vertex colours; clones share the geometry, so this runs once.
 const REPAINT = { jeans: { bones: ['handL', 'handR'], to: 'skin' }, sweater: { bones: ['head'], to: 'hair' } };
+// the model's own skin is #f9efe5 — near paper-white, so in the gouache look her
+// face and hands read as blank white. A warm, light skin tone instead (set before
+// the hand repaint, so face and hands match).
+export const CRITIC_SKIN = 0xefc3a2;
 function fixColors(root) {
+  root.traverse(o => { if (o.material?.name === 'skin') o.material.color.setHex(CRITIC_SKIN); });
   const colOf = {};
   root.traverse(o => { if (o.material?.name) colOf[o.material.name] = o.material.color; });
   root.traverse(o => {
@@ -43,6 +48,28 @@ function fixColors(root) {
       const f = (i) => old ? old.getComponent(v, i) : 1;
       col[v * 3] = c.r * f(0); col[v * 3 + 1] = c.g * f(1); col[v * 3 + 2] = c.b * f(2);
     }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.userData.absColor = true;
+  });
+  // the SKIN mesh also holds the sweater's flared cuffs (everything below y≈1 in the
+  // bind pose; the face and neck sit above y≈2.5) — paint those the sweater's own
+  // (baked) colour, a touch lighter for the rib, so sleeves run to the wrist and only
+  // the face and hands are skin
+  let knit = null;
+  root.traverse(o => { if (o.isSkinnedMesh && o.material.name === 'sweater') {
+    // average only the grey knit (the nape verts were repainted hair-brown above)
+    const c = o.geometry.attributes.color, a = [0, 0, 0]; let n = 0;
+    for (let v = 0; v < c.count; v++) {
+      const r = c.getComponent(v, 0), b = c.getComponent(v, 2);
+      if (Math.abs(r - b) > 0.04) continue;
+      for (let k = 0; k < 3; k++) a[k] += c.getComponent(v, k); n++;
+    }
+    knit = new THREE.Color(...a.map(x => x / Math.max(1, n))).multiplyScalar(1.12);
+  } });
+  root.traverse(o => {
+    if (!o.isSkinnedMesh || o.material.name !== 'skin' || !knit) return;
+    const g = o.geometry, P = g.attributes.position, n = P.count, col = new Float32Array(n * 3), sk = o.material.color;
+    for (let v = 0; v < n; v++) { const c = P.getY(v) < 1.5 ? knit : sk; col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b; }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.userData.absColor = true;
   });
@@ -134,8 +161,10 @@ export function pose(inst, dt, k, { talk = 0, run = 0 } = {}) {
   // legs swing forward/back about the side axis; the knee folds on the way through
   turn(inst, 'upperlegL', side, leg * s);
   turn(inst, 'upperlegR', side, -leg * s);
-  turn(inst, 'lowerlegL', side, -(0.9 + 0.3 * run) * k * Math.max(0, -c));
-  turn(inst, 'lowerlegR', side, -(0.9 + 0.3 * run) * k * Math.max(0, c));
+  // (the knee folds while its leg swings FORWARD — the thigh angle goes as s, so the
+  // left leg travels forward while c > 0; folding it on the back-swing reads as moonwalking)
+  turn(inst, 'lowerlegL', side, -(0.9 + 0.3 * run) * k * Math.max(0, c));
+  turn(inst, 'lowerlegR', side, -(0.9 + 0.3 * run) * k * Math.max(0, -c));
   turn(inst, 'footL', side, 0.25 * k * Math.max(0, c));
   turn(inst, 'footR', side, 0.25 * k * Math.max(0, -c));
   // arms counter-swing, elbows soft and a touch forward, hands in from the hips

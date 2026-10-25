@@ -507,7 +507,8 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   const legA = 0.48 * k, armA = 0.4 * k;
   // forward is +Z: a negative X rotation swings a hanging limb forward
   J.thighL.rotation.x = -legA * s; J.thighR.rotation.x = legA * s;
-  J.shinL.rotation.x = 0.9 * k * Math.max(0, -c); J.shinR.rotation.x = 0.9 * k * Math.max(0, c);
+  // the knee folds on the forward swing (the left thigh travels forward while c > 0)
+  J.shinL.rotation.x = 0.9 * k * Math.max(0, c); J.shinR.rotation.x = 0.9 * k * Math.max(0, -c);
   // arms: each side follows the person's stance (what they're doing), else a relaxed hang;
   // walking swings them; talking lifts the free hand into a gesture
   const st = inst.stance;
