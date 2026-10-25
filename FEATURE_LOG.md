@@ -7,6 +7,11 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"The chin and hair are miscoloured; the hat is perfect colour-wise but a little wide for her head."** Done in v2, checked by picking the exact pixels in close-ups (front, back, both sides) and a full story run.
+  - Chin: the face WAS skin — the default 3-band cel ramp's mid band darkened her lower face (lit from above) to exactly the hair's tan. Her skin, hair and sweater now use a gentler ramp (and lighter hatching), so the face reads as one skin tone and the hair loses its dark blotches. The chin's zigzag lower edge (collar lining showing between teeth) is levelled and tucked just inside the collar.
+  - The dark blot on her back hair was the backpack strap poking out between the locks; the strap now runs from the pack straight over the shoulder.
+  - Beret: narrower (brim radius 0.9 → 0.8, a slimmer roll), a touch rounder.
+
 - 🟡 **"What is this extra lump under the beret? Her eyes, face and hair are not properly coloured." + "there is some overlap here still"** Done in v2, checked with flat-colour part maps, raycasts and close-ups from six angles; full story play-through clean.
   - Cause: critic.glb assigns its materials wrongly — the SKIN material covers the face, both eyes, every lock of hair on the front of the head and the sweater cuffs; HAIR is only the back half; SWEATER has the nape hair; JEANS has the hands. So her eyes and front hair rendered skin-coloured.
   - Now recoloured by connected piece of the mesh: face = skin, the two eye pieces = dark eyes (plus a white catchlight each), all other head pieces = hair, cuffs = sweater, hands = skin below the cuff. Hair locks are drawn double-sided (seen from behind they rendered as solid black outline).

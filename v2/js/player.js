@@ -110,12 +110,12 @@ function fitStraps(bp, rig) {
     const band = (y) => slice.filter(p => Math.abs(p.y - y) < 0.02).map(p => p.z);
     const top = pct(slice.map(p => p.y), 0.97);
     const zf = (y) => { const b = band(y); return b.length ? pct(b, 0.8) + T : null; };
-    const zb = (y) => { const b = band(y); return b.length ? pct(b, 0.2) - T : null; };
+    const zb = (y) => { const b = band(y); return b.length ? pct(b, 0.2) - T * 0.25 : null; };   // flat to the back, under her hair
     const zTop = pct(slice.filter(p => p.y > top - 0.03).map(p => p.z), 0.5);
     // the pack's top → up the back → over the shoulder → down the chest
     const path = [new THREE.Vector3(sx * 0.85, 0.12, 0.0)];
     const add = (x, y, z) => { if (z != null) path.push(new THREE.Vector3(x, y, z)); };
-    add(sx, top - 0.06, zb(top - 0.06));
+    // (no point up the back: the hair hangs there, and a strap between the locks read as a blot)
     add(sx, top + T, zTop);
     add(sx, top - 0.05, zf(top - 0.05));
     add(sx * 1.03, top - 0.13, zf(top - 0.13));

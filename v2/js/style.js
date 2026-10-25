@@ -23,13 +23,17 @@ export const PAL = {
 };
 
 // ── a 3-band toon ramp: shadow / mid / light, hard edges between them ──
-const RAMP = (() => {
-  const d = new Uint8Array([105, 175, 255]);
+const ramp = (a, b, c) => {
+  const d = new Uint8Array([a, b, c]);
   const t = new THREE.DataTexture(d, 3, 1, THREE.RedFormat);
   t.minFilter = t.magFilter = THREE.NearestFilter;
   t.needsUpdate = true;
   return t;
-})();
+};
+const RAMP = ramp(105, 175, 255);
+// a gentler ramp for skin and hair: the default mid band darkens a light skin tone to the
+// colour of her hair (her chin read as hair), and blotches a pale bob with dark patches
+const RAMP_SOFT = ramp(196, 228, 255);
 
 // paper grain + hatching, injected at the very end of every fill shader. It
 // works in SCREEN space (like ink on a page) so it never swims on a surface.
@@ -59,10 +63,10 @@ const PAPER_GLSL = /* glsl */`
 const _matCache = new Map();
 // paint(color, { hatch, flat, map, side, opacity }) → shared gouache material
 export function paint(color, o = {}) {
-  const key = [color, o.hatch ?? 1, o.map?.uuid, o.side, o.opacity, o.emissive, o.vertexColors].join('|');
+  const key = [color, o.hatch ?? 1, o.map?.uuid, o.side, o.opacity, o.emissive, o.vertexColors, o.soft ? 's' : ''].join('|');
   if (_matCache.has(key) && !o.unique) return _matCache.get(key);
   const m = new THREE.MeshToonMaterial({
-    color, gradientMap: RAMP, map: o.map || null, side: o.side ?? THREE.FrontSide,
+    color, gradientMap: o.soft ? RAMP_SOFT : RAMP, map: o.map || null, side: o.side ?? THREE.FrontSide,
     transparent: (o.opacity ?? 1) < 1, opacity: o.opacity ?? 1,
     vertexColors: !!o.vertexColors,
     emissive: o.emissive ?? 0x000000, emissiveIntensity: o.emissive ? 1 : 0,

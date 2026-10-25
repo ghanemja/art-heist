@@ -73,6 +73,18 @@ function fixColors(root) {
   const sk = mesh.skin, skP = pieces(sk.geometry);
   const headPieces = skP.filter(p => p.min.y > 2.5), face = headPieces[0];
   const isEye = (p) => p.verts.length < 60 && p.max.x - p.min.x < 0.1 && p.min.y > 3.1 && p.max.y < 3.7 && Math.abs((p.min.z + p.max.z) / 2) > 0.1;
+  // the face's lower edge (her chin, tucked into the turtleneck) is a zigzag of teeth with
+  // the collar's grey lining showing between them: level it down to the lowest tooth
+  {
+    const P = sk.geometry.attributes.position, NA = 64;
+    let cx = 0, cz = 0; for (const v of face.verts) { cx += P.getX(v); cz += P.getZ(v); } cx /= face.verts.length; cz /= face.verts.length;
+    const az = (v) => Math.min(NA - 1, Math.floor((Math.atan2(P.getZ(v) - cz, P.getX(v) - cx) / Math.PI + 1) / 2 * NA));
+    const lo = new Float32Array(NA).fill(9);
+    for (const v of face.verts) if (P.getY(v) < face.min.y + 0.3) lo[az(v)] = Math.min(lo[az(v)], P.getY(v));
+    const sm = Array.from(lo, (_, k) => { let m = 9; for (let d = -3; d <= 3; d++) m = Math.min(m, lo[(k + d + NA) % NA]); return m; });
+    for (const v of face.verts) { const y = P.getY(v), L = sm[az(v)]; if (L < 9 && y < L + 0.11 && y < 2.99) P.setY(v, L - 0.09); }   // (the mouth sits just above 3.0)
+    sk.geometry.computeVertexNormals();
+  }
   // a catchlight for each eye, placed on the head bone per instance (see makeHuman)
   root.userData.eyes = headPieces.filter(isEye).map(p => new THREE.Vector3(p.max.x + 0.012, p.min.y + (p.max.y - p.min.y) * 0.68, (p.min.z + p.max.z) / 2 + 0.04));
   paintVerts(sk, (set) => {
@@ -90,12 +102,12 @@ function fixColors(root) {
   {
     const bb = pieces(mesh.beret.geometry)[0];
     const cx = (bb.min.x + bb.max.x) / 2 + 0.02, cz = (bb.min.z + bb.max.z) / 2, rimY = 3.84;
-    const R0 = 0.9, prof = [[0.001, 0.52], [0.55, 0.48], [R0 - 0.1, 0.16], [R0 - 0.05, 0.02], [R0 + 0.01, -0.01], [R0 + 0.07, 0.04],
-      [R0 + 0.13, 0.17], [R0 + 0.12, 0.32], [R0 - 0.05, 0.52], [R0 * 0.55, 0.68], [0.001, 0.72]];
+    const R0 = 0.8, prof = [[0.001, 0.52], [0.55, 0.48], [R0 - 0.1, 0.16], [R0 - 0.05, 0.02], [R0 + 0.01, -0.01], [R0 + 0.07, 0.04],
+      [R0 + 0.1, 0.17], [R0 + 0.09, 0.32], [R0 - 0.05, 0.52], [R0 * 0.55, 0.68], [0.001, 0.72]];
     const g = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 48);
     g.deleteAttribute('uv'); g.deleteAttribute('normal');
     const geo = mergeVertices(g, 1e-4);
-    geo.scale(1.0, 1.0, 0.84);                                   // oval, longer front-to-back
+    geo.scale(1.0, 1.0, 0.88);                                   // oval, longer front-to-back
     geo.rotateX(0.12);                                           // slouched toward her left (+z)
     geo.rotateZ(0.06);                                           // and tipped a touch back
     geo.translate(cx, rimY, cz);
@@ -142,10 +154,10 @@ function fixColors(root) {
       const P = g.attributes.position;
       for (const v of verts) {
         const y = P.getY(v); if (y < hemY - 0.45 || y > hemY + 0.2) continue;
-        const x = P.getX(v) - C.x, z = (P.getZ(v) - C.z) / 0.84, r = Math.hypot(x, z);
+        const x = P.getX(v) - C.x, z = (P.getZ(v) - C.z) / 0.88, r = Math.hypot(x, z);
         if (r <= hemR) continue;
         const t = THREE.MathUtils.smoothstep(y, hemY - 0.45, hemY - 0.05), nr = r + (hemR - r) * t;
-        P.setX(v, C.x + x / r * nr); P.setZ(v, C.z + z / r * nr * 0.84);
+        P.setX(v, C.x + x / r * nr); P.setZ(v, C.z + z / r * nr * 0.88);
       }
     };
     const hv = [...Array(mesh.hair.geometry.attributes.position.count).keys()], sv = headPieces.filter(p => p !== face && !isEye(p)).flatMap(p => p.verts);
@@ -205,8 +217,9 @@ export function makeHuman(glb, look = {}) {
     // the hair locks are single-sided sheets: seen from behind they were culled and only
     // their outline drew (solid black) — so anything that carries hair is double-sided
     const side = ['hair', 'skin', 'sweater'].includes(name) ? THREE.DoubleSide : THREE.FrontSide;
-    o.material = o.geometry.userData.absColor ? paint(0xffffff, { vertexColors: true, side })
-      : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color, side });
+    const soft = ['skin', 'hair', 'sweater'].includes(name);      // the pieces that carry her face and hair
+    o.material = o.geometry.userData.absColor ? paint(0xffffff, { vertexColors: true, side, soft, hatch: soft ? 0.3 : 1 })
+      : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color, side, soft, hatch: soft ? 0.3 : 1 });
   });
   // the new beret (see fixColors), riding the head bone; the model's own is hidden
   const nb = glb.scene.userData.beret;
