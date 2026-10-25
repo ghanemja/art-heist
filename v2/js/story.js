@@ -144,15 +144,20 @@ function ticket() {
   return ink(g, 'fine');
 }
 function cafe() {
+  // two bistro tables on the pavement under the café's awning
   const g = new THREE.Group();
-  for (const [x, z] of [[-0.9, 0], [0.9, 0.2]]) {
+  for (const x of [-0.5, 0.5]) {
     const t = new THREE.Group();
-    t.add(new THREE.Mesh(lathe([[0.001, 0], [0.25, 0], [0.05, 0.08], [0.04, 0.7], [0.45, 0.72], [0.45, 0.78], [0.001, 0.78]], 16), paint(PAL.cream)));
-    t.position.set(x, 0, z); g.add(t);
-    for (const s of [-1, 1]) { const ch = new THREE.Mesh(rbox(0.38, 0.45, 0.38, 0.06), paint(PAL.accent)); ch.position.set(x + s * 0.6, 0.23, z); g.add(ch); }
+    t.add(new THREE.Mesh(lathe([[0.001, 0], [0.18, 0], [0.04, 0.06], [0.03, 0.62], [0.26, 0.64], [0.26, 0.69], [0.001, 0.69]], 16), paint(PAL.cream)));
+    t.position.set(x, 0.07, 0); g.add(t);
+    for (const s of [-1, 1]) {
+      const ch = new THREE.Group();
+      ch.add(new THREE.Mesh(lathe([[0.001, 0], [0.13, 0], [0.13, 0.04], [0.03, 0.06], [0.03, 0.38], [0.15, 0.4], [0.15, 0.44], [0.001, 0.44]], 14), paint(0x4f8a7e)));
+      const back = new THREE.Mesh(rbox(0.26, 0.24, 0.03, 0.012), paint(0x4f8a7e)); back.position.set(0, 0.58, -0.13); ch.add(back);
+      ch.position.set(x, 0.07, s * 0.36); ch.rotation.y = s > 0 ? Math.PI : 0; g.add(ch);
+    }
+    const cup = new THREE.Mesh(lathe([[0.001, 0], [0.035, 0], [0.045, 0.06], [0.001, 0.06]], 10), paint(0xf6eedb)); cup.position.set(x + 0.06, 0.76, 0.02); g.add(cup);
   }
-  const um = new THREE.Mesh(lathe([[0.001, 0], [1.1, 0], [0.001, 0.45]], 24), paint(PAL.mustard)); um.position.set(-0.9, 1.9, 0); g.add(um);
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.9, 6), paint(PAL.ink, { hatch: 0 })).translateX(-0.9).translateY(0.95));
   return ink(g, 'fine');
 }
 
@@ -169,13 +174,14 @@ export function buildCase(scene, W) {
   { const d = mF(-6.6, 1.2); const b = booth(); place(b, d, yawToFace(d, mF(0, 1))); items.push({ kind: 'clue', id: 'log', dir: mF(-6.0, 2.0), obj: b }); W.solid(d, 0.8); }
   // downtown: the van outside Frame & Co., the café with Pia's bike
   { const d = W.townAt(W.vanSpot); const v = van(); place(v, d, W.vanYaw); items.push({ kind: 'clue', id: 'van', dir: d, obj: v }); W.solid(d, 1.1); }
-  { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d); const b = bikeProp(); place(b, W.townAt([W.cafeSpot[0] + 1.6, W.cafeSpot[1] - 0.8]), 1.2);
-    items.push({ kind: 'clue', id: 'bike', dir: W.townAt([W.cafeSpot[0] + 1.6, W.cafeSpot[1] - 0.8]), obj: b }); }
+  { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d, yawToFace(d, W.townAt([W.cafeSpot[0], 0]))); W.solid(d, 0.55);
+    const bd = W.townAt([W.cafeSpot[0] + 1.05, W.cafeSpot[1] - 0.45]); const b = bikeProp(); place(b, bd, yawToFace(bd, W.townAt([W.cafeSpot[0] + 1.05, 0])) + Math.PI / 2);
+    items.push({ kind: 'clue', id: 'bike', dir: bd, obj: b }); }
   // the harbour crates and the station ticket
   { const d = W.siteAt('harbour', [2.2, 0.5]); const c = crates(); place(c, d, yawToFace(d, W.sites.harbour.dir)); items.push({ kind: 'clue', id: 'crates', dir: d, obj: c }); W.solid(d, 1.2); }
   { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); place(t, d); items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t }); }
   // people
-  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.6, 2.4), pia: W.townAt([W.cafeSpot[0] - 0.4, W.cafeSpot[1] + 1.2]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
+  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.6, 2.4), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.15]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
   for (const p of PEOPLE) {
     const d = at[p.id];
     const m = person(LOOKS[p.id]);

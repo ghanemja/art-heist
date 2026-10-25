@@ -45,7 +45,7 @@ function windowTex(kind = 'flat', lit = false) {
   return t;
 }
 // a wall whose four faces carry the window sheet, one tile per ~1.6 units
-function windowWall(w, h, d, color, kind) {
+export function windowWall(w, h, d, color, kind) {
   const g = rbox(w, h, d, 0.12, 2);
   const uv = g.attributes.uv, n = g.attributes.normal, pos = g.attributes.position;
   for (let i = 0; i < uv.count; i++) {

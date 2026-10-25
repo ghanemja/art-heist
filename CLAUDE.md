@@ -67,6 +67,12 @@ through buildings, towers in streets, a station inside the museum). Now:
   (`window.__layout()` → every footprint/road/zone for a planning map).
   Other dev params: `?at=<landmark>`, `?shotcam=<key>,x,y,z,lookY,lookZ`, `?arrfreeze=0.9`, `?debug=1`.
 
+**v2 (`v2/`) — curvature.** The planet is radius 40, so anything flat and wide
+floats at its ends. Build structures in `v2/js/buildings.js` and set them down with
+`placeOnPlanet()` (bakes per material, splits long faces, bends every vertex onto the
+curve, inks). Batch a row of them with `batchPlaced()`; register walkable tops with
+`addFloor()`.
+
 ## Asset pipeline
 
 - Raw source GLBs live in `models/_raw/` (**gitignored, never deployed**).
