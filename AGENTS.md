@@ -41,7 +41,10 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
    (faces.js) and give each person their own `face`: shape (jaw/chin/cheeks/long/skull/
    brow), nose type, mouth expression, eyes, brows, hair style, beard. Cast the face to
    the character (anxious, sleepy, cheerful, smug). Hair grows from the scalp inside a
-   hairline mask with a smooth edge — never a cap or a ball stuck on the head.
+   hairline mask with a smooth edge — never a cap or a ball stuck on the head. Hair has
+   texture: combed strands flowing toward where it's gathered, a sheen streak, darker roots.
+7c. **Necks grow out of the body.** A neck flares into the shoulders and tucks under the
+   jaw, its outline fades at both ends (`inkW`), and it rises out of a collar.
 7b. **No emoji, anywhere in the UI.** People's faces are painted portraits rendered
    from their own model (`portraits.js`); clues are painted sketches of the real prop.
 8. **Doing something, not just standing.** Every person gets a `stance` (`STANCES` in

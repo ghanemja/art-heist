@@ -264,7 +264,27 @@ export function makeFolk(spec) {
   // ── neck + head ──
   // the neck rises from the back of the shoulders and leans forward into the skull
   J.neck = joint(J.spine, 0, 0.35, -0.014);
-  const nk = cap(0.04, 0.055, skin, 12); nk.rotation.x = 0.22; at(nk, 0, 0.03, 0.006); J.neck.add(nk);
+  // the neck flares into the shoulders below and tucks up under the jaw above; its outline
+  // fades out at both ends so it grows out of the body and into the head, not stuck between them
+  {
+    const g = lathe(smooth([[0.001, -0.035], [0.064, -0.03], [0.058, -0.008], [0.049, 0.014], [0.043, 0.035], [0.041, 0.065], [0.045, 0.095], [0.035, 0.115], [0.001, 0.12]], 30), 20);
+    const P = g.attributes.position, iw = new Float32Array(P.count);
+    for (let i = 0; i < P.count; i++) { const y = P.getY(i); iw[i] = THREE.MathUtils.smoothstep(y, 0.0, 0.025) * (1 - THREE.MathUtils.smoothstep(y, 0.05, 0.075)); }
+    g.setAttribute('inkW', new THREE.BufferAttribute(iw, 1));
+    const nk = new THREE.Mesh(g, skin); nk.rotation.x = 0.22; nk.scale.z = 0.88; at(nk, 0, 0.0, 0.014); J.neck.add(nk);
+  }
+  // a collar: the neckline of whatever they wear, so the neck rises out of clothes
+  {
+    const topM = paint(S.top);
+    if (S.outfit === 'coat') {                                  // a stand-up coat collar, open at the front
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.078, 0.05, 24, 1, true, Math.PI * 0.18, Math.PI * 1.64), paint(S.top, { side: THREE.DoubleSide }));
+      c.position.set(0, 0.362, -0.01); c.rotation.x = 0.12; J.spine.add(c);
+    } else {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.013, 8, 26), S.outfit === 'uniform' ? topM : topM);
+      ring.rotation.x = Math.PI / 2 + 0.2; ring.scale.set(1, 0.85, 1); ring.position.set(0, 0.352, -0.006); J.spine.add(ring);
+      if (S.outfit === 'uniform') { const edge = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.004, 6, 26), paint(0xe4b84f)); edge.rotation.copy(ring.rotation); edge.scale.copy(ring.scale); edge.position.set(0, 0.362, -0.004); J.spine.add(edge); }
+    }
+  }
   J.head = joint(J.neck, 0, 0.06, 0.016);
   // the head: its own shape, features, expression and hair (faces.js)
   const head = buildHead(J, S, S.face || {}, { skin, hairM, dark });

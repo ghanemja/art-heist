@@ -41,10 +41,12 @@ const dirOf = (u, v, zs = 1) => new THREE.Vector3(u, v, zs * Math.sqrt(Math.max(
 
 // a sphere pushed onto the head shape. mask(d) → keep this vertex (hair/beard region);
 // masked-out vertices sink inside the head, which leaves a clean, tapered hairline.
-function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1 } = {}) {
+function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, color = null } = {}) {
   const g = new THREE.SphereGeometry(1, wSeg, hSeg);
   const p = g.attributes.position, v = new THREE.Vector3(), o = new THREE.Vector3();
+  const col = color ? new Float32Array(p.count * 3) : null, c = new THREE.Color();
   for (let i = 0; i < p.count; i++) {
+    if (col) { v.fromBufferAttribute(p, i).normalize(); color(v, c); col.set([c.r, c.g, c.b], i * 3); }
     v.fromBufferAttribute(p, i).normalize();
     shape(v, o);
     // mask(d) is a signed field (> 0 inside the hair); blend across the edge so the
@@ -53,9 +55,38 @@ function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1 } = {}) {
     o.sub(HC).multiplyScalar(k).add(HC);
     p.setXYZ(i, o.x, o.y, o.z);
   }
+  if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.deleteAttribute('normal'); g.deleteAttribute('uv');
   const w = mergeVertices(g, 1e-6); w.computeVertexNormals();
   return w;
+}
+
+// ── hair texture: combed strands that flow toward where the hair is gathered (the bun,
+// the ponytail, the crown), cut as shallow grooves, with a shine streak across them and
+// a touch darker at the roots — the way a cartoon painter draws hair, in the geometry
+const _ax = new THREE.Vector3(), _bx = new THREE.Vector3(), _pp = new THREE.Vector3();
+function strandAngle(d, flow) {
+  _pp.copy(d).addScaledVector(flow, -d.dot(flow));
+  _ax.set(1, 0, 0).addScaledVector(flow, -flow.x).normalize();
+  _bx.crossVectors(flow, _ax);
+  return Math.atan2(_pp.dot(_ax), _pp.dot(_bx));
+}
+function hairStrands(H) {
+  const flow = new THREE.Vector3(...(H.flow || [0, 1, 0])).normalize(), n = H.strands ?? 30;
+  const ridge = (d) => Math.sin(strandAngle(d, flow) * n) * 0.6 + Math.sin(strandAngle(d, flow) * n * 2.3 + 1.7) * 0.4;
+  return { flow, ridge };
+}
+function hairColor(H, base, mask) {
+  const { flow, ridge } = hairStrands(H);
+  const b = new THREE.Color(base), hi = b.clone().lerp(new THREE.Color(H.sheen ?? 0xbfd2ff), 0.38).offsetHSL(0, 0, 0.1);
+  const root = b.clone().multiplyScalar(0.72);
+  return (d, out) => {
+    const r = ridge(d), along = d.dot(flow);
+    const shine = Math.exp(-((along - (H.shineAt ?? 0.45)) ** 2) / 0.012) * THREE.MathUtils.clamp(0.55 + 0.6 * r, 0, 1);
+    const edge = mask ? 1 - ss(mask(d), 0.0, 0.16) : 0;                      // darker where it grows from the scalp
+    out.copy(b).lerp(root, 0.55 * edge + 0.18 * Math.max(0, -r)).lerp(hi, shine);
+    return out;
+  };
 }
 
 // a stroke drawn on the face: a tube through surface points, thick in the middle,
@@ -125,17 +156,19 @@ function hairMask(H) {
   };
 }
 function hairInflate(H) {
+  const strands = hairStrands(H);
   return (d) => {
     let k = H.base + H.vol * Math.pow(Math.max(0, d.y), 1.4) + (H.backVol || 0) * Math.max(0, -d.z) * Math.max(0, d.y + 0.3);
     if (H.part != null) k -= 0.032 * bump(H.part, 0.06, d.x) * ss(d.z, -0.4, 0.3) * ss(d.y, 0.3, 0.7);     // the parting groove
+    k += 0.009 * strands.ridge(d);                                         // combed strands
     return k;
   };
 }
 const HAIR = {
-  bun:   { centre: 0.62, temple: 0.5, side: 0.16, back: -0.42, base: 1.045, vol: 0.03, part: 0.0 },     // sleek, centre part, pulled back
-  crop:  { centre: 0.58, temple: 0.47, side: 0.1, back: -0.36, base: 1.035, vol: 0.025, burns: 0.5 },   // short, sideburns into the beard
-  sides: { centre: 0.72, temple: 0.6, side: 0.04, back: -0.4, base: 1.04, vol: 0.0, burns: 0.22 },      // grey round the sides, under a cap
-  pony:  { centre: 0.52, temple: 0.42, side: 0.14, back: -0.28, base: 1.05, vol: 0.02, part: 0.18 },    // side part, pulled back
+  bun:   { centre: 0.62, temple: 0.5, side: 0.16, back: -0.42, base: 1.045, vol: 0.03, part: 0.0, flow: [0, 0.55, -0.83], strands: 34, shineAt: 0.55 },     // sleek, centre part, pulled back
+  crop:  { centre: 0.58, temple: 0.47, side: 0.1, back: -0.36, base: 1.035, vol: 0.025, burns: 0.5, flow: [0, 1, 0.15], strands: 40, shineAt: 0.8, sheen: 0xffd9a8 },   // short, sideburns into the beard
+  sides: { centre: 0.72, temple: 0.6, side: 0.04, back: -0.4, base: 1.04, vol: 0.0, burns: 0.22, flow: [0, 1, 0], strands: 44, shineAt: 0.3, sheen: 0xffffff },      // grey round the sides, under a cap
+  pony:  { centre: 0.52, temple: 0.42, side: 0.14, back: -0.28, base: 1.05, vol: 0.02, part: 0.18, flow: [0, 0.3, -0.95], strands: 30, shineAt: 0.35 },    // side part, pulled back
   fringe:{ centre: 0.32, temple: 0.3, side: 0.1, back: -0.45, base: 1.05, vol: 0.05, fringe: 0.06, backVol: 0.03 },
 };
 
@@ -212,7 +245,8 @@ export function buildHead(J, S, F, mats) {
   if (F.glasses) bits.push(add(stroke(shape, [[-0.15, 0.15], [0, 0.19], [0.15, 0.15]], 0.003, dark, 0.014)));
   // hair, grown from the scalp inside its hairline
   const H = HAIR[F.hair];
-  if (H) add(new THREE.Mesh(sculpt(shape, 80, 60, { mask: hairMask(H), inflate: hairInflate(H) }), hairM));
+  if (H) { const mask = hairMask(H);
+    add(new THREE.Mesh(sculpt(shape, 96, 72, { mask, inflate: hairInflate(H), color: hairColor(H, S.hair ?? 0x3a2a24, mask) }), paint(0xffffff, { vertexColors: true }))); }
   // a beard and moustache grown from the jaw, the mouth left clear
   if (F.beard) {
     const mask = (d) => {
@@ -223,7 +257,10 @@ export function buildHead(J, S, F, mats) {
       const hole = (((d.x / 0.18) ** 2 + ((d.y - vm) / 0.055) ** 2) - 1) * 0.05;     // the mouth stays clear
       return Math.min(Math.max(below, mous), 1.75 - az, hole);
     };
-    add(new THREE.Mesh(sculpt(shape, 80, 60, { mask, inflate: (d) => 1.045 + 0.06 * Math.max(0, -d.y - 0.5) }), hairM));
+    // a beard grows downward: strands run vertically, a little fuller and wavier at the chin
+    const BH = { flow: [0, -1, 0.2], strands: 46, shineAt: -0.85, sheen: 0xffd9a8 }, bs = hairStrands(BH);
+    add(new THREE.Mesh(sculpt(shape, 96, 72, { mask, inflate: (d) => 1.045 + 0.06 * Math.max(0, -d.y - 0.5) + 0.008 * bs.ridge(d),
+      color: hairColor(BH, S.hair ?? 0x3a2a24, mask) }), paint(0xffffff, { vertexColors: true })));
   }
   for (const b of bits) b.userData.noInk = true;
   const top = shape(new THREE.Vector3(0, 1, 0)).y;
