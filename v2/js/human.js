@@ -93,12 +93,27 @@ function fixColors(root) {
     const az = (x, z) => Math.min(NA - 1, Math.floor((Math.atan2(z - cz, x - cx) / Math.PI + 1) / 2 * NA));
     const rim = new Float32Array(NA).fill(-9);
     for (const v of body.verts) if (SP.getY(v) > body.max.y - 0.35) { const k = az(SP.getX(v), SP.getZ(v)); rim[k] = Math.max(rim[k], SP.getY(v)); }
+    // a CHIN: the face's bottom edge becomes a rounded U under the mouth (the mouth sits at
+    // ≈3.0, so the chin's tip is at ≈2.87), and the turtleneck's front is turned down
+    // beneath it — the collar used to ride up over her whole lower face
+    let fz = 0; for (const v of face.verts) fz += P.getZ(v); fz /= face.verts.length;
+    const chinY = (z) => 2.87 + 1.4 * (z - fz) ** 2;
     for (const v of face.verts) {
-      const y = P.getY(v); if (y > 2.99 || !edgeKeys.has(key(v))) continue;     // the mouth sits just above 3.0
-      const R = rim[az(P.getX(v), P.getZ(v))]; if (R < -8) continue;
-      P.setY(v, Math.min(y, R - 0.18));     // down past the collar's inner lining (≈2.80): inside the collar reads as neck
+      const y = P.getY(v); if (y > 2.99 || !edgeKeys.has(key(v))) continue;
+      P.setY(v, Math.min(y, chinY(P.getZ(v))));
     }
     sk.geometry.computeVertexNormals();
+    const top = body.max.y + 0.01;
+    for (const v of body.verts) {
+      const x = SP.getX(v), y = SP.getY(v), z = SP.getZ(v);
+      const front = THREE.MathUtils.smoothstep(x, cx + 0.05, cx + 0.3);        // 0 at the back of the neck → 1 at the front
+      if (!front) continue;
+      const T = Math.min(top, chinY(z) - 0.06), lo = T - 0.12;                  // the collar's new top: just under the chin
+      if (y <= lo || T >= top) continue;
+      const ny = lo + (y - lo) * (T - lo) / (top - lo);
+      SP.setY(v, y + (ny - y) * front);
+    }
+    sw.geometry.computeVertexNormals();
   }
   // a catchlight for each eye, placed on the head bone per instance (see makeHuman)
   root.userData.eyes = headPieces.filter(isEye).map(p => new THREE.Vector3(p.max.x + 0.012, p.min.y + (p.max.y - p.min.y) * 0.68, (p.min.z + p.max.z) / 2 + 0.04));

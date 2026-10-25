@@ -7,6 +7,8 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"Now her chin is missing."** Done in v2: the turtleneck rode up over her whole lower face, so the face ended in a flat line. Her face's bottom edge is now a rounded chin just under the mouth, and the collar's front is turned down beneath it (the back of the collar is unchanged). Checked front / three-quarter / side / from below, in the harness and in-game; story run clean.
+
 - 🟡 **"It's still there (flat band under the beret) and her chin is messed up."** Done in v2, checked by toggling each geometry step on/off in a side-by-side harness, picking the exact pixels, and close-ups from ten angles incl. from below; story run clean.
   - The band under the brim was bare SKULL: the model's "face" piece is the whole skull, so its top and back were painted skin. Only its front is face now; behind the cheeks and up under the brim is hair.
   - Chin: the collar's outer rim is at ≈2.95 but its inner lining sits at ≈2.80, and the chin stopped at 2.90 — so you looked down into the dark lining between them. Last round's levelling also bent the jaw. Now only the chin's open bottom edge is extended down to ≈2.78, inside the collar, so the inside of the turtleneck reads as neck; nothing visible moves.
