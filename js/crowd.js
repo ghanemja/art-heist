@@ -44,6 +44,7 @@ export function buildWalkers(scene, town) {
     const segs = pts.map((p, i) => arc(p, pts[(i + 1) % pts.length]));
     const len = segs.reduce((a, b) => a + b, 0);
     const obj = person(W.look);
+    obj.userData.noGround = true;
     scene.add(obj);
     const w = { id, name: W.name, obj, pts, segs, len, s: R.at * len, speed: R.speed, dir: pts[0].clone(), paused: false };
     place(w, 0);

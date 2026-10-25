@@ -369,7 +369,7 @@ export function pose(inst, dt, k, { talk = 0, run = 0 } = {}) {
 
 // a person standing somewhere: returns a group now, fills in when the rig loads
 export function person(look) {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.userData.noGround = true;      // people are never ground to stand on
   const turnG = new THREE.Group(); g.add(turnG);
   g.add(blobShadow(0.3));
   g.userData.turn = turnG;
