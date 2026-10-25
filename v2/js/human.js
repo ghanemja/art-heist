@@ -73,6 +73,123 @@ function fixColors(root) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.userData.absColor = true;
   });
+  // the hands (in the JEANS mesh) reach up inside the cuff, and their wrists poke
+  // out past the sleeve's side — paint everything above the hem sweater, so the
+  // sleeve reads unbroken and only the hand below it is skin
+  const HEM = -0.6;
+  root.traverse(o => {
+    if (!o.isSkinnedMesh || o.material.name !== 'jeans' || !knit) return;
+    const g = o.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, col = g.attributes.color;
+    const hand = new Set(); o.skeleton.bones.forEach((b, i) => { if (/hand/.test(b.name)) hand.add(i); });
+    for (let v = 0; v < P.count; v++) {
+      let w = 0; for (let k = 0; k < 4; k++) if (hand.has(si.getComponent(v, k))) w += sw.getComponent(v, k);
+      if (w > 0.5 && P.getY(v) > HEM) col.setXYZ(v, knit.r, knit.g, knit.b);
+    }
+  });
+  // the beret: the scalp (skin) and the crown of the hair poke through it on one
+  // side. Swell it a touch, then paint any skin/hair point that still reaches
+  // outside the beret's dome the beret's own colour — the parts you see through
+  // the felt become felt. The dome is the beret's radius from its centre, binned
+  // by direction (bind space; clones share the geometry, so this runs once).
+  let beret = null;
+  root.traverse(o => { if (o.isSkinnedMesh && o.material.name === 'beret') beret = o; });
+  if (beret) {
+    const P = beret.geometry.attributes.position, c = new THREE.Vector3(), d = new THREE.Vector3();
+    for (let v = 0; v < P.count; v++) c.x += P.getX(v) / P.count, c.y += P.getY(v) / P.count, c.z += P.getZ(v) / P.count;
+    for (let v = 0; v < P.count; v++) P.setXYZ(v, c.x + (P.getX(v) - c.x) * 1.13, c.y + (P.getY(v) - c.y) * 1.0, c.z + (P.getZ(v) - c.z) * 1.13);
+    // the beret is notched on one side (its rim rides ~0.15 higher there), which is where the
+    // head showed through: stretch it down in those directions so the rim runs level
+    {
+      const NB = 16, lo = new Float32Array(NB).fill(Infinity), hi = new Float32Array(NB).fill(-Infinity);
+      const ang = (v) => (Math.atan2(P.getZ(v) - c.z, P.getX(v) - c.x) / Math.PI + 1) / 2 * NB;
+      for (let v = 0; v < P.count; v++) { const k = Math.min(NB - 1, Math.floor(ang(v))); lo[k] = Math.min(lo[k], P.getY(v)); hi[k] = Math.max(hi[k], P.getY(v)); }
+      const target = [...lo].sort((a, b) => a - b)[Math.floor(NB * 0.4)];
+      const at = (arr, a) => { const i = Math.floor(a - 0.5), f = a - 0.5 - i, A = arr[(i + NB) % NB], B = arr[(i + 1) % NB]; return A + (B - A) * f; };
+      for (let v = 0; v < P.count; v++) {
+        const a = ang(v), r0 = at(lo, a), t0 = at(hi, a);
+        if (r0 <= target + 0.005 || t0 - r0 < 1e-3) continue;
+        P.setY(v, t0 - (t0 - P.getY(v)) * (t0 - target) / (t0 - r0));
+      }
+    }
+    beret.geometry.computeVertexNormals();
+    beret.geometry.computeBoundingSphere();
+    // the rim's height in each direction round the head (the beret sits tilted)
+    const NA = 32, rim = new Float32Array(NA).fill(Infinity);
+    const az = (x, z) => Math.min(NA - 1, Math.floor((Math.atan2(z - c.z, x - c.x) / Math.PI + 1) / 2 * NA));
+    for (let v = 0; v < P.count; v++) { const k = az(P.getX(v), P.getZ(v)); rim[k] = Math.min(rim[k], P.getY(v)); }
+    for (let k = 0; k < NA; k++) if (!isFinite(rim[k])) rim[k] = Math.min(rim[(k + NA - 1) % NA], rim[(k + 1) % NA]);
+    // the brim's reach in each direction (horizontal radius from the beret's axis)
+    const reach = new Float32Array(NA);
+    for (let v = 0; v < P.count; v++) { const k = az(P.getX(v), P.getZ(v)); reach[k] = Math.max(reach[k], Math.hypot(P.getX(v) - c.x, P.getZ(v) - c.z)); }
+    // tuck in: hair and scalp near the band that sit outside the brim are pulled in under it
+    // (geometry, not paint — they were drawn in FRONT of the beret, so colour can't hide them)
+    root.traverse(o => {
+      if (!o.isSkinnedMesh || !['skin', 'hair'].includes(o.material.name)) return;
+      const Q = o.geometry.attributes.position;
+      for (let v = 0; v < Q.count; v++) {
+        const x = Q.getX(v) - c.x, z = Q.getZ(v) - c.z, y = Q.getY(v), k = az(Q.getX(v), Q.getZ(v));
+        if (y < rim[k] - 0.3) continue;                              // well below the band: leave the hair alone
+        const r = Math.hypot(x, z), lim = reach[k] * 0.9;
+        if (r <= lim || r < 1e-4) continue;
+        const t = THREE.MathUtils.smoothstep(y, rim[k] - 0.3, rim[k] - 0.05);   // ease in, so the hair's fall stays natural
+        const nr = r + (lim - r) * t;
+        Q.setXYZ(v, c.x + x / r * nr, y, c.z + z / r * nr);
+      }
+      o.geometry.computeVertexNormals(); o.geometry.computeBoundingSphere();
+    });
+    const felt = beret.material.color;
+    // the rolled edge: a loop just outside the brim at rim height, built per instance
+    // on the head bone (see makeHuman) so it hides the hair/felt seam from every side
+    {
+      const loop = [], NL = 48;
+      const rimR = new Float32Array(NA);
+      for (let v = 0; v < P.count; v++) { const k = az(P.getX(v), P.getZ(v)); if (P.getY(v) < rim[k] + 0.1) rimR[k] = Math.max(rimR[k], Math.hypot(P.getX(v) - c.x, P.getZ(v) - c.z)); }
+      // smooth the per-direction rim (a wide circular average), so the edge rolls round evenly
+      const sm = (arr, w = 4) => Array.from(arr, (_, k) => { let a = 0, n = 0; for (let d = -w; d <= w; d++) { const x = arr[(k + d + NA) % NA]; if (x > 0 && isFinite(x)) { a += x; n++; } } return n ? a / n : 0; });
+      const rS = sm(Array.from(rimR, (x, k) => x || reach[k] * 0.9)), yS = sm(rim);
+      for (let j = 0; j < NL; j++) {
+        const a = j / NL * Math.PI * 2 - Math.PI, f = (a / Math.PI + 1) / 2 * NA - 0.5, i = Math.floor(f), t = f - i;
+        const L = (arr) => arr[(i + NA) % NA] * (1 - t) + arr[(i + 1) % NA] * t;
+        const rr = L(rS) + 0.03;
+        loop.push(new THREE.Vector3(c.x + Math.cos(a) * rr, L(yS) + 0.02, c.z + Math.sin(a) * rr));
+      }
+      root.userData.beretRim = loop;
+      root.userData.beretCol = felt.getHex();
+    }
+    root.traverse(o => {
+      if (!o.isSkinnedMesh || !['skin', 'hair'].includes(o.material.name)) return;
+      const g = o.geometry, Q = g.attributes.position;
+      let col = g.attributes.color;
+      if (!g.userData.absColor) {                       // hair: bake its colour so single verts can differ
+        const mc = o.material.color, a = new Float32Array(Q.count * 3);
+        for (let v = 0; v < Q.count; v++) { a[v * 3] = mc.r; a[v * 3 + 1] = mc.g; a[v * 3 + 2] = mc.b; }
+        col = new THREE.BufferAttribute(a, 3); g.setAttribute('color', col); g.userData.absColor = true;
+      }
+      // anything at or above the rim in its direction is under the beret or bulging out of
+      // its band — felt. Below the rim (the fringe, the face, the hair down the back) it stays.
+      // At or above the rim in its direction: under the beret, or bulging out of its band — felt.
+      // Below the rim, bare SCALP on the sides and back (the model has no hair over her
+      // right temple, so skin showed between beret and hair) becomes hair; the face
+      // (the front of the head, +X) stays skin.
+      const scalp = o.material.name === 'skin', hairC = colOf.hair;
+      for (let v = 0; v < Q.count; v++) {
+        const y = Q.getY(v), r0 = rim[az(Q.getX(v), Q.getZ(v))];
+        if (y > r0 - 0.1) col.setXYZ(v, felt.r, felt.g, felt.b);
+        else if (scalp && y > r0 - 0.5 && Q.getX(v) - c.x < 0.42) col.setXYZ(v, hairC.r, hairC.g, hairC.b);
+      }
+      // one colour per triangle (by majority) so the felt line is crisp, not a smear —
+      // split the shared vertices first (normals are copied, so shading stays smooth)
+      const ng = g.toNonIndexed(); ng.userData = g.userData;
+      const C = ng.attributes.color, isFelt = (i) => Math.abs(C.getX(i) - felt.r) + Math.abs(C.getY(i) - felt.g) + Math.abs(C.getZ(i) - felt.b) < 1e-3;
+      for (let t = 0; t < C.count; t += 3) {
+        const f = [0, 1, 2].filter(k => isFelt(t + k));
+        if (f.length === 0 || f.length === 3) continue;
+        if (f.length >= 2) { for (let k = 0; k < 3; k++) C.setXYZ(t + k, felt.r, felt.g, felt.b); }
+        else { const o2 = [0, 1, 2].find(k => !isFelt(t + k)); for (const k of f) C.setXYZ(t + k, C.getX(t + o2), C.getY(t + o2), C.getZ(t + o2)); }
+      }
+      o.geometry = ng;
+    });
+  }
 }
 
 // the critic keeps her own colours; everyone else is their own person (folk.js)
@@ -110,9 +227,24 @@ export function makeHuman(glb, look = {}) {
     if (!o.isMesh) return;
     o.frustumCulled = false;
     const m = o.material, name = m.name;
+    o.userData.part = name;                  // the model's part name (beret, hair, skin, sweater…) outlives the repaint
     o.material = o.geometry.userData.absColor ? paint(0xffffff, { vertexColors: true })
-      : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color });
+      : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color, side: name === 'beret' ? THREE.DoubleSide : undefined });
+    // (the beret is open on one side in the model: drawn double-sided, its inside is felt too)
   });
+  const loop = glb.scene.userData.beretRim;
+  if (loop) {
+    let beret = null; rig.traverse(o => { if (o.isSkinnedMesh && o.userData.part === 'beret') beret = o; });
+    const hi = beret?.skeleton.bones.findIndex(b => b.name.replace(/\./g, '') === 'head');
+    if (beret && hi >= 0) {
+      const toBone = beret.skeleton.boneInverses[hi].clone().multiply(beret.bindMatrix);
+      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(loop, true, 'centripetal'), 96, 0.085, 8, true);
+      geo.applyMatrix4(toBone);
+      const band = new THREE.Mesh(geo, paint(look.beret ?? glb.scene.userData.beretCol ?? 0xe27e72));
+      band.userData.part = 'beret';
+      beret.skeleton.bones[hi].add(band);
+    }
+  }
   ink(rig, 'fine');
   const s = HUMAN_SCALE * (look.height ?? 1);
   rig.scale.set(s * (look.width ?? 1), s, s * (look.width ?? 1));

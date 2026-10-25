@@ -87,6 +87,50 @@ export function buildCar(o = {}) {
   return ink(g, 'mid');
 }
 
+// ── the shoulder straps, traced over HER shoulders: for each strap, slice the
+// sweater + neck at the strap's x and walk round that slice from the top of the
+// pack, over the shoulder and down the chest, keeping a strap's thickness off the
+// cloth; then ease out round the ribs to a buckle. Built in the pack's frame,
+// which is the body's frame shifted onto the spine.
+function fitStraps(bp, rig) {
+  rig.updateMatrixWorld(true); bp.updateMatrixWorld(true);
+  const pts = [], v = new THREE.Vector3(), inv = bp.matrixWorld.clone().invert();
+  rig.traverse(o => {
+    if (!o.isSkinnedMesh || o.userData.part !== 'sweater') return;
+    const P = o.geometry.attributes.position;
+    for (let i = 0; i < P.count; i++) { o.getVertexPosition(i, v); pts.push(o.localToWorld(v.clone()).applyMatrix4(inv)); }
+  });
+  const strapM = paint(0x8a6448), brass = paint(0xe4b84f), out = new THREE.Group(), T = 0.016;
+  for (const s of [-1, 1]) {
+    const sx = s * 0.095;
+    const slice = pts.filter(p => Math.abs(p.x - sx) < 0.018);
+    if (slice.length < 20) continue;
+    // robust surface reads: a high percentile, not the max (a stray sleeve vert would lift the strap off)
+    const pct = (a, q) => { a = a.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(q * a.length))]; };
+    const band = (y) => slice.filter(p => Math.abs(p.y - y) < 0.02).map(p => p.z);
+    const top = pct(slice.map(p => p.y), 0.97);
+    const zf = (y) => { const b = band(y); return b.length ? pct(b, 0.8) + T : null; };
+    const zb = (y) => { const b = band(y); return b.length ? pct(b, 0.2) - T : null; };
+    const zTop = pct(slice.filter(p => p.y > top - 0.03).map(p => p.z), 0.5);
+    // the pack's top → up the back → over the shoulder → down the chest
+    const path = [new THREE.Vector3(sx * 0.85, 0.12, 0.0)];
+    const add = (x, y, z) => { if (z != null) path.push(new THREE.Vector3(x, y, z)); };
+    add(sx, top - 0.06, zb(top - 0.06));
+    add(sx, top + T, zTop);
+    add(sx, top - 0.05, zf(top - 0.05));
+    add(sx * 1.03, top - 0.13, zf(top - 0.13));
+    add(sx * 1.06, top - 0.21, zf(top - 0.21));
+    // keep the front run straight and on the cloth: no point may sit in front of the line
+    if (path.length < 5) continue;
+    const curve = new THREE.CatmullRomCurve3(path, false, 'centripetal', 0.5);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, 0.012, 6), strapM);
+    out.add(tube);
+    const end = path[path.length - 1];
+    const buckle = new THREE.Mesh(rbox(0.03, 0.022, 0.01, 0.004), brass); buckle.position.copy(end).add(new THREE.Vector3(0, 0, 0.006)); out.add(buckle);
+  }
+  bp.add(ink(out, 'fine'));                 // ink only the new parts (the pack already has its outline)
+}
+
 // ── the critic's little backpack (the phone lives in it): a rounded mustard
 // pack, a red flap with a brass clasp, a front pocket, straps over the shoulders
 function buildBackpack() {
@@ -101,10 +145,7 @@ function buildBackpack() {
   const phone = m(rbox(0.05, 0.085, 0.012, 0.006), paint(0x2a2230, { hatch: 0 }), 0.135, 0.03, -0.05);   // the phone, peeking out of the side pocket
   phone.rotation.z = -0.15;
   m(rbox(0.035, 0.07, 0.05, 0.012), body, 0.13, -0.02, -0.05);
-  for (const sx of [-0.075, 0.075]) {                                      // straps up and over the shoulders
-    const c = new THREE.CatmullRomCurve3([new THREE.Vector3(sx, 0.11, 0.0), new THREE.Vector3(sx * 1.05, 0.2, 0.03), new THREE.Vector3(sx * 1.15, 0.22, 0.1), new THREE.Vector3(sx * 1.25, 0.14, 0.16)]);
-    m(new THREE.TubeGeometry(c, 10, 0.012, 5), strap);
-  }
+  // (the shoulder straps are traced over her real shoulders once she's loaded: see fitStraps)
   m(new THREE.TorusGeometry(0.03, 0.008, 6, 14), brass, 0, 0.15, -0.04).rotation.x = Math.PI / 2;   // the carry loop
   return ink(g, 'fine');
 }
@@ -141,6 +182,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       bp.scale.setScalar(1 / bs.x);
       spine.add(bp);
       critic.backpack = bp;
+      fitStraps(bp, critic.inst.rig);
     }
     // the critic also drives the jeep
     const rider = makeHuman(glb, LOOKS.critic);

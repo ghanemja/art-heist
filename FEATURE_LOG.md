@@ -7,6 +7,11 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"The sleeve isn't fully coloured; the backpack straps don't cover her from the front; the hat isn't fully coloured on one side."** Done in v2, checked with close-up renders from six angles and raycasts on the problem pixels.
+  - Sleeves: her hands (in the jeans mesh) reach up inside the cuff and the wrists poked out past the sleeve; everything above the hem is now sweater grey, so the sleeve runs unbroken to the hand.
+  - Straps: traced over her real shoulders (measured off the sweater in the pack's frame) — up the back, over the shoulder, down the chest to brass buckles; visible from the front.
+  - Beret: the model's beret is notched on one side (its rim rides ~0.15 higher), and her scalp and hair showed through/out of it — that was the pale patch. The rim is now levelled, the beret a touch wider and double-sided, hair/scalp at or above the rim is painted felt and tucked under the brim, the bare scalp at her temple reads as hair, and a rolled felt edge runs round the brim.
+
 - 🟡 **"Fix the colouring on her face and hands; she looks like she's walking backwards."** Done in v2, checked by renders and by measuring the gait.
   - Colour: critic.glb's skin is #f9efe5 (near paper-white), so her face and hands read blank white; now a warm light skin tone (#efc3a2), matched on the repainted hands. The skin mesh also held the sweater's cuffs, which rendered skin-coloured from elbow to wrist; those are now painted the sweater's grey, so only the face and hands are skin.
   - Walk: the knee folded on the leg's BACK-swing, so the lifted foot was the one going backward and the planted foot slid forward (a moonwalk). Measured on her rig: planted foot moved forward in ~70% of frames before, backward in ~75% after. Same fix for the townsfolk walk.
