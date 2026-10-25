@@ -3,7 +3,7 @@
 Project overview, the art style and the workflow rules live in [`CLAUDE.md`](CLAUDE.md).
 This file holds the standing rules for specific kinds of work.
 
-## Making people models (v2: `v2/js/folk.js`)
+## Making people models (`js/folk.js`)
 
 People are the thing players look at most closely, so they get held to a higher bar
 than props. Every new person — townsfolk, crowd, a one-off character — must follow these:

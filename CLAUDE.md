@@ -2,12 +2,13 @@
 
 A browser 3D scene (three.js r160, plain ES modules, no build step). Deploy is manual Netlify.
 
-**The main app is v2** — "The Vanishing Gallery": `index.html` at the site root loads
-`v2/js/main.js`; all of its code, fonts and art live under `v2/`. Bump the cache token
-`v2/js/main.js?cb=NN` in the ROOT `index.html` on every v2 edit. `/v2/` just redirects to `/`.
+**The main app** — "The Vanishing Gallery": `index.html` at the site root loads
+`js/main.js`; its code is in `js/`, its fonts in `fonts/` (it used to live under `v2/`;
+that folder is gone and `/v2/` links redirect to `/`). Bump the cache token
+`js/main.js?cb=NN` in `index.html` on every edit to `js/`.
 The original planet (`planet.js`) is kept as the **classic** game at `classic.html`
 (its own `planet.js?cb=pNN` token lives there). Most of this file's style/layout notes
-were written for the classic game; v2's own rules are in `AGENTS.md` and below.
+were written for the classic game; the main app's own rules are in `AGENTS.md` and below.
 
 ## The cartoon art style — non-negotiable
 
@@ -34,7 +35,7 @@ modes (top-right toggle): **Classic** (lit 3D), **Sketchbook** (inked/cel), and
 ## People models
 
 Making a person (townsfolk, crowd, any character)? Follow the rules in
-[`AGENTS.md`](AGENTS.md#making-people-models-v2-v2jsfolkjs): never a clone of the
+[`AGENTS.md`](AGENTS.md#making-people-models-jsfolkjs): never a clone of the
 critic, her scale, shoes on the ground, smooth skinned joints, shoulders grown from
 the torso, real hands, a face, idle life, and verify up close.
 
@@ -73,8 +74,8 @@ through buildings, towers in streets, a station inside the museum). Now:
   (`window.__layout()` → every footprint/road/zone for a planning map).
   Other dev params: `?at=<landmark>`, `?shotcam=<key>,x,y,z,lookY,lookZ`, `?arrfreeze=0.9`, `?debug=1`.
 
-**v2 (`v2/`) — curvature.** The planet is radius 40, so anything flat and wide
-floats at its ends. Build structures in `v2/js/buildings.js` and set them down with
+**The main app (`js/`) — curvature.** The planet is radius 40, so anything flat and wide
+floats at its ends. Build structures in `js/buildings.js` and set them down with
 `placeOnPlanet()` (bakes per material, splits long faces, lays every vertex onto the
 terrain under it — the curve, and any levelled plane or slope — then inks). Batch a row of them with `batchPlaced()`; register walkable tops with
 `addFloor()`.
@@ -98,6 +99,6 @@ terrain under it — the curve, and any levelled plane or slope — then inks). 
 - **Redeploy to Netlify after every finished feature request.** Run `./deploy.sh`
   (validates the main character, then `netlify deploy --prod`). A feature isn't
   done until it's live.
-- **Bump the cache token** on every edit, or the browser ships stale JS: `v2/js/main.js?cb=NN`
+- **Bump the cache token** on every edit, or the browser ships stale JS: `js/main.js?cb=NN`
   in `index.html` (the main app), `planet.js?cb=pNN` in `classic.html` (the classic game).
 - Deploy is manual — `git push` does NOT publish.

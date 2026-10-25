@@ -5,6 +5,17 @@
   # `netlify deploy --build`; the manual path is guarded by ./deploy.sh.)
   command = "node scripts/validate-critic.mjs"
 
+# the game used to live at /v2/ — it's the main app at / now
+[[redirects]]
+  from = "/v2"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/v2/*"
+  to = "/"
+  status = 301
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
