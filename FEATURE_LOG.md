@@ -5,6 +5,18 @@ Append each new request here as it comes in (see the rule in CLAUDE.md). Format:
 `- [status] request — short note`. Status: ✅ done+verified · 🟡 done, needs live
 check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
+## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
+
+- 🟡 **"Intro broken (no plane), hotel ugly, random sheep + broken tree"** — superseded by v2 (new cold open, no hotel/sheep).
+- 🟡 **"Let people discover clues instead of telling them" + "styling not quite right" + "bridge intersects things — make a new planet?"** → v2 in `v2/` (live game untouched until approved). Phase 1 done, verified headless in play:
+  - Hand-drawn style: matte toon paint with paper grain + shadow-only pencil hatching, constant-width ink outlines with a slow boil, paper sky, sketchbook UI with hand lettering (bundled fonts). No shine, no chrome, no tone mapping.
+  - New planet built on the reservation map from day one: museum + plaza, fitted downtown grid, boulevard ring, spurs, station, harbour, landmarks; nothing built on anything.
+  - Cold open (≈10s, skippable): night shots of the museum → the editor's texts → you're on the plaza at dawn.
+  - Walk (camera-relative, shift to run) and drive the jeep (E to get in/out); camera swings round buildings instead of clipping into them; jeep nose collides.
+  - Discovery case: 8 things to notice (glints, no markers), 4 people to talk to; the notebook only records what you saw; make your case to Vivi with a suspect + two pieces of evidence.
+  - Next phases: train, bike, boat, rocket finale (the canvases leave Cape Far Side tonight); airport + launch pad; town life; touch controls; audio.
+- ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
+
 ## Session 2026-10-24 (layout rebuild)
 
 - 🟡 **"The world is still messed up and clashing" → layout rebuild (not a restart).** Done in code, verified with a true-scale planning map, the overlap/on-road audits and screenshots in all three modes; deploy with `./deploy.sh`.

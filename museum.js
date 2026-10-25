@@ -18,7 +18,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
 const ART = './artworks/';
 
-export function buildMuseum({ lite = false, glowMats = [] } = {}) {
+export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {}) {
   const g = new THREE.Group();
   g.name = 'DowntownMuseum';
   const SEG = lite ? 24 : 48;
@@ -269,7 +269,7 @@ export function buildMuseum({ lite = false, glowMats = [] } = {}) {
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
     const img = new Image();
     img.onload = () => { paint(img); tex.needsUpdate = true; };
-    img.src = ART + fn;
+    img.src = artBase + fn;
     const bx = s * WING_X, bz = FRONT + 0.08;
     add(new THREE.PlaneGeometry(1.2, 2.7), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, side: THREE.DoubleSide }),
       bx, Y0 + 1.5, bz);
