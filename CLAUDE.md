@@ -1,7 +1,13 @@
 # shelfie-jg — a tiny planet
 
-A browser 3D scene (three.js r160, plain ES modules, no build step). `planet.js`
-is the whole world; `index.html` hosts it. Deploy is manual Netlify.
+A browser 3D scene (three.js r160, plain ES modules, no build step). Deploy is manual Netlify.
+
+**The main app is v2** — "The Vanishing Gallery": `index.html` at the site root loads
+`v2/js/main.js`; all of its code, fonts and art live under `v2/`. Bump the cache token
+`v2/js/main.js?cb=NN` in the ROOT `index.html` on every v2 edit. `/v2/` just redirects to `/`.
+The original planet (`planet.js`) is kept as the **classic** game at `classic.html`
+(its own `planet.js?cb=pNN` token lives there). Most of this file's style/layout notes
+were written for the classic game; v2's own rules are in `AGENTS.md` and below.
 
 ## The cartoon art style — non-negotiable
 
@@ -92,6 +98,6 @@ terrain under it — the curve, and any levelled plane or slope — then inks). 
 - **Redeploy to Netlify after every finished feature request.** Run `./deploy.sh`
   (validates the main character, then `netlify deploy --prod`). A feature isn't
   done until it's live.
-- **Bump the cache token** `planet.js?cb=pNN` in `index.html` on every `planet.js`
-  edit, or the browser ships stale JS.
+- **Bump the cache token** on every edit, or the browser ships stale JS: `v2/js/main.js?cb=NN`
+  in `index.html` (the main app), `planet.js?cb=pNN` in `classic.html` (the classic game).
 - Deploy is manual — `git push` does NOT publish.
