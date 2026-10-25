@@ -73,23 +73,43 @@ function fixColors(root) {
   const sk = mesh.skin, skP = pieces(sk.geometry);
   const headPieces = skP.filter(p => p.min.y > 2.5), face = headPieces[0];
   const isEye = (p) => p.verts.length < 60 && p.max.x - p.min.x < 0.1 && p.min.y > 3.1 && p.max.y < 3.7 && Math.abs((p.min.z + p.max.z) / 2) > 0.1;
-  // the face's lower edge (her chin, tucked into the turtleneck) is a zigzag of teeth with
-  // the collar's grey lining showing between them: level it down to the lowest tooth
+  // the face's lower edge (her chin) is a zigzag of teeth with the turtleneck's grey lining
+  // showing between them. Tuck JUST that edge (the open boundary of the face piece below
+  // the mouth) down behind the collar's rim, so the collar draws the line — nothing you
+  // can see is moved.
   {
-    const P = sk.geometry.attributes.position, NA = 64;
-    let cx = 0, cz = 0; for (const v of face.verts) { cx += P.getX(v); cz += P.getZ(v); } cx /= face.verts.length; cz /= face.verts.length;
-    const az = (v) => Math.min(NA - 1, Math.floor((Math.atan2(P.getZ(v) - cz, P.getX(v) - cx) / Math.PI + 1) / 2 * NA));
-    const lo = new Float32Array(NA).fill(9);
-    for (const v of face.verts) if (P.getY(v) < face.min.y + 0.3) lo[az(v)] = Math.min(lo[az(v)], P.getY(v));
-    const sm = Array.from(lo, (_, k) => { let m = 9; for (let d = -3; d <= 3; d++) m = Math.min(m, lo[(k + d + NA) % NA]); return m; });
-    for (const v of face.verts) { const y = P.getY(v), L = sm[az(v)]; if (L < 9 && y < L + 0.11 && y < 2.99) P.setY(v, L - 0.09); }   // (the mouth sits just above 3.0)
+    const P = sk.geometry.attributes.position, I = sk.geometry.index.array;
+    const key = (v) => Math.round(P.getX(v) * 1e4) + ',' + Math.round(P.getY(v) * 1e4) + ',' + Math.round(P.getZ(v) * 1e4);
+    const inFace = new Set(face.verts), edges = new Map();
+    for (let t = 0; t < I.length; t += 3) for (let e = 0; e < 3; e++) {
+      const a = I[t + e], b = I[t + (e + 1) % 3]; if (!inFace.has(a)) continue;
+      const ka = key(a), kb = key(b), k = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+      edges.set(k, (edges.get(k) || 0) + 1);
+    }
+    const edgeKeys = new Set(); for (const [k, n] of edges) if (n === 1) for (const kk of k.split('|')) edgeKeys.add(kk);
+    // the collar's rim height in each direction round the neck
+    const SP = sw.geometry.attributes.position, NA = 36;
+    let cx = 0, cz = 0, n = 0; for (const v of body.verts) if (SP.getY(v) > body.max.y - 0.2) { cx += SP.getX(v); cz += SP.getZ(v); n++; } cx /= n; cz /= n;
+    const az = (x, z) => Math.min(NA - 1, Math.floor((Math.atan2(z - cz, x - cx) / Math.PI + 1) / 2 * NA));
+    const rim = new Float32Array(NA).fill(-9);
+    for (const v of body.verts) if (SP.getY(v) > body.max.y - 0.35) { const k = az(SP.getX(v), SP.getZ(v)); rim[k] = Math.max(rim[k], SP.getY(v)); }
+    for (const v of face.verts) {
+      const y = P.getY(v); if (y > 2.99 || !edgeKeys.has(key(v))) continue;     // the mouth sits just above 3.0
+      const R = rim[az(P.getX(v), P.getZ(v))]; if (R < -8) continue;
+      P.setY(v, Math.min(y, R - 0.18));     // down past the collar's inner lining (≈2.80): inside the collar reads as neck
+    }
     sk.geometry.computeVertexNormals();
   }
   // a catchlight for each eye, placed on the head bone per instance (see makeHuman)
   root.userData.eyes = headPieces.filter(isEye).map(p => new THREE.Vector3(p.max.x + 0.012, p.min.y + (p.max.y - p.min.y) * 0.68, (p.min.z + p.max.z) / 2 + 0.04));
   paintVerts(sk, (set) => {
     for (const p of skP) {
-      const c = p.max.y < 1.5 ? knit : p === face ? skin : isEye(p) ? eye : hair;
+      if (p === face) {                      // the face piece is the whole skull: only its front is face
+        const P = sk.geometry.attributes.position;
+        for (const v of p.verts) set(v, P.getX(v) < 0.22 || P.getY(v) > 3.78 ? hair : skin);
+        continue;
+      }
+      const c = p.max.y < 1.5 ? knit : isEye(p) ? eye : hair;
       for (const v of p.verts) set(v, c);
     }
   });

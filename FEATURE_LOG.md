@@ -7,6 +7,10 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"It's still there (flat band under the beret) and her chin is messed up."** Done in v2, checked by toggling each geometry step on/off in a side-by-side harness, picking the exact pixels, and close-ups from ten angles incl. from below; story run clean.
+  - The band under the brim was bare SKULL: the model's "face" piece is the whole skull, so its top and back were painted skin. Only its front is face now; behind the cheeks and up under the brim is hair.
+  - Chin: the collar's outer rim is at ≈2.95 but its inner lining sits at ≈2.80, and the chin stopped at 2.90 — so you looked down into the dark lining between them. Last round's levelling also bent the jaw. Now only the chin's open bottom edge is extended down to ≈2.78, inside the collar, so the inside of the turtleneck reads as neck; nothing visible moves.
+
 - 🟡 **"You sliced off part of her head (the rest isn't bad); the straps sit too high off her shoulders."** Done in v2, checked with close-ups from six angles round the head and the shoulders; story run clean.
   - The flat cut under the beret was my "tuck" step pushing hair inside a straight-sided cylinder; removed (the hair is still kept inside the felt by the ray clamp, which follows the beret's curve).
   - The straps were tracing the turtleneck collar (|x| < 0.12, up to y 0.235), so they looped over her neck. They're now a fixed shape laid on her measured body: just outside the collar, snug over the shoulder, down the chest to the buckles.
