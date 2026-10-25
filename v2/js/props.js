@@ -158,16 +158,3 @@ export function bench() {
   return ink(g, 'fine');
 }
 
-// ── people: soft capsules, a round head, a little hair — readable at a glance ──
-export function person(top = PAL.dusty, bottom = PAL.ink, skin = 0xe8c09a) {
-  const g = new THREE.Group();
-  const legs = mesh(new THREE.CapsuleGeometry(0.16, 0.38, 4, 10), paint(bottom), 0, 0.36, 0);
-  legs.scale.x = 1.25; g.add(legs);
-  g.add(mesh(new THREE.CapsuleGeometry(0.22, 0.32, 4, 12), paint(top), 0, 0.86, 0));
-  const head = mesh(new THREE.SphereGeometry(0.2, 16, 12), paint(skin), 0, 1.38, 0);
-  g.add(head);
-  g.add(mesh(new THREE.SphereGeometry(0.21, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), paint(pick([0x3a2a24, 0x6b4630, 0xc9a06a, 0x2a2230])), 0, 1.42, -0.02));
-  g.userData.head = head;
-  g.add(blobShadow(0.3));
-  return ink(g, 'fine');
-}

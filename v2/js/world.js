@@ -82,11 +82,28 @@ export function slerpDir(a, b, t) {
   return a.clone().multiplyScalar(Math.sin((1 - t) * th) / s).addScaledVector(b, Math.sin(t * th) / s).normalize();
 }
 // sit a thing on the LOWEST ground under its footprint, a touch sunk
-export function settle(obj, d, half = 1, sink = 0.05, yaw = 0) {
+// ── floors: raised things you can stand on (the museum forecourt, platforms) ──
+// each is an object on the planet plus a test in its local frame → the floor's
+// local height there, or null. groundAt() is the terrain or the highest floor.
+export const FLOORS = [];
+export function addFloor(obj, test) { obj.updateWorldMatrix(true, false); FLOORS.push({ obj, test, inv: obj.matrixWorld.clone().invert(), dir: obj.position.clone().normalize(), reach: 12 }); }
+const _fp = new THREE.Vector3();
+export function groundAt(d) {
   let r = radiusAt(d);
+  for (const f of FLOORS) {
+    if (f.dir.dot(d) < 0.95) continue;
+    _fp.copy(d).multiplyScalar(r).applyMatrix4(f.inv);
+    const y = f.test(_fp.x, _fp.z);
+    if (y != null) r = Math.max(r, f.obj.position.length() + y);
+  }
+  return r;
+}
+
+export function settle(obj, d, half = 1, sink = 0.05, yaw = 0) {
+  let r = groundAt(d);
   const f = frame(d);
   for (const [x, y] of [[half, 0], [-half, 0], [0, half], [0, -half], [half * .7, half * .7], [-half * .7, -half * .7]])
-    r = Math.min(r, radiusAt(f(x, y)));
+    r = Math.min(r, groundAt(f(x, y)));
   obj.position.copy(d).multiplyScalar(r - sink);
   alignToSurface(obj, d, yaw);
   return obj;

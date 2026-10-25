@@ -3,9 +3,10 @@
 // and your notebook records what you SAW. People tell you what THEY saw. When
 // you think you know, you name someone and back it with two things you found.
 import * as THREE from 'three';
-import { R, arc, settle, frame, yawToFace, radiusAt } from './world.js';
+import { R, arc, settle, frame, yawToFace, radiusAt, groundAt } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
-import { rbox, lathe, person, bench, rnd } from './props.js';
+import { rbox, lathe, bench, rnd } from './props.js';
+import { person, LOOKS } from './human.js';
 
 // the people (and who did it — the game never says so out loud)
 export const SUSPECTS = {
@@ -177,8 +178,7 @@ export function buildCase(scene, W) {
   const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.6, 2.4), pia: W.townAt([W.cafeSpot[0] - 0.4, W.cafeSpot[1] + 1.2]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
   for (const p of PEOPLE) {
     const d = at[p.id];
-    const m = person(p.colors[0], p.colors[1]);
-    m.scale.setScalar(1.1);
+    const m = person(LOOKS[p.id]);
     place(m, d, yawToFace(d, mF(0, 6)));
     items.push({ kind: 'person', id: p.id, dir: d, obj: m });
     W.solid(d, 0.35);
@@ -187,7 +187,7 @@ export function buildCase(scene, W) {
   for (const it of items) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTex(it.kind), transparent: true, depthWrite: false }));
     s.scale.setScalar(0.7);
-    s.position.copy(it.dir).multiplyScalar(radiusAt(it.dir) + (it.kind === 'person' ? 2.3 : 1.6));
+    s.position.copy(it.dir).multiplyScalar(groundAt(it.dir) + (it.kind === 'person' ? 1.75 : 1.6));
     scene.add(s);
     it.glint = s;
   }

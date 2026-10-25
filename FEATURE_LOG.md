@@ -15,6 +15,12 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - Walk (camera-relative, shift to run) and drive the jeep (E to get in/out); camera swings round buildings instead of clipping into them; jeep nose collides.
   - Discovery case: 8 things to notice (glints, no markers), 4 people to talk to; the notebook only records what you saw; make your case to Vivi with a suspect + two pieces of evidence.
   - Next phases: train, bike, boat, rocket finale (the canvases leave Cape Far Side tonight); airport + launch pad; town life; touch controls; audio.
+- 🟡 **v2: people look human, right size; player sinking into the floor; camera feels off; main character's rig broken; start button up a bit.**
+  - Everyone is now the same rigged body as the critic, recoloured per person (hair, skin, clothes, hat) — same height as you. They breathe, glance around, turn to face you and gesture while talking.
+  - Rig fixed: poses are now written in the model's own axes and converted per bone, so legs/arms swing forward-back (they swung sideways before). Real stride with knee bend, arm counter-swing, a run lean; the critic sits properly at the jeep's wheel.
+  - Floors: the museum forecourt and station platform register as walkable floors (`addFloor`/`groundAt`) — no more sinking.
+  - Camera: keeps its own facing (no more chasing your turns into a spiral), eases behind you only while you walk forward, chase cam in the jeep, lower and closer.
+- ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 
 ## Session 2026-10-24 (layout rebuild)

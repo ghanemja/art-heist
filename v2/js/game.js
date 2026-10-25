@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { arc, radiusAt, settle, yawToFace } from './world.js';
 import { CLUES, PEOPLE, SUSPECTS, judge, buildCase } from './story.js';
+import { pose } from './human.js';
 import { ink } from './style.js';
 
 const $ = (id) => document.getElementById(id);
@@ -112,7 +113,7 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
     if (!nearest) return;
     if (nearest.kind === 'clue') return openClue(nearest);
     if (nearest.kind === 'person') return openTalk(nearest.id);
-    if (nearest.kind === 'jeep') { parked.visible = false; player.setMode('jeep'); player.st.heading = new THREE.Vector3(0, 0, 1).applyQuaternion(parked.quaternion); return; }
+    if (nearest.kind === 'jeep') { parked.visible = false; player.setMode('jeep'); player.st.heading = new THREE.Vector3(0, 0, 1).applyQuaternion(parked.quaternion); player.st.camFwd.copy(player.st.heading); return; }
     if (nearest.kind === 'exit') {
       player.setMode('walk');
       jeepDir = player.st.dir.clone();
@@ -205,7 +206,24 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
   }
 
   // ── per frame ──
+  // the people: breathe, gesture while they talk, turn to face you as you come up
+  const _pv = new THREE.Vector3();
+  function tickPeople(dt) {
+    for (const it of items) {
+      if (it.kind !== 'person') continue;
+      const h = it.obj.userData.human; if (!h) continue;
+      const talking = G.ui === 'talk' && G.talkWho?.id === it.id;
+      h.talkK = (h.talkK || 0) + ((talking ? 1 : 0) - (h.talkK || 0)) * (1 - Math.exp(-5 * dt));
+      pose(h, dt, 0, { talk: h.talkK });
+      const l = it.obj.worldToLocal(_pv.copy(player.root.position));
+      const target = G.state === 'play' && Math.hypot(l.x, l.z) < 4.5 ? Math.atan2(l.x, l.z) : 0;
+      const tg = it.obj.userData.turn;
+      const d = Math.atan2(Math.sin(target - tg.rotation.y), Math.cos(target - tg.rotation.y));
+      tg.rotation.y += d * (1 - Math.exp(-4 * dt));
+    }
+  }
   function update(dt, t) {
+    tickPeople(dt);
     if (G.state === 'cold') {
       const e = performance.now() / 1000 - G.t0;
       let acc = 0, i = 0;

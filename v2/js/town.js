@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, isWater, alignToSurface, posOn } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, block, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../../museum.js';
@@ -95,6 +95,8 @@ export function buildTown(scene) {
     ink(mus.group, 'mid');
     settle(mus.group, mDir, 6, 0.1, yawToFace(mDir, TOWN_C));
     add(mus.group);
+    // the forecourt disc stands 0.45 proud of the lawn: you walk on its paving
+    addFloor(mus.group, (x, z) => Math.hypot(x, z + 0.3) < 3.38 ? 0.45 : null);
     out.museum = { ...mus, dir: mDir, frame: mF };
     for (let z = -3.4; z >= -11; z -= 2.2) for (let x = -5.6; x <= 5.6; x += 2.8) solid(mF(x, z), 1.55);
   }
@@ -157,7 +159,8 @@ export function buildTown(scene) {
     out.sites[k] = { ...s, dir: d, frame: frame(d, TOWN_C) };
     if (k !== 'airport' && k !== 'launchpad') spur(d, s.r + 0.6, 'site:' + k);
     const g = site(k, out.sites[k].frame);
-    if (g) { settle(g, d, s.r * 0.8, 0.06, yawToFace(d, TOWN_C)); add(g); for (const c of g.userData.solids || []) solid(out.sites[k].frame(...c[0]), c[1]); }
+    if (g) { settle(g, d, s.r * 0.8, 0.06, yawToFace(d, TOWN_C)); add(g);
+      if (g.userData.floor) addFloor(g, g.userData.floor); for (const c of g.userData.solids || []) solid(out.sites[k].frame(...c[0]), c[1]); }
   }
   // helpers the story uses to place things
   out.townAt = ([x, y]) => fC(x, y);
@@ -207,6 +210,7 @@ function site(kind, F) {
     const clock = m(new THREE.CylinderGeometry(0.42, 0.42, 0.1, 24).rotateX(Math.PI / 2), paint(0xfffaf0), 0, 2.4, -2.36);
     g.add(new THREE.Mesh(rbox(0.04, 0.3, 0.02, 0.01), paint(PAL.ink, { hatch: 0 })).translateY(2.47).translateZ(-2.3));
     g.userData.solids = [[[0, -3.6], 2.0]];
+    g.userData.floor = (x, z) => Math.abs(x) < 4.5 && Math.abs(z + 1.2) < 1.6 ? 0.5 : null;
     void clock;
   } else if (kind === 'harbour') {
     const wood = paint(PAL.bark), deck = paint(0xc8a47c);
