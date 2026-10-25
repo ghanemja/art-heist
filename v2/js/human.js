@@ -161,7 +161,7 @@ function fixColors(root) {
       }
     };
     const hv = [...Array(mesh.hair.geometry.attributes.position.count).keys()], sv = headPieces.filter(p => p !== face && !isEye(p)).flatMap(p => p.verts);
-    tuck(mesh.hair.geometry, hv); tuck(sk.geometry, sv);
+    // (no cylinder tuck: it sliced the hair flat under the brim; the ray clamp below is enough)
     clamp(mesh.hair.geometry, hv);
     clamp(sk.geometry, headPieces.filter(p => !isEye(p)).flatMap(p => p.verts));
   }

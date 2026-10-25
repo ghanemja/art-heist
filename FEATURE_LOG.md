@@ -7,6 +7,10 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"You sliced off part of her head (the rest isn't bad); the straps sit too high off her shoulders."** Done in v2, checked with close-ups from six angles round the head and the shoulders; story run clean.
+  - The flat cut under the beret was my "tuck" step pushing hair inside a straight-sided cylinder; removed (the hair is still kept inside the felt by the ray clamp, which follows the beret's curve).
+  - The straps were tracing the turtleneck collar (|x| < 0.12, up to y 0.235), so they looped over her neck. They're now a fixed shape laid on her measured body: just outside the collar, snug over the shoulder, down the chest to the buckles.
+
 - 🟡 **"The chin and hair are miscoloured; the hat is perfect colour-wise but a little wide for her head."** Done in v2, checked by picking the exact pixels in close-ups (front, back, both sides) and a full story run.
   - Chin: the face WAS skin — the default 3-band cel ramp's mid band darkened her lower face (lit from above) to exactly the hair's tan. Her skin, hair and sweater now use a gentler ramp (and lighter hatching), so the face reads as one skin tone and the hair loses its dark blotches. The chin's zigzag lower edge (collar lining showing between teeth) is levelled and tucked just inside the collar.
   - The dark blot on her back hair was the backpack strap poking out between the locks; the strap now runs from the pack straight over the shoulder.

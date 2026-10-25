@@ -92,6 +92,7 @@ export function buildCar(o = {}) {
 // pack, over the shoulder and down the chest, keeping a strap's thickness off the
 // cloth; then ease out round the ribs to a buckle. Built in the pack's frame,
 // which is the body's frame shifted onto the spine.
+const STRAP = { x: 0.118, pts: [[0.9, 0.12, -0.005], [1, 0.163, 0.03], [1, 0.188, 0.07], [0.97, 0.181, 0.113], [0.92, 0.145, 0.146], [0.87, 0.08, 0.156], [0.85, 0.0, 0.157]] };
 function fitStraps(bp, rig) {
   rig.updateMatrixWorld(true); bp.updateMatrixWorld(true);
   const pts = [], v = new THREE.Vector3(), inv = bp.matrixWorld.clone().invert();
@@ -102,26 +103,10 @@ function fitStraps(bp, rig) {
   });
   const strapM = paint(0x8a6448), brass = paint(0xe4b84f), out = new THREE.Group(), T = 0.016;
   for (const s of [-1, 1]) {
-    const sx = s * 0.095;
-    const slice = pts.filter(p => Math.abs(p.x - sx) < 0.018);
-    if (slice.length < 20) continue;
-    // robust surface reads: a high percentile, not the max (a stray sleeve vert would lift the strap off)
-    const pct = (a, q) => { a = a.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(q * a.length))]; };
-    const band = (y) => slice.filter(p => Math.abs(p.y - y) < 0.02).map(p => p.z);
-    const top = pct(slice.map(p => p.y), 0.97);
-    const zf = (y) => { const b = band(y); return b.length ? pct(b, 0.8) + T : null; };
-    const zb = (y) => { const b = band(y); return b.length ? pct(b, 0.2) - T * 0.25 : null; };   // flat to the back, under her hair
-    const zTop = pct(slice.filter(p => p.y > top - 0.03).map(p => p.z), 0.5);
-    // the pack's top → up the back → over the shoulder → down the chest
-    const path = [new THREE.Vector3(sx * 0.85, 0.12, 0.0)];
-    const add = (x, y, z) => { if (z != null) path.push(new THREE.Vector3(x, y, z)); };
-    // (no point up the back: the hair hangs there, and a strap between the locks read as a blot)
-    add(sx, top + T, zTop);
-    add(sx, top - 0.05, zf(top - 0.05));
-    add(sx * 1.03, top - 0.13, zf(top - 0.13));
-    add(sx * 1.06, top - 0.21, zf(top - 0.21));
-    // keep the front run straight and on the cloth: no point may sit in front of the line
-    if (path.length < 5) continue;
+    // a fixed strap, laid on her measured body (in the pack's frame: back of the sweater
+    // z≈0.05, chest z≈0.13–0.15, turtleneck to |x|≈0.12 and y≈0.235, shoulder just outside)
+    const sx = s * STRAP.x;
+    const path = STRAP.pts.map(([fx, y, z]) => new THREE.Vector3(sx * fx, y, z));
     const curve = new THREE.CatmullRomCurve3(path, false, 'centripetal', 0.5);
     const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, 0.012, 6), strapM);
     out.add(tube);
