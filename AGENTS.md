@@ -37,6 +37,11 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
    flat face with brow ridge and eye sockets, jaw narrowing to a chin, neck behind the
    jaw). Check the SIDE PROFILE. Features and hair are placed on that surface (`headPt`,
    `shapedSphere`). Eyes, brows, nose, mouth, cheeks are small, soft and `noInk`.
+7a. **Every face is different, and has a personality.** Build heads with `buildHead`
+   (faces.js) and give each person their own `face`: shape (jaw/chin/cheeks/long/skull/
+   brow), nose type, mouth expression, eyes, brows, hair style, beard. Cast the face to
+   the character (anxious, sleepy, cheerful, smug). Hair grows from the scalp inside a
+   hairline mask with a smooth edge — never a cap or a ball stuck on the head.
 7b. **No emoji, anywhere in the UI.** People's faces are painted portraits rendered
    from their own model (`portraits.js`); clues are painted sketches of the real prop.
 8. **Doing something, not just standing.** Every person gets a `stance` (`STANCES` in
