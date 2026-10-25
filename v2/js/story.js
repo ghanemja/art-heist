@@ -3,58 +3,58 @@
 // and your notebook records what you SAW. People tell you what THEY saw. When
 // you think you know, you name someone and back it with two things you found.
 import * as THREE from 'three';
-import { R, arc, settle, frame, yawToFace, radiusAt, groundAt } from './world.js';
+import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe, bench, rnd } from './props.js';
 import { person, LOOKS } from './human.js';
 
 // the people (and who did it — the game never says so out loud)
 export const SUSPECTS = {
-  rex:  { name: 'Rex Calloway', role: 'framer, Frame & Co.', face: '🧔' },
-  pia:  { name: 'Pia Moreno', role: 'bike courier', face: '🚴' },
-  otto: { name: 'Otto Brandt', role: 'night guard', face: '💂' },
+  rex:  { name: 'Rex Calloway', role: 'framer, Frame & Co.' },
+  pia:  { name: 'Pia Moreno', role: 'bike courier' },
+  otto: { name: 'Otto Brandt', role: 'night guard' },
 };
 export const CULPRIT = 'rex';
 
 // what you can find. `proves` is hidden: it's only used to judge your theory.
 export const CLUES = [
-  { id: 'ladder', icon: '🪜', title: 'The ladder',
+  { id: 'ladder', title: 'The ladder',
     text: 'An aluminium ladder against the east wing. The feet have sunk deep into the lawn — whoever came down it was heavy, or carrying something heavy.', proves: [] },
-  { id: 'frames', icon: '🖼️', title: 'The empty frame',
+  { id: 'frames', title: 'The empty frame',
     text: 'The canvas wasn\'t torn out. It was cut — one straight line, close to the stretcher, the way a professional trims a print.', proves: ['rex'] },
-  { id: 'ruts', icon: '🛞', title: 'Tyre ruts',
+  { id: 'ruts', title: 'Tyre ruts',
     text: 'Behind the service door, deep ruts in the soft verge. Wide tyres, and two side by side at the back — something heavy, with twin rear wheels.', proves: ['rex'] },
-  { id: 'van', icon: '🚐', title: 'The white van',
+  { id: 'van', title: 'The white van',
     text: 'A white van, rear doors not quite shut. Inside: packing foam, corner protectors, and a roll of the museum\'s own grey gallery tape. The side says FRAME & CO.', proves: ['rex'] },
-  { id: 'bike', icon: '🚲', title: 'The courier\'s bike',
+  { id: 'bike', title: 'The courier\'s bike',
     text: 'Paint on the handlebars and the frame — but it\'s dry, cracked, and it has dust in it. Weeks old.', proves: [], clears: 'pia' },
-  { id: 'log', icon: '📒', title: 'The guard\'s logbook',
+  { id: 'log', title: 'The guard\'s logbook',
     text: 'Rounds signed at 1:00, 2:00, 3:00 and 4:00 — same pen, same pressure, same slant. As if all four were written at once. A cold coffee beside it, untouched.', proves: [], hint: 'otto' },
-  { id: 'crates', icon: '📦', title: 'Crates at the harbour',
+  { id: 'crates', title: 'Crates at the harbour',
     text: 'Flat crates stamped CATERING — CAPE FAR SIDE. One corner is splintered, and through the gap: gilt. A picture frame.', proves: [] },
-  { id: 'ticket', icon: '🎫', title: 'A cargo ticket',
+  { id: 'ticket', title: 'A cargo ticket',
     text: 'Dropped by the freight door: “Cape Far Side, oversize, flat, 45 items. Account: Frame & Co.”', proves: ['rex'] },
 ];
 
 // people you can talk to. Each says what they saw — not what it means.
 export const PEOPLE = [
-  { id: 'vivi', name: 'Director Vivi', face: '🖼️', colors: [PAL.accent, PAL.ink],
+  { id: 'vivi', name: 'Director Vivi', colors: [PAL.accent, PAL.ink],
     lines: [
       'You came. Thank heavens. Forty-five canvases, gone in one night — through the dome, of all places.',
       'The police have nothing. I had three people with keys or reasons to be here last night: Otto on the night shift, Pia who brought the last delivery, and Rex — he framed the whole show.',
       'Look around. Talk to them. When you know who, come back and show me why.',
     ] },
-  { id: 'otto', name: 'Otto, night guard', face: '💂', colors: [PAL.dusty, PAL.ink],
+  { id: 'otto', name: 'Otto, night guard', colors: [PAL.dusty, PAL.ink],
     lines: [
       'I did my rounds! Every hour, it\'s all in the log.',
       '…Alright. I may have rested my eyes. Once. Maybe twice. But I heard an engine around three — something big, round the back.',
     ] },
-  { id: 'pia', name: 'Pia, courier', face: '🚴', colors: [PAL.teal, PAL.ink],
+  { id: 'pia', name: 'Pia, courier', colors: [PAL.teal, PAL.ink],
     lines: [
       'Me? I dropped the last crate at six and went home. Ask the café, I was here till close.',
       'Funny thing — Rex\'s van went past here at dawn. He never opens before ten.',
     ] },
-  { id: 'rex', name: 'Rex, framer', face: '🧔', colors: [PAL.mustard, PAL.ink],
+  { id: 'rex', name: 'Rex, framer', colors: [PAL.mustard, PAL.ink],
     lines: [
       'Terrible business. Terrible. I framed every one of those pieces myself, you know.',
       'Last night? Home. Asleep. The van\'s been parked right here since yesterday.',
@@ -128,6 +128,28 @@ function crates() {
   g.add(blobShadow(1.8, 0.6));
   return ink(g, 'fine');
 }
+// stand-ins used only for the notebook sketches (things with no prop of their own)
+export function sketchProp(id) {
+  if (id === 'frames') {             // the empty gilt frame, canvas cut out
+    const g = new THREE.Group(), gilt = paint(0xd9a640), back = paint(0x2a2230, { hatch: 0 });
+    for (const [w, h, x, y] of [[1.0, 0.14, 0, 0.43], [1.0, 0.14, 0, -0.43], [0.14, 1.0, 0.43, 0], [0.14, 1.0, -0.43, 0]])
+      g.add(new THREE.Mesh(rbox(w, h, 0.1, 0.03), gilt).translateX(x).translateY(y));
+    g.add(new THREE.Mesh(rbox(0.74, 0.74, 0.02, 0.005), back).translateZ(-0.03));
+    const flap = new THREE.Mesh(rbox(0.3, 0.06, 0.012, 0.004), paint(0xb8894a)); flap.position.set(0.22, -0.34, 0.01); flap.rotation.z = 0.5; g.add(flap);
+    g.rotation.y = -0.5;
+    return ink(g, 'fine');
+  }
+  if (id === 'log') {                // the guard's logbook, open, a pen across it
+    const g = new THREE.Group();
+    for (const s of [-1, 1]) { const pg = new THREE.Mesh(rbox(0.42, 0.03, 0.56, 0.01), paint(0xfaf3e2)); pg.position.x = s * 0.22; pg.rotation.z = -s * 0.06; g.add(pg); }
+    g.add(new THREE.Mesh(rbox(0.9, 0.025, 0.6, 0.01), paint(0x3a5a8a)).translateY(-0.03));
+    for (let i = 0; i < 4; i++) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.005, 0.015), paint(0x5a4e5e, { hatch: 0 })); l.position.set(0.22, 0.03, -0.18 + i * 0.12); l.userData.noInk = true; g.add(l); }
+    const pen = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.4, 3, 6), paint(0x2a2230, { hatch: 0 })); pen.rotation.set(Math.PI / 2, 0, 0.6); pen.position.set(-0.1, 0.05, 0.05); g.add(pen);
+    return ink(g, 'fine');
+  }
+  return null;
+}
+
 function booth() {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(rbox(1.3, 2.0, 1.3, 0.15), paint(PAL.dusty)).translateY(1.0));
@@ -179,7 +201,7 @@ export function buildCase(scene, W) {
   for (const p of PEOPLE) {
     const d = at[p.id];
     const m = person(LOOKS[p.id]);
-    settle(m, d, 0.25, 0, yawToFace(d, mF(0, 6))); scene.add(m);   // people stand ON the ground (no sink)
+    settle(m, d, 0.25, 0, yawToFace(d, mF(0, 6))); m.position.setLength(standAt(d)); scene.add(m);   // people stand ON the ground/road (no sink)
     items.push({ kind: 'person', id: p.id, dir: d, obj: m });
     W.solid(d, 0.35);
   }

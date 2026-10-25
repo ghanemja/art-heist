@@ -5,19 +5,26 @@
 // never explains a clue — you look, you listen, you decide.
 import * as THREE from 'three';
 import { arc, radiusAt, settle, yawToFace } from './world.js';
-import { CLUES, PEOPLE, SUSPECTS, judge, buildCase } from './story.js';
+import { CLUES, PEOPLE, SUSPECTS, judge, buildCase, sketchProp } from './story.js';
+import { paintPeople, paintThings } from './portraits.js';
+import { LOOKS } from './human.js';
 import { pose } from './human.js';
 import { ink } from './style.js';
 
 const $ = (id) => document.getElementById(id);
 const show = (el, on = true) => el.classList.toggle('hide', !on);
 
-export function createGame({ scene, camera, town, player, atmosphere }) {
+export function createGame({ scene, camera, town, player, atmosphere, renderer }) {
   const G = {
     state: 'title', t0: 0, found: new Set(), met: new Set(), talked: new Set(), solved: false,
     ui: null, talkIdx: 0, talkWho: null, pickSus: null, pickClues: new Set(),
   };
   const items = buildCase(scene, town);
+  // painted portraits + clue sketches for the UI, rendered once from the real models
+  const FACE = paintPeople(renderer, LOOKS);
+  const SKETCH = paintThings(renderer, Object.fromEntries(CLUES.map(c => [c.id, sketchProp(c.id) || items.find(i => i.id === c.id)?.obj])));
+  const face = (id, cls = 'pt') => FACE[id] ? `<img class="${cls}" src="${FACE[id]}" alt="">` : '';
+  const sketch = (id, cls = 'pt') => SKETCH[id] ? `<img class="${cls}" src="${SKETCH[id]}" alt="">` : '';
   const mus = town.museum.group;
   const ML = (x, y, z) => mus.localToWorld(new THREE.Vector3(x, y, z));
 
@@ -61,7 +68,7 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
   }
   function openPhone() {
     const P = $('phone');
-    P.innerHTML = `<div class="hd">📰 Editor · The Chronicle</div>
+    P.innerHTML = `<div class="hd">Editor · The Chronicle</div>
       <div class="msg">You're at the museum? Good. All 45 paintings went overnight. The police have nothing.</div>
       <div class="msg">You know those canvases better than anyone. Find out who — and where they're going.</div>
       <button class="sk" id="phOk">on it</button>`;
@@ -125,6 +132,7 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
   }
   function closeUI() {
     if (!G.ui) return;
+    if (player.st.camHook === convoCam) { player.st.camHook = null; player.st.camInit = false; }
     show($({ card: 'card', talk: 'talk', nb: 'nb' }[G.ui]), false);
     G.ui = null; player.st.enabled = true;
   }
@@ -135,15 +143,44 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
     const isNew = !G.found.has(c.id);
     G.found.add(c.id);
     if (it.glint) it.glint.visible = false;
-    $('card').innerHTML = `<div class="ic">${c.icon}</div><h3>${c.title}</h3><p>${c.text}</p>
-      <div class="note">${isNew ? '✎ noted in your notebook' : 'already in your notebook'}</div><button class="sk" id="cardOk">ok</button>`;
+    $('card').innerHTML = `<div class="ic">${sketch(c.id)}</div><h3>${c.title}</h3><p>${c.text}</p>
+      <div class="note">${isNew ? 'noted in your notebook' : 'already in your notebook'}</div><button class="sk" id="cardOk">ok</button>`;
     show($('card')); G.ui = 'card'; player.st.enabled = false;
     $('cardOk').onclick = closeUI;
     updateGoal();
   }
   // ── someone talks ──
+  // a conversation is framed like one: both of you, side-on, at eye level
+  const conv = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false, side: 1 };
+  const _cv = new THREE.Vector3();
+  function convoCam(cam, root) {
+    const it = items.find(i => i.id === G.talkWho?.id); if (!it) return;
+    const a = root.position, b = it.obj.position;
+    const mid = a.clone().add(b).multiplyScalar(0.5), up = mid.clone().normalize();
+    const ab = b.clone().sub(a).projectOnPlane(up); const dist = ab.length(); ab.normalize();
+    const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(conv.side);
+    const want = mid.clone().addScaledVector(side, 2.5 + dist * 0.6).addScaledVector(up, 1.05).addScaledVector(ab, -0.45);
+    const look = mid.clone().addScaledVector(up, 0.72);
+    const now = performance.now() / 1000, dt = conv.init ? Math.min(0.1, now - conv.t) : 0; conv.t = now;
+    if (!conv.init) { conv.pos.copy(cam.position); conv.look.copy(look); conv.init = true; }
+    conv.pos.lerp(want, 1 - Math.exp(-3.5 * dt)); conv.look.lerp(look, 1 - Math.exp(-6 * dt));
+    cam.position.copy(conv.pos); cam.up.copy(up); cam.lookAt(conv.look);
+  }
+  function startConvo(it) {
+    // face them, and put the camera on whichever side isn't inside a building
+    const st = player.st, d = it.dir.clone();
+    st.heading = d.sub(st.dir.clone().multiplyScalar(st.dir.dot(d))).normalize();
+    const mid = player.root.position.clone().add(it.obj.position).multiplyScalar(0.5), up = mid.clone().normalize();
+    const ab = it.obj.position.clone().sub(player.root.position).projectOnPlane(up).normalize();
+    const blocked = (sg) => { const p = mid.clone().addScaledVector(new THREE.Vector3().crossVectors(up, ab).normalize(), sg * 2.2).normalize();
+      return town.colliders.some(c => c.r >= 0.5 && arc(p, c.dir) < c.r + 0.5); };
+    conv.side = blocked(1) && !blocked(-1) ? -1 : 1;
+    conv.init = false;
+    player.st.camHook = convoCam;
+  }
   function openTalk(id) {
     G.talkWho = PEOPLE.find(p => p.id === id); G.talkIdx = 0;
+    startConvo(items.find(i => i.id === id));
     G.met.add(id);
     const it = items.find(i => i.id === id); if (it?.glint) it.glint.visible = false;
     G.ui = 'talk'; player.st.enabled = false;
@@ -152,7 +189,7 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
   function renderTalk() {
     const p = G.talkWho, last = G.talkIdx >= p.lines.length - 1;
     const canAccuse = p.id === 'vivi' && G.talked.has('vivi') && !G.solved && G.found.size >= 2;
-    $('talk').innerHTML = `<div class="face">${p.face}</div><div><b>${p.name}</b><p>${p.lines[G.talkIdx]}</p>
+    $('talk').innerHTML = `<div class="face">${face(p.id)}</div><div><b>${p.name}</b><p>${p.lines[G.talkIdx]}</p>
       <div class="row">${canAccuse && last ? '<button class="sk" id="tAcc">I know who did it</button>' : ''}<button class="sk" id="tNext">${last ? 'bye' : 'go on'}</button></div></div>`;
     show($('talk'));
     $('tNext').onclick = nextLine;
@@ -172,13 +209,13 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
     G.ui = 'nb'; player.st.enabled = false;
     const notes = CLUES.filter(c => G.found.has(c.id));
     const people = PEOPLE.filter(p => G.met.has(p.id));
-    const li = (c) => `<li class="${accusing ? 'pick' : ''} ${G.pickClues.has(c.id) ? 'on' : ''}" data-id="${c.id}"><span class="i">${c.icon}</span><span><b>${c.title}.</b> ${c.text}</span></li>`;
+    const li = (c) => `<li class="${accusing ? 'pick' : ''} ${G.pickClues.has(c.id) ? 'on' : ''}" data-id="${c.id}"><span class="i">${sketch(c.id, 'pt sm')}</span><span><b>${c.title}.</b> ${c.text}</span></li>`;
     $('nb').innerHTML = `<button class="sk x" id="nbX">close</button><h2>${accusing ? 'Make your case' : 'Notebook'}</h2>
-      ${accusing ? `<p>Who did it?</p><div class="who">${Object.entries(SUSPECTS).map(([k, s]) => `<button class="sk ${G.pickSus === k ? 'on' : ''}" data-s="${k}">${s.face} ${s.name}</button>`).join('')}</div>
+      ${accusing ? `<p>Who did it?</p><div class="who">${Object.entries(SUSPECTS).map(([k, s]) => `<button class="sk ${G.pickSus === k ? 'on' : ''}" data-s="${k}">${face(k, 'pt xs')} ${s.name}</button>`).join('')}</div>
         <p>Pick the two things you found that prove it:</p>` : '<p><b>Things I noticed</b></p>'}
       <ul>${notes.length ? notes.map(li).join('') : '<li class="empty">nothing yet — walk up to anything that catches your eye</li>'}</ul>
       ${accusing ? `<button class="sk" id="nbGo" ${G.pickSus && G.pickClues.size === 2 ? '' : 'disabled style="opacity:.5"'}>show Vivi</button><div id="nbV"></div>`
-        : `<p><b>People</b></p><ul>${people.length ? people.map(p => `<li><span class="i">${p.face}</span><span><b>${p.name}.</b> ${p.lines[p.lines.length - 1]}</span></li>`).join('') : '<li class="empty">no one yet</li>'}</ul>`}`;
+        : `<p><b>People</b></p><ul>${people.length ? people.map(p => `<li><span class="i">${face(p.id, 'pt sm')}</span><span><b>${p.name}.</b> ${p.lines[p.lines.length - 1]}</span></li>`).join('') : '<li class="empty">no one yet</li>'}</ul>`}`;
     show($('nb'));
     $('nbX').onclick = closeUI;
     if (accusing) {
@@ -252,5 +289,5 @@ export function createGame({ scene, camera, town, player, atmosphere }) {
     scan();
     return false;
   }
-  return { G, update, items, jeepSpot: () => jeepDir.clone() };
+  return { G, update, items, FACE, SKETCH, jeepSpot: () => jeepDir.clone() };
 }

@@ -39,6 +39,14 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - Stances: Vivi holds a clipboard and taps a pen; Otto has his thumb in his belt and a torch on the ground; Pia sips a café coffee, hand on hip; Rex stands arms-crossed in a waist apron. The free hand gestures when they talk. Rules added to AGENTS.md.
 - 🟡 **Arms and hands still messed up (Otto's arm inside his body).** A belly now pushes forward instead of widening the torso; each body solves its own arm-hang angle from its waist width so arms clear the body; stance `out` is relative to that; hands are 1.3× (about face length); Otto rests his hand on his belt at the hip. Checked with hand close-ups.
 - 🟡 **Shoulders could blend more smoothly into the body.** Limbs fade their ink stroke to nothing where they grow out of the body (per-vertex `inkW` on skinned hulls), so no seam line rings the shoulder; a broader torso shoulder line; sleeves end in a crisp hem with a tiny lip instead of a blurry colour fade; the courier's vest has a clean top edge.
+- 🟡 **Her feet sink into the floor; better head shapes (fix the side profile — they're circles); what is the lady in red doing (writing → hold pen + board properly, look down); her movement only happens when I move; the back of the museum is in the street; plants float beside the museum, building looks slanted; no emojis — painted faces.**
+  - Feet: people stand on the road ribbons too (`standAt` = ground/floor + road lift).
+  - Heads: a sculpted head (`headShape`): skull swells back and tucks in at the nape, flatter face with brow ridge and eye sockets, forehead slopes back, jaw narrows to a chin with a corner below the ear, neck joins behind the jaw; hair and features sit on the surface.
+  - Vivi writes: board held at the waist tilted to her face, left hand under it, pen hand solved by two-bone IK onto the page, writing lines; head bowed; pauses to look up; stops and looks at you when you talk. Coat lapel bar → buttons; Rex's apron tie no longer a hoop.
+  - Idle life is visible on its own (writing loop, wider torch sweep), not only when you move.
+  - Museum: ground under it levelled to a true tangent PLANE (curved-planet edges were ~0.6 low → floating planters, slanted look); landmarks crowding it moved (Inbox Zero, YarnFlow, DeckGPT, The Council); roads re-deflected after smoothing. Zone + road audits clean.
+  - No emojis: painted portraits rendered from each person's own model (toon + ink, gouache wash, pencil ring); clue cards show painted sketches of the actual props.
+  - Conversations get a side-on two-shot camera framing you and them.
 - ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 

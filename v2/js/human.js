@@ -51,7 +51,7 @@ function fixColors(root) {
 // the critic keeps her own colours; everyone else is their own person (folk.js)
 export const LOOKS = {
   critic: {},
-  vivi: { folk: true, skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', glasses: true, stance: 'clipboard', top: 0x8e2f3a, outfit: 'coat', accent: 0xf3ead7,
+  vivi: { folk: true, skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', glasses: true, stance: 'writing', top: 0x8e2f3a, outfit: 'coat', accent: 0xf3ead7,
     bottom: 0x2a2230, shoes: 0x6e2a2e, height: 1.05, build: 0.94 },
   otto: { folk: true, skin: 'rose', hair: 0x9a9490, hairStyle: 'crop', hat: 'cap', hatColor: 0x24304a, stance: 'torch', top: 0x3a4a68, outfit: 'uniform',
     bottom: 0x262c3c, shoes: 0x1e1a1c, sole: 0x6a5e54, height: 0.98, build: 1.16, belly: 0.8 },

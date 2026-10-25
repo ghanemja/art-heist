@@ -36,7 +36,7 @@ const mF = frame(mDir, TOWN_C);                            // +y local = toward 
 export function planTown() {
   reserve(mF(0, -0.3), 4.4, 'museum-plaza');
   reserve(mF(0, -7.0), 8.4, 'museum');
-  flatten(mF(0, -4), 9, 0.45);
+  flatten(mF(0, -6), 12, 0.45, { plane: mDir });          // the museum stands on a true plane
   for (const [k, s] of Object.entries(PLAN.sites)) { reserve(llv(s.at), s.r, 'site:' + k); flatten(llv(s.at), s.r + 1); }
   for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 4.4); }
 }
@@ -52,12 +52,14 @@ export function buildTown(scene) {
   const fC = frame(TOWN_C);
   for (let i = 0; i < 96; i++) { const a = i / 96 * Math.PI * 2; ring.push(fC(Math.cos(a) * B, Math.sin(a) * B)); }
   deflect(ring, { closed: true });
-  out.boulevard = buildRoad(scene, smooth(ring, 2, true), { half: ROAD_MAJOR, closed: true });
+  const ringS = smooth(ring, 2, true);
+  deflect(ringS, { closed: true });                          // smoothing must not cut back into a zone
+  out.boulevard = buildRoad(scene, ringS, { half: ROAD_MAJOR, closed: true });
 
   // downtown grid, clipped to the reservation map
   const P = PLAN.town.pitch, CAP = PLAN.town.radius, K = Math.ceil(CAP / P);
   const inTown = (x, y) => Math.hypot(x, y) <= CAP;
-  const free = (x, y, half) => !zoneHit(fC(x, y), half + 0.3);
+  const free = (x, y, half) => !zoneHit(fC(x, y), half + 0.6);
   const lines = [];                                          // each grid line as runs of free samples
   for (let axis = 0; axis < 2; axis++) {
     for (let i = -K; i <= K; i++) {
@@ -83,8 +85,11 @@ export function buildTown(scene) {
     const pts = [];
     const n = Math.max(6, Math.round(total / 1.5));
     for (let k = 0; k <= n; k++) pts.push(slerpDir(best, target, (k / n) * (1 - stopShort / total)));
-    deflect(pts, { keep: i => i === 0 || i === pts.length - 1, except: z => z.key === key });
-    return buildRoad(scene, smooth(pts, 2), { half: 0.85, dashed: false });
+    deflect(pts, { keep: i => i === 0 || i === pts.length - 1, except: z => z.key === key, clear: 1.8 });
+    // smoothing rounds corners back INTO reserved ground: push the smoothed line out again
+    const sm = smooth(pts, 2);
+    deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: z => z.key === key, clear: 1.8 });
+    return buildRoad(scene, sm, { half: 0.85, dashed: false });
   };
 
   // ── 3. BUILD ───────────────────────────────────────────────────────────────

@@ -106,7 +106,19 @@ const PROPS = {
     const clip = new THREE.Mesh(rbox(0.012, 0.016, 0.04, 0.004), paint(0xc8ccd2)); clip.position.set(0.004, 0.072, 0); g.add(clip);
     return g;
   },
-  pen() { const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.0035, 0.06, 3, 6), paint(0x2a2230, { hatch: 0 })); m.rotation.x = Math.PI / 2; return m; },
+  pen() {                         // from the grip (z=0) to the tip (z≈0.07), aimed each frame
+    const g = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.0038, 0.072, 3, 6).rotateX(Math.PI / 2).translate(0, 0, 0.028), paint(0x2a2230, { hatch: 0 }));
+    g.add(m); return g;
+  },
+  board() {                       // lying flat: paper faces +Y, the clip at the top (+Z) edge
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(rbox(0.11, 0.006, 0.15, 0.003), paint(0x9a6b45)));
+    const paper = new THREE.Mesh(rbox(0.095, 0.002, 0.13, 0.001), paint(0xfaf6ea)); paper.position.set(0, 0.004, -0.006); g.add(paper);
+    for (let i = 0; i < 5; i++) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.001, 0.0025), paint(0x8a8fa8, { hatch: 0 })); l.position.set(-0.005, 0.0055, 0.03 - i * 0.022); l.userData.noInk = true; g.add(l); }
+    const clip = new THREE.Mesh(rbox(0.04, 0.012, 0.016, 0.004), paint(0xc8ccd2)); clip.position.set(0, 0.005, 0.07); g.add(clip);
+    return g;
+  },
   cup() {
     const g = new THREE.Group();
     g.scale.setScalar(1.3);
@@ -131,14 +143,11 @@ const PROPS = {
 // turns toward the midline), bend (elbow), wrist (hand pitch), grip (finger curl),
 // hold: a PROPS key + its placement in the fist. `free`: the hand that gestures in talk.
 export const STANCES = {
-  clipboard: { free: 'R',      // the director: clipboard to her chest, pen in the other hand
-    L: { fwd: 0.32, out: -0.2, twist: 1.05, bend: 1.75, wrist: 0.1, grip: 0.85, hold: ['clipboard', [0.0, -0.03, 0.03], [0.15, Math.PI / 2, 0.0]] },
-    R: { fwd: 0.4, out: -0.18, twist: 0.65, bend: 1.55, wrist: -0.2, grip: 0.9, hold: ['pen', [0.004, -0.04, 0.0], [0, 0, 0]] },
-    anim: (side, t, p) => { if (side === 'R') { const tap = Math.max(0, Math.sin(t * 0.7)) ** 6; p.bend += 0.12 * tap * Math.sin(t * 14); } } },
+  writing: { free: null, ik: true },   // the director: writing on a clipboard (solved by IK, see writePose)
   torch: { free: 'L',          // the guard: thumb in his belt, torch pointed at the ground
     L: { fwd: 0.04, out: 0.42, twist: 1.5, bend: 0.8, wrist: 0.2, grip: 0.4 },   // hand on the belt at his hip
     R: { fwd: 0.55, out: -0.04, twist: 0.1, bend: 0.55, wrist: 0.25, grip: 1, hold: ['torch', [0.0, -0.045, 0.0], [Math.PI - 0.7, 0, 0]] },
-    anim: (side, t, p) => { if (side === 'R') { p.twist += 0.12 * Math.sin(t * 0.6); p.fwd += 0.05 * Math.sin(t * 0.43); } } },
+    anim: (side, t, p) => { if (side === 'R') { p.twist += 0.3 * Math.sin(t * 0.6); p.fwd += 0.12 * Math.sin(t * 0.43); } } },
   coffee: { free: 'L',         // the courier: a coffee from the café, other hand on her hip
     L: { fwd: -0.12, out: 0.56, twist: 1.6, bend: 1.35, wrist: 0.2, grip: 0.3 },
     R: { fwd: 0.3, out: -0.14, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 1, hold: ['cup', [-0.026, -0.04, 0.01], [2.2, 0, 0]] },
@@ -149,6 +158,47 @@ export const STANCES = {
     anim: (side, t, p) => { if (side === 'L') p.fwd += 0.02 * Math.sin(t * 1.1); } },
 };
 const TALK_POSE = { fwd: 0.55, out: 0.0, twist: 0.25, bend: 1.45, wrist: -0.3, grip: 0.15 };
+
+// ── the head's form ─────────────────────────────────────────────────────────
+// From a unit-sphere direction: the skull swells back and tucks in at the nape,
+// the face is flatter with a forehead that slopes back, the jaw narrows to a
+// chin that comes forward. Hair, ears and features are placed on this surface.
+const HR = 0.118, HC = new THREE.Vector3(0, 0.12, 0.012);   // set a touch forward: the neck joins behind the jaw
+function headShape(v, out = new THREE.Vector3()) {
+  let { x, y, z } = v;
+  const lo = Math.max(0, -y), bump = (c, w, t) => Math.exp(-((t - c) * (t - c)) / (w * w));
+  const front = Math.max(0, z), ax = Math.abs(x);
+  if (z < 0) z *= 1.2 - 0.6 * lo;                    // the skull swells back; the nape tucks in
+  else z *= 0.84 + 0.22 * lo * lo;                   // a flatter face; the chin comes forward
+  if (y > 0.25 && z > 0) z -= 0.14 * (y - 0.25);     // forehead slopes back
+  // relief on the face: a brow ridge, soft eye sockets, a fuller mouth and cheeks
+  z += front * (0.035 * bump(0.3, 0.09, y) * bump(0.3, 0.3, ax)
+             - 0.04 * bump(0.12, 0.1, y) * bump(0.36, 0.14, ax)
+             + 0.05 * bump(-0.3, 0.2, y) * bump(0, 0.45, ax));
+  // the jaw: narrows to the chin, with a corner below the ear, tucking in to the neck behind it
+  x *= 1 - 0.34 * lo * lo - 0.05 * front;
+  if (y < -0.25 && z < 0.4) { const k = Math.min(1, (-0.25 - y) / 0.5); x *= 1 - 0.12 * k; z = z * (1 - 0.18 * k) - 0.05 * k * (z < 0 ? 1 : 0.3); }
+  if (y < -0.6) y = -0.6 + (y + 0.6) * 0.65;         // a flatter underside to the jaw
+  return out.set(x * 0.95 * HR, y * 1.07 * HR, z * HR).add(HC);
+}
+// a point on the head from a direction (u right, v up, zs: +1 front / −1 back)
+function headPt(u, v, zs = 1) {
+  const d = new THREE.Vector3(u, v, zs * Math.sqrt(Math.max(0, 1 - u * u - v * v))).normalize();
+  return headShape(d);
+}
+function shapedSphere(wSeg, hSeg, thetaLen = Math.PI, tilt = 0, inflate = 1) {
+  const g = new THREE.SphereGeometry(1, wSeg, hSeg, 0, Math.PI * 2, 0, thetaLen);
+  const p = g.attributes.position, v = new THREE.Vector3(), o = new THREE.Vector3();
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), tilt);
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).applyQuaternion(q);
+    headShape(v, o); o.sub(HC).multiplyScalar(inflate).add(HC);
+    p.setXYZ(i, o.x, o.y, o.z);
+  }
+  g.deleteAttribute('normal'); g.deleteAttribute('uv');
+  const w = mergeVertices(g, 1e-6); w.computeVertexNormals();
+  return w;
+}
 
 function bone(parent, x, y, z) { const b = new THREE.Bone(); b.position.set(x, y, z); parent.add(b); return b; }
 
@@ -255,43 +305,39 @@ export function makeFolk(spec) {
   J.neck = joint(J.spine, 0, 0.35, 0);
   J.neck.add(at(cap(0.04, 0.05, skin, 10), 0, 0.03, 0));
   J.head = joint(J.neck, 0, 0.06, 0);
-  const head = ball(0.118, skin, 24, 18); head.scale.set(0.95, 1.06, 0.98); at(head, 0, 0.12, 0); J.head.add(head);
-  // face: eyes, brows, nose, a blush, a mouth line — small, soft, drawn
+  // a sculpted head (not a ball): see headShape — skull back, flat face, jaw to a chin
+  J.head.add(new THREE.Mesh(shapedSphere(40, 30), skin));
+  // face: eyes, brows, nose, a blush, a mouth line — placed ON the sculpted surface
   const faceBits = [];
-  const n0 = J.head.children.length;
+  const put = (o, u, v, lift = 0, zs = 1) => { o.position.copy(headPt(u, v, zs)); o.position.z += lift * zs; J.head.add(o); return o; };
   for (const s of [-1, 1]) {
-    const e = ball(0.016, dark, 10, 8); e.scale.set(0.8, 1.15, 0.5); at(e, s * 0.042, 0.135, 0.112); J.head.add(e);
-    const br = new THREE.Mesh(new THREE.CapsuleGeometry(0.006, 0.026, 3, 6), hairM); br.rotation.z = Math.PI / 2 + s * 0.12; at(br, s * 0.044, 0.172, 0.104); J.head.add(br);
-    const ch = ball(0.02, paint(0xe89a86, { hatch: 0 }), 10, 8); ch.scale.set(1, 0.6, 0.3); at(ch, s * 0.066, 0.1, 0.098); J.head.add(ch);
-    const ear = ball(0.024, skin, 10, 8); ear.scale.set(0.5, 1, 0.8); at(ear, s * 0.112, 0.125, 0); J.head.add(ear);
+    const e = ball(0.016, dark, 10, 8); e.scale.set(0.8, 1.15, 0.5); faceBits.push(put(e, s * 0.36, 0.12, -0.002));
+    const br = new THREE.Mesh(new THREE.CapsuleGeometry(0.006, 0.026, 3, 6), hairM); br.rotation.z = Math.PI / 2 + s * 0.12; faceBits.push(put(br, s * 0.37, 0.43, -0.001));
+    const ch = ball(0.02, paint(0xe89a86, { hatch: 0 }), 10, 8); ch.scale.set(1, 0.6, 0.3); faceBits.push(put(ch, s * 0.55, -0.16, -0.004));
+    const ear = ball(0.024, skin, 10, 8); ear.scale.set(0.5, 1, 0.8); ear.position.copy(headPt(s * 0.97, 0.05, -1)).add(new THREE.Vector3(0, 0, 0.012)); J.head.add(ear);
   }
-  faceBits.push(...J.head.children.slice(n0).filter((o, i) => i % 4 !== 3));   // all but the ears
-  const nose = ball(0.018, skin, 10, 8); nose.scale.set(0.9, 0.9, 0.8); at(nose, 0, 0.115, 0.118); J.head.add(nose);
-  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), dark); mouth.rotation.z = Math.PI; at(mouth, 0, 0.083, 0.11); J.head.add(mouth);
-  faceBits.push(mouth);
-  if (S.glasses) for (const s of [-1, 1]) { const g = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.004, 5, 14), dark); at(g, s * 0.043, 0.135, 0.12); J.head.add(g); faceBits.push(g); }
-  // hair
-  const hairCap = (r = 0.128, cut = 0.5) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 14, 0, Math.PI * 2, 0, Math.PI * cut), hairM); return m; };
+  const nose = ball(0.018, skin, 10, 8); nose.scale.set(0.9, 0.9, 0.8); put(nose, 0, -0.04, 0.006);
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), dark); mouth.rotation.z = Math.PI; faceBits.push(put(mouth, 0, -0.33, -0.001));
+  if (S.glasses) for (const s of [-1, 1]) { const g = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.004, 5, 14), dark); faceBits.push(put(g, s * 0.36, 0.12, 0.008)); }
+  // hair follows the same sculpted skull, a little proud of it, lower at the back
+  const hairCap = (cut, tilt, inflate) => new THREE.Mesh(shapedSphere(32, 18, Math.PI * cut, tilt, inflate), hairM);
   const hs = S.hairStyle;
-  if (hs !== 'bald') {
-    const c = hairCap(0.126, hs === 'crop' ? 0.42 : 0.5); at(c, 0, 0.13, -0.008); c.rotation.x = -0.25; c.scale.set(0.98, 1.05, 1.02); J.head.add(c);
-  } else {
-    const c = hairCap(0.121, 0.62); at(c, 0, 0.12, -0.01); c.rotation.x = -1.9; J.head.add(c);   // a fringe round the back only
-  }
+  if (hs !== 'bald') J.head.add(hairCap(hs === 'crop' ? 0.4 : 0.48, -0.42, 1.07));
+  else J.head.add(hairCap(0.6, -1.95, 1.04));               // a fringe round the back only
   if (hs === 'bob') {
     for (const s of [-1, 1]) { const side = cap(0.05, 0.1, hairM); side.scale.set(0.8, 1, 1.2); at(side, s * 0.1, 0.09, -0.01); J.head.add(side); }
     const back = ball(0.12, hairM); back.scale.set(1, 0.95, 0.75); at(back, 0, 0.1, -0.05); J.head.add(back);
     const fringe = cap(0.035, 0.12, hairM); fringe.rotation.z = Math.PI / 2; at(fringe, 0, 0.205, 0.08); J.head.add(fringe);
   } else if (hs === 'bun') {
-    J.head.add(at(ball(0.06, hairM), 0, 0.26, -0.06));
+    J.head.add(at(ball(0.06, hairM), 0, 0.255, -0.085));
   } else if (hs === 'pony') {
     const p = cap(0.035, 0.14, hairM); p.rotation.x = 0.5; at(p, 0, 0.12, -0.15); J.head.add(p);
   } else if (hs === 'curls') {
     for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; J.head.add(at(ball(0.045, hairM, 10, 8), Math.cos(a) * 0.1, 0.2 + Math.sin(i * 1.7) * 0.02, Math.sin(a) * 0.09 - 0.01)); }
   }
   if (S.beard) {
-    const bd = ball(0.1, hairM); bd.scale.set(1, 0.72, 0.8); at(bd, 0, 0.055, 0.035); J.head.add(bd);
-    const mo = cap(0.016, 0.06, hairM, 8); mo.rotation.z = Math.PI / 2; at(mo, 0, 0.096, 0.112); J.head.add(mo);
+    const bd = ball(0.09, hairM); bd.scale.set(0.95, 0.72, 0.75); bd.position.copy(headPt(0, -0.62)).add(new THREE.Vector3(0, 0.004, -0.03)); J.head.add(bd);
+    const mo = cap(0.016, 0.06, hairM, 8); mo.rotation.z = Math.PI / 2; mo.position.copy(headPt(0, -0.2)).add(new THREE.Vector3(0, 0, 0.004)); J.head.add(mo);
     mouth.visible = false;
   }
   // hats
@@ -333,7 +379,7 @@ export function makeFolk(spec) {
   if (S.outfit === 'coat') {          // a long coat: a flared skirt of fabric from the waist
     const c = new THREE.Mesh(lathe([[0.001, -0.33], [0.172, -0.32], [0.175, -0.3], [0.15, -0.12], [0.13, 0]], 20), top);
     c.scale.set(B, 1, 0.82); at(c, 0, 0.04, 0); J.hips.add(c);
-    const lap = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.01), acc); at(lap, 0, 0.24, 0.1); J.spine.add(lap);
+    for (let i = 0; i < 3; i++) { const b = ball(0.011, paint(0x2a2230, { hatch: 0 }), 8, 6); b.position.set(0.012, 0.22 - i * 0.075, 0.104); b.scale.z = 0.5; b.userData.noInk = true; J.spine.add(b); }   // coat buttons
   } else if (S.outfit === 'dress') {
     const d = new THREE.Mesh(lathe([[0.001, -0.33], [0.198, -0.32], [0.2, -0.3], [0.14, -0.05], [0.12, 0.05]], 22), top);
     d.scale.set(B, 1, 0.85); J.hips.add(d);
@@ -342,7 +388,7 @@ export function makeFolk(spec) {
     const r0 = (0.128 + 0.03 * S.belly) * B, apM = paint(S.accent ?? 0xd8c9a8, { side: THREE.DoubleSide });
     const a = new THREE.Mesh(new THREE.CylinderGeometry(r0, r0 * 1.12, 0.26, 20, 1, true, -1.15, 2.3), apM);
     a.scale.z = 0.86; at(a, 0, -0.07, 0); J.hips.add(a);
-    const tie = new THREE.Mesh(new THREE.TorusGeometry(r0 * 1.01, 0.008, 5, 26), paint(0x8a6a52)); tie.rotation.x = Math.PI / 2; tie.scale.y = 0.86; at(tie, 0, 0.06, 0); J.hips.add(tie);
+    const tie = new THREE.Mesh(new THREE.TorusGeometry(r0 * 1.01, 0.008, 5, 26, 2.4), paint(0x8a6a52)); tie.rotation.set(Math.PI / 2, 0, Math.PI / 2 - 1.2); tie.scale.y = 0.86; at(tie, 0, 0.06, 0); J.hips.add(tie);   // the waistband wraps the front only
     const pk = new THREE.Mesh(rbox(0.11, 0.05, 0.012, 0.004), paint(0x8a6a52)); at(pk, 0, -0.1, r0 * 1.06 * 0.86 + 0.004); J.hips.add(pk);
   } else if (S.outfit === 'uniform') {
     const belt = new THREE.Mesh(new THREE.TorusGeometry(0.12 * B, 0.018, 6, 22), dark); belt.rotation.x = Math.PI / 2; belt.scale.set(1.02, TZ * 1.02, 1); at(belt, 0, 0.04, 0); J.spine.add(belt);
@@ -364,16 +410,75 @@ export function makeFolk(spec) {
   // arms twist about their own length first (XZY), so a forearm can cross the body
   for (const k of ['L', 'R']) J['arm' + k].rotation.order = 'XZY';
   const stance = STANCES[S.stance] || null;
+  let board = null, pen = null;
+  if (S.stance === 'writing') {
+    board = PROPS.board(); board.position.set(-0.012, 0.13, 0.19); board.rotation.x = -0.62; J.spine.add(board);
+    pen = PROPS.pen(); pen.position.set(0, -0.046, 0.004); J.handR.add(pen);
+  }
   if (stance) for (const k of ['L', 'R']) {
     const h = stance[k]?.hold; if (!h) continue;
     const prop = PROPS[h[0]](); prop.position.set(...h[1]); prop.rotation.set(...h[2]);
     J['grip' + k].add(prop);
   }
-  const inst = { kind: 'folk', rig: root, J, armOut, stance, t: Math.random() * 10, wc: Math.random() * 6 };
+  const inst = { kind: 'folk', rig: root, J, armOut, stance, board, pen, t: Math.random() * 10, wc: Math.random() * 6 };
   return inst;
 }
 
 // poses: k 0 standing … 1 walking; talk 0..1 raises a hand
+// ── two-bone IK: put the fist (grip centre) at `target` (spine frame), elbow toward `pole` ──
+const UA = 0.16, FA = 0.15 + 0.046;                          // upper arm, forearm + wrist→fist
+const _m4 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
+function ikArm(J, side, target, pole) {
+  const S0 = J['arm' + side].position;
+  const D = target.clone().sub(S0);
+  const d = THREE.MathUtils.clamp(D.length(), Math.abs(UA - FA) + 0.005, UA + FA - 0.002);
+  D.normalize();
+  const A = Math.acos(THREE.MathUtils.clamp((UA * UA + d * d - FA * FA) / (2 * UA * d), -1, 1));
+  const bend = Math.PI - Math.acos(THREE.MathUtils.clamp((UA * UA + FA * FA - d * d) / (2 * UA * FA), -1, 1));
+  const p = pole.clone().addScaledVector(D, -pole.dot(D)).normalize();
+  const u = D.clone().multiplyScalar(Math.cos(A)).addScaledVector(p, Math.sin(A));      // upper arm direction
+  _y.copy(u).negate();                                                                   // the limb hangs along −Y
+  _z.copy(D).addScaledVector(u, -D.dot(u)).normalize();                                  // the forearm folds toward +Z
+  _x.crossVectors(_y, _z);
+  J['arm' + side].quaternion.setFromRotationMatrix(_m4.makeBasis(_x, _y, _z));
+  J['fore' + side].rotation.set(-bend, 0, 0);
+}
+// the director writing: board held at the waist, tilted to her face; her pen moves along
+// the lines, she pauses now and then to look up — and stops to look at you when you talk
+const _bp = new THREE.Vector3(), _bn = new THREE.Vector3(), _tip = new THREE.Vector3();
+function writePose(inst, t, talk) {
+  const { J, board, pen } = inst;
+  if (!board) return;
+  const cycle = t % 9, pause = THREE.MathUtils.smoothstep(cycle, 6.6, 7.0) * (1 - THREE.MathUtils.smoothstep(cycle, 8.4, 8.8));
+  const lift = Math.max(pause, talk);
+  // where the pen is on the page (board-local): lines written left → right, top → bottom
+  const w = (t * 0.55) % 5, line = Math.floor(w), along = w - line;
+  _bp.set(-0.032 + along * 0.06 + 0.002 * Math.sin(t * 31), 0.006, 0.03 - line * 0.022);
+  board.updateMatrix();
+  const toSpine = board.matrix;
+  const tip = _bp.clone().applyMatrix4(toSpine);
+  _bn.set(0, 1, 0).applyQuaternion(board.quaternion);                                   // the paper's normal
+  // right fist sits above and toward her from the tip; lifts off when she pauses
+  const fist = tip.clone().addScaledVector(_bn, 0.05 + 0.04 * lift).add(new THREE.Vector3(0.022, 0, -0.026));
+  ikArm(J, 'R', fist, new THREE.Vector3(0.6, -0.8, -0.2));
+  // left fist under the board's left edge, holding it
+  const hold = new THREE.Vector3(-0.058, 0, -0.01).applyMatrix4(toSpine).addScaledVector(_bn, -0.02);
+  ikArm(J, 'L', hold, new THREE.Vector3(-0.6, -0.8, -0.2));
+  J.handR.rotation.set(-0.5, 0, 0.2); J.handL.rotation.set(-0.9, 0.3, 0);
+  gripHand(J.gripR, 0.9); gripHand(J.gripL, 0.7);
+  // the pen points at the page (or lifts away)
+  if (pen) {
+    pen.parent.updateWorldMatrix(true, false);
+    J.spine.updateWorldMatrix(true, false);
+    _tip.copy(tip).addScaledVector(_bn, 0.03 * lift).applyMatrix4(J.spine.matrixWorld);
+    pen.lookAt(_tip);
+  }
+  // head bowed over the page; looks up when she pauses or you talk
+  J.neck.rotation.x = 0.16 * (1 - lift);
+  J.head.rotation.x = 0.4 * (1 - lift) + J.head.rotation.x * lift;
+  if (lift) J.head.rotation.y *= 1 - lift * 0.3;
+}
+
 export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   const J = inst.J;
   inst.t += dt; inst.wc += dt * 5.6 * (0.35 + 0.9 * k);
@@ -386,6 +491,7 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   // walking swings them; talking lifts the free hand into a gesture
   const st = inst.stance;
   for (const side of ['L', 'R']) {
+    if (st?.ik) break;                                        // arms solved by IK below
     const sg = side === 'L' ? -1 : 1;
     const p = { fwd: 0.06, out: 0, twist: 0, bend: 0.25, wrist: 0, grip: 0.25, ...(st?.[side] || {}) };
     p.out += inst.armOut;                                     // stance `out` is relative to this body's clearance
@@ -408,5 +514,6 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   J.head.rotation.y = idle * 0.25 * Math.sin(t * 0.37) * Math.max(0, Math.sin(t * 0.21));
   J.head.rotation.x = 0;
   if (talk) J.head.rotation.x = talk * 0.05 * Math.sin(t * 2.7);
+  if (st?.ik) writePose(inst, t, talk);
   return Math.abs(c) * 0.03 * k;
 }
