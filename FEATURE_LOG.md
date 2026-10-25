@@ -7,6 +7,14 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"Make the gameplay clearer; the car doesn't show up at first; the camera controls could be better."** Done in v2, verified by headless play-throughs (start → Vivi → suspects → clues → notebook → verdict, plus driving); deploy with `./deploy.sh`.
+  - Case board (top left) replaces the one-line goal: 1 · find Vivi → 2 · question Otto, Pia, Rex (with where each one is) + "look around" with finds counted per place (museum, Main Street, harbour, station — never what they mean) → 3 · name the thief → case closed. Click any line to follow it.
+  - Waypoint: a sketched arrow pins your current lead (or sits on the screen edge pointing the way) with the distance; it follows the next lead on its own.
+  - "Make your case" is now a button in the notebook too (it used to hide on Vivi's last line).
+  - The car: the parked roadster was a clone of the hidden in-car body, so it was invisible until you'd driven once — now it's there from the start, parked beside the plaza in view, and on the board ("your car — E to drive").
+  - Camera: scroll / pinch to zoom, C swings behind you, it drifts round behind you while you walk (not only straight ahead), cuts cleanly when you get in or out. Fixed a bug where a blocked camera collapsed onto your head and rose straight up (the "staring into the cockpit" view near buildings).
+  - Controls strip always on screen (changes in the car), H hides it.
+
 - 🟡 **"Station: the curvature of the terrain + the building is not right, there's a gap" + "that building is ugly — town buildings as good as the museum; a small strip mall and a Main Street with a cute coffee shop, library…"** Done in v2 code, verified by headless screenshots + a floor/road audit; deploy with `./deploy.sh` (no Netlify login in the cloud session). `HANDOFF.md` was asked for but isn't in the repo or on any remote branch.
   - Gap fixed at the root: a flat 9-unit slab on a radius-40 planet lifts ~0.3 at its ends. New `v2/js/buildings.js` sets buildings down with `placeOnPlanet()`, which bakes them, splits long faces and **bends every vertex onto the planet's curve**, so platforms, pavements and lots touch the ground end to end.
   - Central Station rebuilt: brick booking hall with quoins and tall arched windows, a clock tower (stopped at 3:07) with a copper cap and weather vane, slate hipped roofs, a platform under a fretted-valance canopy on iron columns, benches, the CENTRAL sign, track with sleepers and buffer stops, a ramp at each end.

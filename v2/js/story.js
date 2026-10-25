@@ -15,24 +15,32 @@ export const SUSPECTS = {
   otto: { name: 'Otto Brandt', role: 'night guard' },
 };
 export const CULPRIT = 'rex';
+// the places worth looking around, for the case board
+export const PLACES = [
+  { id: 'museum', name: 'the museum' },
+  { id: 'main', name: 'Main Street' },
+  { id: 'harbour', name: 'the harbour' },
+  { id: 'station', name: 'Central Station' },
+];
 
 // what you can find. `proves` is hidden: it's only used to judge your theory.
+// `where` is the place it's found — the case board counts finds per place.
 export const CLUES = [
-  { id: 'ladder', title: 'The ladder',
+  { id: 'ladder', where: 'museum', title: 'The ladder',
     text: 'An aluminium ladder against the east wing. The feet have sunk deep into the lawn — whoever came down it was heavy, or carrying something heavy.', proves: [] },
-  { id: 'frames', title: 'The empty frame',
+  { id: 'frames', where: 'museum', title: 'The empty frame',
     text: 'The canvas wasn\'t torn out. It was cut — one straight line, close to the stretcher, the way a professional trims a print.', proves: ['rex'] },
-  { id: 'ruts', title: 'Tyre ruts',
+  { id: 'ruts', where: 'museum', title: 'Tyre ruts',
     text: 'Behind the service door, deep ruts in the soft verge. Wide tyres, and two side by side at the back — something heavy, with twin rear wheels.', proves: ['rex'] },
-  { id: 'van', title: 'The white van',
+  { id: 'van', where: 'main', title: 'The white van',
     text: 'A white van, rear doors not quite shut. Inside: packing foam, corner protectors, and a roll of the museum\'s own grey gallery tape. The side says FRAME & CO.', proves: ['rex'] },
-  { id: 'bike', title: 'The courier\'s bike',
+  { id: 'bike', where: 'main', title: 'The courier\'s bike',
     text: 'Paint on the handlebars and the frame — but it\'s dry, cracked, and it has dust in it. Weeks old.', proves: [], clears: 'pia' },
-  { id: 'log', title: 'The guard\'s logbook',
+  { id: 'log', where: 'museum', title: 'The guard\'s logbook',
     text: 'Rounds signed at 1:00, 2:00, 3:00 and 4:00 — same pen, same pressure, same slant. As if all four were written at once. A cold coffee beside it, untouched.', proves: [], hint: 'otto' },
-  { id: 'crates', title: 'Crates at the harbour',
+  { id: 'crates', where: 'harbour', title: 'Crates at the harbour',
     text: 'Flat crates stamped CATERING — CAPE FAR SIDE. One corner is splintered, and through the gap: gilt. A picture frame.', proves: [] },
-  { id: 'ticket', title: 'A cargo ticket',
+  { id: 'ticket', where: 'station', title: 'A cargo ticket',
     text: 'Dropped by the freight door: “Cape Far Side, oversize, flat, 45 items. Account: Frame & Co.”', proves: ['rex'] },
 ];
 

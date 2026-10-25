@@ -5,7 +5,7 @@
 // never explains a clue — you look, you listen, you decide.
 import * as THREE from 'three';
 import { arc, radiusAt, settle, yawToFace } from './world.js';
-import { CLUES, PEOPLE, SUSPECTS, judge, buildCase, sketchProp } from './story.js';
+import { CLUES, PEOPLE, SUSPECTS, PLACES, judge, buildCase, sketchProp } from './story.js';
 import { paintPeople, paintThings } from './portraits.js';
 import { LOOKS } from './human.js';
 import { pose } from './human.js';
@@ -30,8 +30,10 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
 
   // ── a parked jeep you can walk up to ──
   const parked = player.bodies.jeep.clone(true);
-  const jeepSpot = town.museumFrame(4.6, 4.8);
-  settle(parked, jeepSpot, 1.0, 0.02, yawToFace(jeepSpot, town.museumFrame(4.6, 12)));
+  // beside the plaza, in view when you start — not behind you where the camera sits
+  const jeepSpot = town.museumFrame(5.4, 2.2);
+  settle(parked, jeepSpot, 1.0, 0.02, yawToFace(jeepSpot, town.museumFrame(5.4, 12)));
+  parked.visible = true;                 // the player's car body starts hidden (you're on foot), and so did its clone
   scene.add(parked);
   let jeepDir = jeepSpot.clone();
 
@@ -78,16 +80,24 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   function beginPlay() {
     G.state = 'play';
     player.st.enabled = true;
-    show($('hud')); show($('nbBtn')); show($('hint'));
-    setTimeout(() => show($('hint'), false), 9000);
+    show($('hud')); show($('nbBtn')); showKeys();
     updateGoal();
+  }
+  // the controls strip: always there (H hides it), and it changes when you drive
+  let keysOn = true;
+  function showKeys() {
+    const k = (t) => `<kbd>${t}</kbd>`;
+    $('hint').innerHTML = player.st.mode === 'jeep'
+      ? `${k('W')}${k('S')} drive · ${k('A')}${k('D')} steer · ${k('E')} get out · scroll to zoom · ${k('C')} camera behind · ${k('H')} hide`
+      : `${k('WASD')} walk · ${k('Shift')} run · ${k('E')} look / talk · ${k('N')} notebook · drag to look · scroll to zoom · ${k('C')} camera behind · ${k('H')} hide`;
+    show($('hint'), keysOn && G.state === 'play');
   }
 
   // ── what's near you, and what pressing E does ──
   let nearest = null;
   function scan() {
     nearest = null;
-    if (G.state !== 'play' || G.ui) return;
+    if (G.state !== 'play' || G.ui) { show($('prompt'), false); return; }
     const here = player.st.dir;
     let best = 1e9;
     if (player.st.mode === 'walk') {
@@ -111,6 +121,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (e.code === 'KeyE') act();
     if (e.code === 'Escape') closeUI();
     if (e.code === 'KeyN' && G.state === 'play') toggleNotebook();
+    if (e.code === 'KeyH' && G.state === 'play') { keysOn = !keysOn; showKeys(); }
   });
   function act() {
     if (G.state !== 'play') return;
@@ -120,7 +131,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (!nearest) return;
     if (nearest.kind === 'clue') return openClue(nearest);
     if (nearest.kind === 'person') return openTalk(nearest.id);
-    if (nearest.kind === 'jeep') { parked.visible = false; player.setMode('jeep'); player.st.heading = new THREE.Vector3(0, 0, 1).applyQuaternion(parked.quaternion); player.st.camFwd.copy(player.st.heading); return; }
+    if (nearest.kind === 'jeep') { parked.visible = false; player.setMode('jeep'); player.st.heading = new THREE.Vector3(0, 0, 1).applyQuaternion(parked.quaternion); player.st.camFwd.copy(player.st.heading); showKeys(); renderCase(); return; }
     if (nearest.kind === 'exit') {
       player.setMode('walk');
       jeepDir = player.st.dir.clone();
@@ -128,6 +139,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       // step out beside the car
       const side = new THREE.Vector3().crossVectors(player.st.dir, player.st.heading).normalize();
       player.st.dir.multiplyScalar(40).addScaledVector(side, 1.6).normalize();
+      showKeys(); renderCase();
     }
   }
   function closeUI() {
@@ -188,9 +200,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   function renderTalk() {
     const p = G.talkWho, last = G.talkIdx >= p.lines.length - 1;
-    const canAccuse = p.id === 'vivi' && G.talked.has('vivi') && !G.solved && G.found.size >= 2;
+    const canAccuseHere = p.id === 'vivi' && canAccuse();
     $('talk').innerHTML = `<div class="face">${face(p.id)}</div><div><b>${p.name}</b><p>${p.lines[G.talkIdx]}</p>
-      <div class="row">${canAccuse && last ? '<button class="sk" id="tAcc">I know who did it</button>' : ''}<button class="sk" id="tNext">${last ? 'bye' : 'go on'}</button></div></div>`;
+      <div class="row">${canAccuseHere && last ? '<button class="sk" id="tAcc">I know who did it</button>' : ''}<button class="sk" id="tNext">${last ? 'bye' : 'go on'}</button></div></div>`;
     show($('talk'));
     $('tNext').onclick = nextLine;
     if ($('tAcc')) $('tAcc').onclick = () => { closeUI(); openNotebook(true); };
@@ -215,9 +227,11 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
         <p>Pick the two things you found that prove it:</p>` : '<p><b>Things I noticed</b></p>'}
       <ul>${notes.length ? notes.map(li).join('') : '<li class="empty">nothing yet — walk up to anything that catches your eye</li>'}</ul>
       ${accusing ? `<button class="sk" id="nbGo" ${G.pickSus && G.pickClues.size === 2 ? '' : 'disabled style="opacity:.5"'}>show Vivi</button><div id="nbV"></div>`
-        : `<p><b>People</b></p><ul>${people.length ? people.map(p => `<li><span class="i">${face(p.id, 'pt sm')}</span><span><b>${p.name}.</b> ${p.lines[p.lines.length - 1]}</span></li>`).join('') : '<li class="empty">no one yet</li>'}</ul>`}`;
+        : `<p><b>People</b></p><ul>${people.length ? people.map(p => `<li><span class="i">${face(p.id, 'pt sm')}</span><span><b>${p.name}.</b> ${p.lines[p.lines.length - 1]}</span></li>`).join('') : '<li class="empty">no one yet</li>'}</ul>
+        ${canAccuse() ? '<button class="sk case" id="nbCase">make your case</button>' : ''}`}`;
     show($('nb'));
     $('nbX').onclick = closeUI;
+    if ($('nbCase')) $('nbCase').onclick = () => openNotebook(true);
     if (accusing) {
       $('nb').querySelectorAll('[data-s]').forEach(b => b.onclick = () => { G.pickSus = b.dataset.s; openNotebook(true); });
       $('nb').querySelectorAll('li.pick').forEach(l => l.onclick = () => {
@@ -229,17 +243,97 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       if (go && !go.disabled) go.onclick = () => {
         const v = judge(G.pickSus, [...G.pickClues]);
         $('nbV').innerHTML = `<div class="verdict sk">${v.text}</div>`;
-        if (v.ok) { G.solved = true; updateGoal(); }
+        if (v.ok) { G.solved = true; G.track = null; updateGoal(); }
       };
     }
   }
 
+  // ── the case board: where you are in the story, who's left, where to look ──
+  // It says WHERE things are, never what they mean: finds are counted per place.
+  const canAccuse = () => G.talked.has('vivi') && G.found.size >= 2 && !G.solved;
+  const WHERE = { vivi: 'on the museum steps', otto: 'by the guard booth beside the museum steps', pia: 'outside Bean There Café, Main Street', rex: 'by his van at Frame & Co., Main Street' };
+  const placeDir = {
+    museum: town.museum.dir, main: town.townAt([2, 0]), harbour: town.sites.harbour.dir, station: town.sites.station.dir,
+  };
+  const personIt = (id) => items.find(i => i.kind === 'person' && i.id === id);
+  const placeCount = (pl) => { const all = CLUES.filter(c => c.where === pl); return [all.filter(c => G.found.has(c.id)).length, all.length]; };
+  function targetOf(key) {
+    const [kind, id] = key.split(':');
+    if (kind === 'person') { const it = personIt(id); return it && { dir: it.dir, label: PEOPLE.find(p => p.id === id).name.split(',')[0], near: 2.4, h: 2.75, done: G.talked.has(id) && id !== 'vivi' }; }
+    if (kind === 'place') { const [n, t] = placeCount(id); return { dir: placeDir[id], label: PLACES.find(p => p.id === id).name, near: id === 'main' ? 6 : 5, h: 3.2, done: n >= t }; }
+    if (kind === 'car') return player.st.mode === 'walk' ? { dir: jeepDir, label: 'your car', near: 2.6, h: 1.8, done: false } : null;
+    return null;
+  }
+  // what the arrow points at: what you picked on the board, or the next lead
+  function currentTarget() {
+    if (G.solved) return null;
+    if (G.track) { const t = targetOf(G.track); if (t && !t.done) return t; G.track = null; }
+    if (!G.talked.has('vivi')) return targetOf('person:vivi');
+    for (const id of ['otto', 'pia', 'rex']) if (!G.talked.has(id)) return targetOf('person:' + id);
+    if (canAccuse() && G.found.size >= 4) return targetOf('person:vivi');
+    for (const pl of PLACES) { const t = targetOf('place:' + pl.id); if (!t.done) return t; }
+    return targetOf('person:vivi');
+  }
   function updateGoal() {
-    const g = $('goal');
-    if (!G.talked.has('vivi')) g.textContent = 'find Director Vivi on the museum steps';
-    else if (!G.solved) g.textContent = `ask around, look closely · ${G.found.size} things noticed`;
-    else g.textContent = 'the canvases leave Cape Far Side tonight — to be continued';
     $('nbCount').textContent = G.found.size;
+    renderCase();
+  }
+  function renderCase() {
+    const el = $('case'), auto = currentTarget();
+    const row = (key, html, done = false) => {
+      const t = targetOf(key), on = t && auto && t.dir === auto.dir && !done;
+      return `<div class="cr ${done ? 'done' : ''} ${on ? 'on' : ''}" data-k="${key}">${html}</div>`;
+    };
+    let h = '';
+    if (G.solved) h = `<div class="st">Case closed.</div><p>The canvases leave Cape Far Side tonight — to be continued.</p>`;
+    else if (!G.talked.has('vivi')) {
+      h = `<div class="st">1 · Find Director Vivi</div>` + row('person:vivi', `<i>›</i>${face('vivi', 'pt xs')} Vivi — ${WHERE.vivi}`) +
+        `<p>Follow the arrow. Walk up to her and press <kbd>E</kbd>.</p>`;
+    } else {
+      h = `<div class="st">2 · Question the three</div>` +
+        ['otto', 'pia', 'rex'].map(id => row('person:' + id, `<i>${G.talked.has(id) ? '✓' : '›'}</i>${face(id, 'pt xs')} ${PEOPLE.find(p => p.id === id).name.split(',')[0]} — ${WHERE[id]}`, G.talked.has(id))).join('') +
+        `<div class="st">Look around · ${G.found.size} of ${CLUES.length} noticed</div>` +
+        PLACES.map(pl => { const [n, t] = placeCount(pl.id); return row('place:' + pl.id, `<i>${n >= t ? '✓' : '›'}</i> ${pl.name} <span class="ct">${n}/${t}</span>`, n >= t); }).join('') +
+        (canAccuse()
+          ? `<div class="st go">3 · Name the thief</div><p>Tell Vivi — or open your notebook (<kbd>N</kbd>) → make your case. You need a suspect and two things that prove it.</p>`
+          : `<p class="soft">Glints mark things worth a closer look. Find two that point at someone.</p>`);
+    }
+    if (!G.solved && player.st.mode === 'walk') h += row('car', `<i>›</i> your car — <kbd>E</kbd> to drive`);
+    if (!G.solved) h += `<p class="soft">click a line to follow it</p>`;
+    el.innerHTML = h;
+    el.querySelectorAll('.cr').forEach(r => r.onclick = () => { G.track = r.dataset.k; renderCase(); });
+  }
+
+  // ── the waypoint: a sketched pin over your lead, or an arrow at the edge ──
+  const way = $('way'), _wp = new THREE.Vector3(), _pc = new THREE.Vector3();
+  let wayKey = '';
+  function updateWaypoint() {
+    const t = G.state === 'play' && !G.ui ? currentTarget() : null;
+    const dist = t ? arc(player.st.dir, t.dir) : 0;
+    if (!t || dist < t.near) { show(way, false); return; }
+    _wp.copy(t.dir).multiplyScalar(radiusAt(t.dir) + t.h);
+    _pc.copy(_wp).applyMatrix4(camera.matrixWorldInverse);
+    const v = _wp.clone().project(camera);
+    const W = innerWidth, H = innerHeight, m = 54;
+    let x, y, ang;
+    if (_pc.z < 0 && Math.abs(v.x) < 0.92 && Math.abs(v.y) < 0.88) {
+      x = (v.x * 0.5 + 0.5) * W; y = (-v.y * 0.5 + 0.5) * H; ang = 90;               // over it, pointing down
+    } else {
+      let dx = _pc.x, dy = -_pc.y;
+      if (_pc.z > 0) dy = Math.abs(dy) + _pc.z;                                        // behind you: toward the bottom edge
+      const a = Math.atan2(dy, dx), c = Math.cos(a), s2 = Math.sin(a);
+      const k = Math.min((W / 2 - m) / Math.max(1e-3, Math.abs(c)), (H / 2 - m) / Math.max(1e-3, Math.abs(s2)));
+      x = W / 2 + c * k; y = H / 2 + s2 * k; ang = a * 180 / Math.PI;
+    }
+    way.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    way.firstElementChild.style.transform = `translate(-50%, -50%) rotate(${ang.toFixed(1)}deg)`;
+    const label = `${t.label} · ${Math.round(dist * 1.5)} m`;
+    if (label !== wayKey) { way.lastElementChild.textContent = label; wayKey = label; }
+    // keep the label on screen at the edges: hang it inward from the arrow
+    const lb = way.lastElementChild.style;
+    lb.transform = `translateX(${x > W - 150 ? -100 : x < 150 ? 0 : -50}%)`;
+    lb.top = y > H - 90 ? '-52px' : '26px';
+    show(way);
   }
 
   // ── per frame ──
@@ -287,6 +381,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     // glints bob gently so you notice them without being told
     for (const it of items) if (it.glint?.visible) it.glint.material.rotation = Math.sin(t * 2 + it.dir.x * 9) * 0.25;
     scan();
+    updateWaypoint();
     return false;
   }
   return { G, update, items, FACE, SKETCH, jeepSpot: () => jeepDir.clone() };

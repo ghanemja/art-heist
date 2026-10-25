@@ -43,12 +43,26 @@
   #skip { right: 18px; bottom: calc(11vh + 14px); z-index: 31; font-size: 16px; padding: 4px 14px; }
 
   /* hud */
-  #hud { left: 18px; top: 14px; }
-  #hud b { font-family: 'Caveat', cursive; font-size: 30px; display: block; line-height: 1; }
-  #hud small { font-size: 16px; color: var(--ink2); }
+  #hud { left: 14px; top: 12px; width: min(330px, 46vw); padding: 8px 14px 6px; transform: rotate(-0.4deg); }
+  #hud b { font-family: 'Caveat', cursive; font-size: 28px; display: block; line-height: 1; }
+  #case .st { font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700; margin: 6px 0 1px; }
+  #case .st.go { color: var(--accent); }
+  #case .cr { font-size: 16px; line-height: 1.25; padding: 2px 6px; margin: 0 -6px; border-radius: 8px; cursor: pointer; }
+  #case .cr:hover { background: rgba(228,184,79,.25); }
+  #case .cr.on { background: rgba(232,96,76,.16); font-weight: 600; }
+  #case .cr.done { opacity: .55; text-decoration: line-through; text-decoration-thickness: 1.5px; }
+  #case .cr i { font-style: normal; display: inline-block; width: 14px; color: var(--accent); font-weight: 700; }
+  #case .ct { float: right; color: var(--ink2); }
+  #case p { font-size: 15px; line-height: 1.25; margin: 4px 0; color: var(--ink2); }
+  #case p.soft { font-size: 13px; opacity: .8; }
+  #case kbd, #hint kbd { font-family: inherit; font-size: .9em; border: 1.5px solid var(--ink); border-radius: 5px; padding: 0 5px; background: var(--gold); color: var(--ink); }
+  #way { left: 0; top: 0; z-index: 9; pointer-events: none; transition: opacity .3s ease; will-change: transform; }
+  #way svg { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); filter: drop-shadow(2px 3px 0 rgba(42,34,48,.5)); animation: wayBob 1.1s ease-in-out infinite; }
+  #way span { position: absolute; left: 0; top: 26px; transform: translateX(-50%); white-space: nowrap; font-size: 17px; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--sketch); padding: 0 8px; }
+  @keyframes wayBob { 50% { margin-top: -5px; } }
   #nbBtn { right: 16px; top: 14px; font-size: 20px; }
   #nbBtn i { font-style: normal; display: inline-block; min-width: 22px; margin-left: 6px; background: var(--accent); color: #fff; border-radius: 50%; text-align: center; font-size: 15px; }
-  #hint { left: 50%; bottom: 18px; transform: translateX(-50%); font-size: 17px; padding: 6px 16px; white-space: nowrap; }
+  #hint { left: 14px; bottom: 14px; font-size: 15px; padding: 4px 12px; max-width: calc(100vw - 200px); line-height: 1.6; opacity: .92; }
   #prompt { left: 50%; bottom: 74px; transform: translateX(-50%) rotate(-1deg); font-size: 22px; padding: 6px 18px; background: #fffaf0; }
   #prompt kbd { font-family: inherit; border: 2px solid var(--ink); border-radius: 6px; padding: 0 7px; margin-right: 6px; background: var(--gold); }
 
@@ -108,9 +122,10 @@
 <div id="caption" class="ui fade hide"></div>
 <button id="skip" class="ui sk fade hide">skip ›</button>
 
-<div id="hud" class="ui fade hide"><b>The Vanishing Gallery</b><small id="goal">look around the museum</small></div>
+<div id="hud" class="ui sk fade hide"><b>The Vanishing Gallery</b><div id="case"></div></div>
+<div id="way" class="ui hide"><svg viewBox="0 0 64 40" width="54" height="34"><path d="M4 14 C 18 13, 30 15, 38 14 L 37 4 L 60 20 L 37 36 L 38 26 C 28 25, 16 27, 4 26 Z" fill="#e8604c" stroke="#2a2230" stroke-width="3.2" stroke-linejoin="round"/></svg><span></span></div>
 <button id="nbBtn" class="ui sk fade hide">notebook<i id="nbCount">0</i></button>
-<div id="hint" class="ui sk fade hide">WASD move · shift run · drag to look · E look closer · talk · drive</div>
+<div id="hint" class="ui sk fade hide"></div>
 <div id="prompt" class="ui sk fade hide"></div>
 
 <div id="card" class="ui sk fade hide"></div>
@@ -124,6 +139,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=17"></script>
+<script type="module" src="./js/main.js?cb=18"></script>
 </body>
 </html>

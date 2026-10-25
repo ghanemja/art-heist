@@ -11,7 +11,7 @@ import { loadHuman, makeHuman, pose, sit, LOOKS } from './human.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const MODES = {
-  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.95, radius: 0.3, follow: 0.8 },
+  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.95, radius: 0.3, follow: 1.4 },
   jeep: { max: 11, accel: 6, turn: 2.4, camD: 9.5, camH: 3.6, look: 1.2, radius: 0.8, follow: 3.0 },
 };
 
@@ -105,25 +105,42 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     mode: 'walk', dir: startDir.clone(), heading: null, speed: 0, steer: 0,
     camPos: new THREE.Vector3(), camLook: new THREE.Vector3(), camFwd: null, camYaw: 0, camPitch: 0, camInit: false, dragT: 9,
     keys: new Set(), enabled: true, squashK: 0, gr: 0,
+    zoom: 1, zoomT: 1, recenter: 0,
   };
   st.heading = startToward.clone().sub(st.dir.clone().multiplyScalar(st.dir.dot(startToward))).normalize();
   st.camFwd = st.heading.clone();
   bodies.walk.visible = true;
 
-  addEventListener('keydown', e => st.keys.add(e.code));
+  addEventListener('keydown', e => { st.keys.add(e.code); if (e.code === 'KeyC') st.recenter = 0.7; });
   addEventListener('keyup', e => st.keys.delete(e.code));
   addEventListener('blur', () => st.keys.clear());
-  // drag to look around (orbit the camera about the player)
+  // drag to look around (orbit the camera about the player); scroll or pinch to zoom
   {
-    let drag = false, lx = 0, ly = 0;
-    addEventListener('pointerdown', e => { if (e.target.tagName === 'CANVAS') { drag = true; lx = e.clientX; ly = e.clientY; } });
-    addEventListener('pointerup', () => { drag = false; });
-    addEventListener('pointermove', e => {
-      if (!drag) return;
-      st.camYaw -= (e.clientX - lx) * 0.006; st.camPitch = Math.max(-0.3, Math.min(0.9, st.camPitch + (e.clientY - ly) * 0.004));
-      st.dragT = 0;
-      lx = e.clientX; ly = e.clientY;
+    const ptrs = new Map();
+    let pinch0 = 0;
+    const zoomBy = (k) => { st.zoomT = THREE.MathUtils.clamp(st.zoomT * k, 0.5, 1.9); };
+    addEventListener('pointerdown', e => {
+      if (e.target.tagName !== 'CANVAS') return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); }
     });
+    const up = (e) => { ptrs.delete(e.pointerId); pinch0 = 0; };
+    addEventListener('pointerup', up); addEventListener('pointercancel', up);
+    addEventListener('pointermove', e => {
+      const p = ptrs.get(e.pointerId);
+      if (!p) return;
+      if (ptrs.size === 2) {                                     // two fingers: pinch to zoom
+        p.x = e.clientX; p.y = e.clientY;
+        const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch0) zoomBy(pinch0 / Math.max(1, d));
+        pinch0 = d;
+        return;
+      }
+      st.camYaw -= (e.clientX - p.x) * 0.006; st.camPitch = Math.max(-0.3, Math.min(1.0, st.camPitch + (e.clientY - p.y) * 0.004));
+      st.dragT = 0; st.recenter = 0;
+      p.x = e.clientX; p.y = e.clientY;
+    });
+    addEventListener('wheel', e => { if (e.target.tagName === 'CANVAS') { zoomBy(Math.exp(e.deltaY * 0.0012)); e.preventDefault(); } }, { passive: false });
   }
   const key = (...c) => c.some(k => st.keys.has(k));
   const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _w = new THREE.Vector3(), _m = new THREE.Matrix4();
@@ -132,6 +149,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     st.mode = m;
     for (const [k, b] of Object.entries(bodies)) b.visible = k === m;
     st.speed *= 0.3;
+    st.camInit = false;                      // cut to the new framing rather than swinging over the roof
   }
 
   function update(dt, t) {
@@ -220,19 +238,24 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // ── camera ──
     // trails on a spring. On foot it only eases round behind you while you walk
     // forward-ish (never while strafing or backing up); in the jeep it's a chase cam.
+    // (walking sideways it still drifts round a little, so circling a building
+    // doesn't leave you facing the camera; backing up never swings it). C snaps behind you.
     const ang = Math.atan2(_w.crossVectors(st.camFwd, st.heading).dot(up), st.camFwd.dot(st.heading));
-    const moving = Math.min(1, Math.abs(st.speed) / 2);
-    const follow = st.mode === 'jeep' ? M.follow * moving
-      : (st.dragT > 1.2 ? M.follow * moving * Math.max(0, Math.cos(ang)) : 0);
+    const moving = Math.min(1, Math.abs(st.speed) / 2), ca = Math.cos(ang);
+    let follow = st.mode === 'jeep' ? M.follow * moving
+      : (st.dragT > 1.2 ? M.follow * moving * (ca > 0 ? 0.35 + 0.65 * ca : ca > -0.35 ? 0.25 : 0) : 0);
+    if (st.recenter > 0) { st.recenter -= dt; follow = Math.max(follow, 7); }
     if (follow) st.camFwd.applyAxisAngle(up, ang * (1 - Math.exp(-follow * dt)));
+    st.zoom += (st.zoomT - st.zoom) * (1 - Math.exp(-8 * dt));
+    const camD = M.camD * st.zoom, camH = M.camH * (0.55 + 0.45 * st.zoom);
     // never look through a building: swing to the nearest clear angle,
     // pull in if that fails, and rise over your shoulder as a last resort
     const lead = Math.min(1, Math.abs(st.speed) / M.max);
     const head = root.position.clone().addScaledVector(up, M.look);
     const camAt = (yaw) => root.position.clone()
-      .addScaledVector(st.camFwd.clone().applyAxisAngle(up, yaw), -M.camD * (1 + st.camPitch * 0.25))
-      .addScaledVector(up, M.camH + st.camPitch * 4.5);
-    const near = colliders.filter(c => c.r >= 0.5 && arc(st.dir, c.dir) < c.r + M.camD + 2);
+      .addScaledVector(st.camFwd.clone().applyAxisAngle(up, yaw), -camD * (1 + st.camPitch * 0.25))
+      .addScaledVector(up, camH + st.camPitch * 4.5 * st.zoom);
+    const near = colliders.filter(c => c.r >= 0.5 && arc(st.dir, c.dir) < c.r + camD + 2);
     const reach = (w) => {
       for (let i = 1; i <= 10; i++) {
         const p = head.clone().lerp(w, i / 10).normalize();
@@ -245,12 +268,13 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         if (reach(camAt(o)) >= 1) { st.camFwd.applyAxisAngle(up, o * (1 - Math.exp(-3 * dt))); break; }
       }
     }
+    // still blocked: come in only so far, and rise over the obstacle instead —
+    // diving in close leaves you staring into the car's cockpit or the back of your head
     const want = camAt(0);
     const f = reach(want);
-    if (f >= 0.4 && f < 1) want.copy(head).lerp(want, f).addScaledVector(up, (1 - f) * 1.0);
-    else if (f < 0.4) {
-      const back = want.clone().sub(head).projectOnPlane(up).setLength(M.camD * 0.3);
-      want.copy(head).add(back).addScaledVector(up, M.camD * 0.9);
+    if (f < 1) {
+      const keep = Math.max(f, st.mode === 'jeep' ? 0.6 : 0.4);
+      want.lerpVectors(head, want, keep).addScaledVector(up, (1 - f) * (st.mode === 'jeep' ? 4.5 : 2.4));
     }
     const look = head.clone().addScaledVector(st.heading, 1.6 * lead);
     if (!st.camInit) { st.camPos.copy(want); st.camLook.copy(look); st.camInit = true; }
