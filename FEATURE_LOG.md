@@ -47,6 +47,7 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - Museum: ground under it levelled to a true tangent PLANE (curved-planet edges were ~0.6 low → floating planters, slanted look); landmarks crowding it moved (Inbox Zero, YarnFlow, DeckGPT, The Council); roads re-deflected after smoothing. Zone + road audits clean.
   - No emojis: painted portraits rendered from each person's own model (toon + ink, gouache wash, pencil ring); clue cards show painted sketches of the actual props.
   - Conversations get a side-on two-shot camera framing you and them.
+- 🟡 **Did you fix the head shapes and side profiles?** Not fully — true side-on renders showed a flat face, a tiny ball nose and the neck rising from the middle of the skull. Now: a real nose (extruded side silhouette: bridge, tip, turn under; narrow at the bridge, nostril wings), fuller mouth area and a chin in the profile, the neck leans forward and joins the back of the skull, Pia's ponytail hangs down with a tie. Verified with exact side + front renders of all four.
 - ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 

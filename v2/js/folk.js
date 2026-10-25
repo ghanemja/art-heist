@@ -163,7 +163,7 @@ const TALK_POSE = { fwd: 0.55, out: 0.0, twist: 0.25, bend: 1.45, wrist: -0.3, g
 // From a unit-sphere direction: the skull swells back and tucks in at the nape,
 // the face is flatter with a forehead that slopes back, the jaw narrows to a
 // chin that comes forward. Hair, ears and features are placed on this surface.
-const HR = 0.118, HC = new THREE.Vector3(0, 0.12, 0.012);   // set a touch forward: the neck joins behind the jaw
+const HR = 0.118, HC = new THREE.Vector3(0, 0.12, 0.018);   // set a touch forward: the neck joins behind the jaw
 function headShape(v, out = new THREE.Vector3()) {
   let { x, y, z } = v;
   const lo = Math.max(0, -y), bump = (c, w, t) => Math.exp(-((t - c) * (t - c)) / (w * w));
@@ -174,13 +174,35 @@ function headShape(v, out = new THREE.Vector3()) {
   // relief on the face: a brow ridge, soft eye sockets, a fuller mouth and cheeks
   z += front * (0.035 * bump(0.3, 0.09, y) * bump(0.3, 0.3, ax)
              - 0.04 * bump(0.12, 0.1, y) * bump(0.36, 0.14, ax)
-             + 0.05 * bump(-0.3, 0.2, y) * bump(0, 0.45, ax));
+             + 0.06 * bump(-0.36, 0.18, y) * bump(0, 0.4, ax)                // the mouth: lips sit forward
+             + 0.08 * bump(-0.8, 0.12, y) * bump(0, 0.28, ax));             // a chin
   // the jaw: narrows to the chin, with a corner below the ear, tucking in to the neck behind it
   x *= 1 - 0.34 * lo * lo - 0.05 * front;
   if (y < -0.25 && z < 0.4) { const k = Math.min(1, (-0.25 - y) / 0.5); x *= 1 - 0.12 * k; z = z * (1 - 0.18 * k) - 0.05 * k * (z < 0 ? 1 : 0.3); }
   if (y < -0.6) y = -0.6 + (y + 0.6) * 0.65;         // a flatter underside to the jaw
   return out.set(x * 0.95 * HR, y * 1.07 * HR, z * HR).add(HC);
 }
+// the nose, drawn from its side (x = forward, y = up) and extruded with a soft bevel;
+// the back sits inside the face so it grows out of it
+function noseGeo(k = 1) {
+  const sh = new THREE.Shape();
+  sh.moveTo(-0.01, 0.036);
+  sh.quadraticCurveTo(0.004, 0.03, 0.012, 0.004);               // the bridge, sloping out
+  sh.quadraticCurveTo(0.017, -0.008, 0.022, -0.014);            // down to the tip…
+  sh.quadraticCurveTo(0.027, -0.022, 0.018, -0.026);            // …round the tip
+  sh.quadraticCurveTo(0.008, -0.026, 0.002, -0.022);            // under the nose, back to the lip
+  sh.lineTo(-0.01, -0.022);
+  sh.lineTo(-0.01, 0.036);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.007, bevelSize: 0.006, bevelSegments: 4, curveSegments: 10 });
+  g.translate(0, 0, -0.007).rotateY(-Math.PI / 2);              // silhouette x → +Z (out of the face)
+  const p = g.attributes.position;                               // narrow at the bridge, wide at the nostrils
+  for (let i = 0; i < p.count; i++) { const t = THREE.MathUtils.clamp((0.036 - p.getY(i)) / 0.062, 0, 1); p.setX(i, p.getX(i) * (0.5 + 0.9 * t)); }
+  g.scale(k, k, k);
+  g.deleteAttribute('uv');
+  const w = mergeVertices(g, 1e-6); w.computeVertexNormals();
+  return w;
+}
+
 // a point on the head from a direction (u right, v up, zs: +1 front / −1 back)
 function headPt(u, v, zs = 1) {
   const d = new THREE.Vector3(u, v, zs * Math.sqrt(Math.max(0, 1 - u * u - v * v))).normalize();
@@ -302,9 +324,10 @@ export function makeFolk(spec) {
     bel.scale.set(0.95 * B, 0.95, 0.7 * k); at(bel, 0, 0.12, (0.02 + 0.05 * S.belly)); J.spine.add(bel);
   }
   // ── neck + head ──
-  J.neck = joint(J.spine, 0, 0.35, 0);
-  J.neck.add(at(cap(0.04, 0.05, skin, 10), 0, 0.03, 0));
-  J.head = joint(J.neck, 0, 0.06, 0);
+  // the neck rises from the back of the shoulders and leans forward into the skull
+  J.neck = joint(J.spine, 0, 0.35, -0.014);
+  const nk = cap(0.04, 0.055, skin, 12); nk.rotation.x = 0.22; at(nk, 0, 0.03, 0.006); J.neck.add(nk);
+  J.head = joint(J.neck, 0, 0.06, 0.016);
   // a sculpted head (not a ball): see headShape — skull back, flat face, jaw to a chin
   J.head.add(new THREE.Mesh(shapedSphere(40, 30), skin));
   // face: eyes, brows, nose, a blush, a mouth line — placed ON the sculpted surface
@@ -316,8 +339,10 @@ export function makeFolk(spec) {
     const ch = ball(0.02, paint(0xe89a86, { hatch: 0 }), 10, 8); ch.scale.set(1, 0.6, 0.3); faceBits.push(put(ch, s * 0.55, -0.16, -0.004));
     const ear = ball(0.024, skin, 10, 8); ear.scale.set(0.5, 1, 0.8); ear.position.copy(headPt(s * 0.97, 0.05, -1)).add(new THREE.Vector3(0, 0, 0.012)); J.head.add(ear);
   }
-  const nose = ball(0.018, skin, 10, 8); nose.scale.set(0.9, 0.9, 0.8); put(nose, 0, -0.04, 0.006);
-  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), dark); mouth.rotation.z = Math.PI; faceBits.push(put(mouth, 0, -0.33, -0.001));
+  // a nose with a real side silhouette: bridge, tip, and the turn back under
+  const nose = new THREE.Mesh(noseGeo(1.35 * (S.nose ?? 1)), skin); put(nose, 0, -0.07, -0.008);
+  for (const sx of [-1, 1]) { const ala = ball(0.0105, skin, 10, 8); ala.scale.set(1, 0.85, 0.9); ala.position.copy(nose.position).add(new THREE.Vector3(sx * 0.016, -0.026, 0.012)); J.head.add(ala); }   // nostril wings
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 4, 10, Math.PI), dark); mouth.rotation.z = Math.PI; faceBits.push(put(mouth, 0, -0.43, -0.001));
   if (S.glasses) for (const s of [-1, 1]) { const g = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.004, 5, 14), dark); faceBits.push(put(g, s * 0.36, 0.12, 0.008)); }
   // hair follows the same sculpted skull, a little proud of it, lower at the back
   const hairCap = (cut, tilt, inflate) => new THREE.Mesh(shapedSphere(32, 18, Math.PI * cut, tilt, inflate), hairM);
@@ -331,13 +356,14 @@ export function makeFolk(spec) {
   } else if (hs === 'bun') {
     J.head.add(at(ball(0.06, hairM), 0, 0.255, -0.085));
   } else if (hs === 'pony') {
-    const p = cap(0.035, 0.14, hairM); p.rotation.x = 0.5; at(p, 0, 0.12, -0.15); J.head.add(p);
+    const p = cap(0.032, 0.13, hairM); p.rotation.x = 0.32; at(p, 0, 0.1, -0.15); J.head.add(p);       // hangs down the back
+    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.009, 6, 14), paint(S.hatColor ?? 0xe0b445)); tie.rotation.x = Math.PI / 2 + 0.32; at(tie, 0, 0.165, -0.135); J.head.add(tie);
   } else if (hs === 'curls') {
     for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; J.head.add(at(ball(0.045, hairM, 10, 8), Math.cos(a) * 0.1, 0.2 + Math.sin(i * 1.7) * 0.02, Math.sin(a) * 0.09 - 0.01)); }
   }
   if (S.beard) {
     const bd = ball(0.09, hairM); bd.scale.set(0.95, 0.72, 0.75); bd.position.copy(headPt(0, -0.62)).add(new THREE.Vector3(0, 0.004, -0.03)); J.head.add(bd);
-    const mo = cap(0.016, 0.06, hairM, 8); mo.rotation.z = Math.PI / 2; mo.position.copy(headPt(0, -0.2)).add(new THREE.Vector3(0, 0, 0.004)); J.head.add(mo);
+    const mo = cap(0.016, 0.06, hairM, 8); mo.rotation.z = Math.PI / 2; mo.position.copy(headPt(0, -0.32)).add(new THREE.Vector3(0, 0, 0.004)); J.head.add(mo);
     mouth.visible = false;
   }
   // hats
