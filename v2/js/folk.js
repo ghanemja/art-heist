@@ -9,7 +9,7 @@ import { paint, ink } from './style.js';
 import { lathe } from './props.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { buildHead, HC } from './faces.js';
+import { buildHead, HC, sculpt, lineAt } from './faces.js';
 
 const SKINS = { fair: 0xf0d2b6, rose: 0xe6b99a, olive: 0xcf9e74, tan: 0xb57b52, brown: 0x8d5a3b, deep: 0x5e3a28 };
 
@@ -160,6 +160,29 @@ export const STANCES = {
 };
 const TALK_POSE = { fwd: 0.55, out: 0.0, twist: 0.25, bend: 1.45, wrist: -0.3, grip: 0.15 };
 
+// a lock of hair: a tube through `pts`, fat near the root, tapering to a fine flicked
+// end, coloured darker at the root with a sheen a third of the way down
+function lock(pts, r0, base, seed = 0) {
+  const curve = new THREE.CatmullRomCurve3(pts), T = 24, Rr = 8;
+  const g = new THREE.TubeGeometry(curve, T, 1, Rr, false);
+  const pos = g.attributes.position, c = new THREE.Vector3(), q = new THREE.Vector3();
+  const col = new Float32Array(pos.count * 3), cc = new THREE.Color();
+  const root = base.clone().multiplyScalar(0.7), hi = base.clone().lerp(new THREE.Color(0xbfd2ff), 0.4).offsetHSL(0, 0, 0.1);
+  for (let i = 0; i < pos.count; i++) {
+    const ring = Math.floor(i / (Rr + 1)), t = ring / T, a = (i % (Rr + 1)) / Rr * Math.PI * 2;
+    curve.getPointAt(Math.min(1, t), c);
+    const r = r0 * (0.75 + 0.45 * Math.sin(Math.PI * Math.min(1, t * 1.6))) * (t > 0.7 ? Math.max(0.08, (1 - t) / 0.3) : 1);
+    q.fromBufferAttribute(pos, i).sub(c).multiplyScalar(r);
+    pos.setXYZ(i, c.x + q.x, c.y + q.y, c.z + q.z);
+    const shine = Math.exp(-((t - 0.35) ** 2) / 0.006) * (0.5 + 0.5 * Math.sin(a * 3 + seed));
+    cc.copy(base).lerp(root, Math.max(0, 0.6 - t * 3)).lerp(hi, shine * 0.8);
+    col.set([cc.r, cc.g, cc.b], i * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, paint(0xffffff, { vertexColors: true }));
+}
+
 function bone(parent, x, y, z) { const b = new THREE.Bone(); b.position.set(x, y, z); parent.add(b); return b; }
 
 // a smooth profile through a few control points (Catmull-Rom), so lathes read round
@@ -294,31 +317,66 @@ export function makeFolk(spec) {
     const bun = ball(0.056, hairM, 18, 14); bun.scale.set(1, 0.9, 0.95); bun.position.copy(onSkull(0, 0.6, -1, 0.04)); J.head.add(bun);
     const twist = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.012, 8, 20), hairM); twist.position.copy(bun.position); twist.rotation.x = 0.9; J.head.add(twist);
     const band = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.007, 6, 16), paint(0x8e2f3a)); band.position.copy(onSkull(0, 0.6, -1, 0.012)); band.rotation.x = 0.9; J.head.add(band);
-  } else if (hs === 'pony') {         // a tapered tail hanging from a tie, curls at the end
+  } else if (hs === 'pony') {         // a ponytail of flowing locks: gathered at the tie, splaying and flicking at the ends
     const root = onSkull(0, 0.3, -1, 0.01);
-    const tail = new THREE.Mesh(lathe(smooth([[0.001, 0.0], [0.026, 0.01], [0.036, 0.06], [0.03, 0.12], [0.014, 0.17], [0.001, 0.18]], 20), 14), hairM);
-    tail.rotation.x = Math.PI + 0.42; tail.position.copy(root); J.head.add(tail);            // hangs down, away from the neck
-    const dirT = new THREE.Vector3(0, Math.cos(Math.PI + 0.42), Math.sin(Math.PI + 0.42));
-    for (let i = 0; i < 5; i++) { const c = ball(0.017, hairM, 10, 8); c.position.copy(root).addScaledVector(dirT, 0.13 + 0.012 * i).add(new THREE.Vector3(Math.sin(i * 2.4) * 0.018, 0, Math.cos(i * 2.4) * 0.012)); J.head.add(c); }   // curls at the end
-    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.008, 6, 14), paint(S.hatColor ?? 0xe0b445)); tie.position.copy(root); tie.rotation.x = 0.4; J.head.add(tie);
+    const pony = J.pony = new THREE.Group(); pony.position.copy(root); J.head.add(pony);
+    const down = new THREE.Vector3(0, -0.93, -0.37), V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const base = new THREE.Color(S.hair ?? 0x1d1a1a);
+    for (let i = -2; i <= 2; i++) {
+      const sg = Math.sign(i) || (Math.random() < 0.5 ? -1 : 1), w = i * 0.006;
+      const pts = [V(w, 0, 0), down.clone().multiplyScalar(0.05).add(V(i * 0.008, 0, -0.004)),
+        down.clone().multiplyScalar(0.11).add(V(i * 0.016, 0, -0.008 * Math.abs(i))),
+        down.clone().multiplyScalar(0.16).add(V(i * 0.026, 0, 0.004)),
+        down.clone().multiplyScalar(0.185).add(V(i * 0.034 + sg * 0.01, 0.024, 0.02))];
+      pony.add(lock(pts, 0.017 - Math.abs(i) * 0.0015, base, i));
+    }
+    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.008, 6, 14), paint(S.hatColor ?? 0xe0b445)); tie.rotation.x = 0.4; pony.add(tie);
   }
-  // hats sit on this person's own crown
-  const hatG = new THREE.Group(); hatG.position.y = head.top - 0.246; J.head.add(hatG);
+  // hats are made from THIS head's shape, so they sit on the skull, not on top of it
   const hatM = paint(S.hatColor ?? 0x2a2230);
-  const hat = (o) => { hatG.add(o); return o; };
-  if (S.hat === 'cap') {          // a guard's peaked cap
-    hat(at(new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.125, 0.07, 22), hatM), 0, 0.245, -0.005));
-    const peak = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.012, 18, 1, false, -Math.PI / 2, Math.PI), dark); at(peak, 0, 0.215, 0.06); peak.rotation.x = 0.15; hat(peak);
-    hat(at(new THREE.Mesh(new THREE.CylinderGeometry(0.128, 0.128, 0.018, 22), paint(0xe4b84f)), 0, 0.22, -0.005));
-  } else if (S.hat === 'flat') {  // a flat cap
-    const f = ball(0.135, hatM, 22, 10); f.scale.set(1, 0.38, 1.1); at(f, 0, 0.225, 0.01); hat(f);
-    const peak = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.012, 16, 1, false, -Math.PI / 2, Math.PI), hatM); at(peak, 0, 0.205, 0.08); peak.rotation.x = 0.25; hat(peak);
-  } else if (S.hat === 'helmet') {
-    const h = new THREE.Mesh(new THREE.SphereGeometry(0.142, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), hatM); h.scale.set(0.95, 0.9, 1.15); at(h, 0, 0.17, -0.01); hat(h);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.133, 0.008, 6, 26), dark); rim.rotation.x = Math.PI / 2; rim.scale.y = 1.2; at(rim, 0, 0.172, -0.01); hat(rim);   // a rim, no antennae
+  const V3 = THREE.Vector3, sh = head.shape, ssm = THREE.MathUtils.smoothstep;
+  const at3 = (u, v, w) => sh(new V3(u, v, w).normalize());
+  if (S.hat === 'cap') {          // a guard's peaked cap: a band fitted to the head, a wide crown, a sloped visor
+    const yD = 0.4, Lx = at3(1, yD, 0).x, Fz = at3(0, yD, 1).z, Bz = at3(0, yD, -1).z, yb = at3(0, yD, 1).y;
+    const rx = Lx * 1.07, rz = (Fz - Bz) / 2 * 1.08, zc = (Fz + Bz) / 2;
+    const capG = new THREE.Group(); capG.position.set(0, yb, zc); capG.rotation.x = -0.1; J.head.add(capG);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.07, 32, 1, true), paint(S.hatColor ?? 0x24304a, { side: THREE.DoubleSide })); band.scale.set(rx, 1, rz); band.position.y = 0.035; capG.add(band);
+    const gold = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.016, 32, 1, true), paint(0xe4b84f, { side: THREE.DoubleSide })); gold.scale.set(rx * 1.008, 1, rz * 1.008); gold.position.y = 0.022; capG.add(gold);
+    const crown = new THREE.Mesh(lathe(smooth([[0.001, 0.0], [0.9, 0.0], [1.08, 0.012], [1.1, 0.03], [0.95, 0.045], [0.001, 0.047]], 16), 32), hatM);
+    crown.scale.set(rx * 1.12, 1, rz * 1.2); crown.position.set(0, 0.068, 0.012); capG.add(crown);
+    const visor = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.01, 24, 1, false, -Math.PI / 2, Math.PI), paint(0x1a1a22, { hatch: 0 }));
+    visor.scale.set(rx * 0.92, 1, rz * 0.62); visor.position.set(0, 0.006, rz * 0.62); visor.rotation.x = 0.38; capG.add(visor);
+    const badge = ball(0.014, paint(0xe4b84f), 10, 8); badge.scale.z = 0.5; badge.position.set(0, 0.045, rz + 0.004); capG.add(badge);
+  } else if (S.hat === 'flat') {  // a tweed flat cap: hugs the skull, a flat top sloping down to the front, a short brim
+    const yTop = head.top + 0.01, zF = at3(0, 0.42, 1).z;
+    const g = sculpt(sh, 72, 54, { mask: (d) => d.y - lineAt(d, 0.42, 0.22, 0.0), inflate: () => 1.12,
+      post: (o, d) => {
+        o.z += 0.035 * Math.max(0, d.z) * ssm(d.y, 0.2, 0.85);                       // the front puffs forward over the brim
+        const plane = yTop + 0.022 - 0.16 * (o.z - HC.z);                              // a flat top above the hair, sloping down to the front
+        if (o.y > plane) o.y = plane + (o.y - plane) * 0.22;
+      },
+      color: (d, c) => { const h = Math.sign(Math.sin((d.x + Math.abs(Math.sin(d.z * 18)) * 0.06) * 90)); return c.set(S.hatColor ?? 0x5b4636).offsetHSL(0, 0, 0.01 * h); } });  // a faint herringbone
+    J.head.add(new THREE.Mesh(g, paint(0xffffff, { vertexColors: true })));
+    const fr = at3(0, 0.42, 1), w = at3(1, 0.42, 0).x;
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.012, 22, 1, false, -Math.PI / 2, Math.PI), hatM);
+    brim.scale.set(w * 0.88, 1, 0.055); brim.position.set(0, fr.y + 0.002, fr.z + 0.004); brim.rotation.x = 0.36; J.head.add(brim);
+  } else if (S.hat === 'helmet') { // a cycling helmet shell over the skull: vents, a dark rim, a chin strap
+    // vents and the rim are blended, not switched, so their edges are smooth curves
+    const vent = (d) => ssm(-Math.sin(d.x * 21), 0.35, 0.85) * ssm(d.y, 0.32, 0.5) * (1 - ssm(Math.abs(d.x), 0.4, 0.5));
+    const edge = (d) => d.y - lineAt(d, 0.3, 0.12, -0.12);
+    const rimK = (d) => 1 - ssm(edge(d), 0.025, 0.075);
+    const yel = new THREE.Color(S.hatColor ?? 0xe0b445), drk = new THREE.Color(0x2a2230);
+    const g = sculpt(sh, 88, 66, { mask: edge, inflate: (d) => 1.17 - 0.022 * vent(d),
+      color: (d, c) => c.copy(yel).lerp(drk, Math.max(vent(d), rimK(d))) });
+    J.head.add(new THREE.Mesh(g, paint(0xffffff, { vertexColors: true })));
+    for (const sx of [-1, 1]) {
+      const pts = [[0.86, 0.14], [0.8, -0.3], [0.5, -0.74], [0.12, -0.93]].map(([u, v]) => { const d = new V3(sx * u, v, Math.sqrt(Math.max(0, 1 - u * u - v * v))).normalize(); return sh(d).add(d.multiplyScalar(0.007)); });
+      const strap = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, 0.0035, 5, false), paint(0x2a2230, { hatch: 0 })); strap.userData.noInk = true; J.head.add(strap);
+    }
   } else if (S.hat === 'beanie') {
-    const b = new THREE.Mesh(lathe(smooth([[0.135, 0.0], [0.134, 0.06], [0.11, 0.12], [0.001, 0.15]], 16), 22), hatM); at(b, 0, 0.14, -0.005); hat(b);
-    hat(at(ball(0.032, hatM, 10, 8), 0, 0.3, -0.01));
+    const g = sculpt(sh, 48, 36, { mask: (d) => d.y - lineAt(d, 0.4, 0.2, -0.1), inflate: () => 1.13 });
+    J.head.add(new THREE.Mesh(g, hatM));
+    J.head.add(at(ball(0.032, hatM, 10, 8), 0, head.top + 0.025, -0.01));
   }
 
   // ── arms: one skinned tube each, shoulder to wrist; a round shoulder caps the join ──
@@ -477,6 +535,10 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   J.head.rotation.y = idle * 0.25 * Math.sin(t * 0.37) * Math.max(0, Math.sin(t * 0.21));
   J.head.rotation.x = 0;
   if (talk) J.head.rotation.x = talk * 0.05 * Math.sin(t * 2.7);
+  if (J.pony) {                                              // the ponytail swings, more when moving
+    J.pony.rotation.z = (0.07 + 0.12 * k) * Math.sin(t * 1.6 + 0.4) + 0.05 * k * s;
+    J.pony.rotation.x = 0.05 * Math.sin(t * 1.15) - 0.1 * k;
+  }
   if (st?.ik) writePose(inst, t, talk);
   return Math.abs(c) * 0.03 * k;
 }
