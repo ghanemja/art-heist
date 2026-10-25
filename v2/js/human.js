@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { paint, ink, blobShadow } from './style.js';
 import { makeFolk, poseFolk } from './folk.js';
 
@@ -19,177 +20,150 @@ export function loadHuman() {
   return _glb;
 }
 
-// critic.glb authoring bug (fixed the same way in the original game): the hands
-// are baked into the JEANS mesh (so they render blue) and the nape hair into the
-// SWEATER mesh (grey). Repaint just the verts those bones drive with the right
-// colour as vertex colours; clones share the geometry, so this runs once.
-const REPAINT = { jeans: { bones: ['handL', 'handR'], to: 'skin' }, sweater: { bones: ['head'], to: 'hair' } };
-// the model's own skin is #f9efe5 — near paper-white, so in the gouache look her
-// face and hands read as blank white. A warm, light skin tone instead (set before
-// the hand repaint, so face and hands match).
-export const CRITIC_SKIN = 0xefc3a2;
-function fixColors(root) {
-  root.traverse(o => { if (o.material?.name === 'skin') o.material.color.setHex(CRITIC_SKIN); });
-  const colOf = {};
-  root.traverse(o => { if (o.material?.name) colOf[o.material.name] = o.material.color; });
-  root.traverse(o => {
-    if (!o.isSkinnedMesh) return;
-    const rule = REPAINT[o.material.name], tgt = rule && colOf[rule.to];
-    const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
-    if (!tgt || !si) return;
-    const pick = new Set();
-    o.skeleton.bones.forEach((b, i) => { if (rule.bones.includes(b.name.replace(/\./g, ''))) pick.add(i); });
-    // the model already carries baked vertex colours (COLOR_0); keep them, and
-    // fold the material colour in so these two meshes can drop it (absolute colours)
-    const n = g.attributes.position.count, col = new Float32Array(n * 3), bc = o.material.color, old = g.attributes.color;
-    for (let v = 0; v < n; v++) {
-      let w = 0; for (let k = 0; k < 4; k++) if (pick.has(si.getComponent(v, k))) w += sw.getComponent(v, k);
-      const c = w > 0.5 ? tgt : bc;
-      const f = (i) => old ? old.getComponent(v, i) : 1;
-      col[v * 3] = c.r * f(0); col[v * 3 + 1] = c.g * f(1); col[v * 3 + 2] = c.b * f(2);
-    }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.userData.absColor = true;
-  });
-  // the SKIN mesh also holds the sweater's flared cuffs (everything below y≈1 in the
-  // bind pose; the face and neck sit above y≈2.5) — paint those the sweater's own
-  // (baked) colour, a touch lighter for the rib, so sleeves run to the wrist and only
-  // the face and hands are skin
-  let knit = null;
-  root.traverse(o => { if (o.isSkinnedMesh && o.material.name === 'sweater') {
-    // average only the grey knit (the nape verts were repainted hair-brown above)
-    const c = o.geometry.attributes.color, a = [0, 0, 0]; let n = 0;
-    for (let v = 0; v < c.count; v++) {
-      const r = c.getComponent(v, 0), b = c.getComponent(v, 2);
-      if (Math.abs(r - b) > 0.04) continue;
-      for (let k = 0; k < 3; k++) a[k] += c.getComponent(v, k); n++;
-    }
-    knit = new THREE.Color(...a.map(x => x / Math.max(1, n))).multiplyScalar(1.12);
-  } });
-  root.traverse(o => {
-    if (!o.isSkinnedMesh || o.material.name !== 'skin' || !knit) return;
-    const g = o.geometry, P = g.attributes.position, n = P.count, col = new Float32Array(n * 3), sk = o.material.color;
-    for (let v = 0; v < n; v++) { const c = P.getY(v) < 1.5 ? knit : sk; col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b; }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.userData.absColor = true;
-  });
-  // the hands (in the JEANS mesh) reach up inside the cuff, and their wrists poke
-  // out past the sleeve's side — paint everything above the hem sweater, so the
-  // sleeve reads unbroken and only the hand below it is skin
-  const HEM = -0.6;
-  root.traverse(o => {
-    if (!o.isSkinnedMesh || o.material.name !== 'jeans' || !knit) return;
-    const g = o.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, col = g.attributes.color;
-    const hand = new Set(); o.skeleton.bones.forEach((b, i) => { if (/hand/.test(b.name)) hand.add(i); });
-    for (let v = 0; v < P.count; v++) {
-      let w = 0; for (let k = 0; k < 4; k++) if (hand.has(si.getComponent(v, k))) w += sw.getComponent(v, k);
-      if (w > 0.5 && P.getY(v) > HEM) col.setXYZ(v, knit.r, knit.g, knit.b);
-    }
-  });
-  // the beret: the scalp (skin) and the crown of the hair poke through it on one
-  // side. Swell it a touch, then paint any skin/hair point that still reaches
-  // outside the beret's dome the beret's own colour — the parts you see through
-  // the felt become felt. The dome is the beret's radius from its centre, binned
-  // by direction (bind space; clones share the geometry, so this runs once).
-  let beret = null;
-  root.traverse(o => { if (o.isSkinnedMesh && o.material.name === 'beret') beret = o; });
-  if (beret) {
-    const P = beret.geometry.attributes.position, c = new THREE.Vector3(), d = new THREE.Vector3();
-    for (let v = 0; v < P.count; v++) c.x += P.getX(v) / P.count, c.y += P.getY(v) / P.count, c.z += P.getZ(v) / P.count;
-    for (let v = 0; v < P.count; v++) P.setXYZ(v, c.x + (P.getX(v) - c.x) * 1.13, c.y + (P.getY(v) - c.y) * 1.0, c.z + (P.getZ(v) - c.z) * 1.13);
-    // the beret is notched on one side (its rim rides ~0.15 higher there), which is where the
-    // head showed through: stretch it down in those directions so the rim runs level
-    {
-      const NB = 16, lo = new Float32Array(NB).fill(Infinity), hi = new Float32Array(NB).fill(-Infinity);
-      const ang = (v) => (Math.atan2(P.getZ(v) - c.z, P.getX(v) - c.x) / Math.PI + 1) / 2 * NB;
-      for (let v = 0; v < P.count; v++) { const k = Math.min(NB - 1, Math.floor(ang(v))); lo[k] = Math.min(lo[k], P.getY(v)); hi[k] = Math.max(hi[k], P.getY(v)); }
-      const target = [...lo].sort((a, b) => a - b)[Math.floor(NB * 0.4)];
-      const at = (arr, a) => { const i = Math.floor(a - 0.5), f = a - 0.5 - i, A = arr[(i + NB) % NB], B = arr[(i + 1) % NB]; return A + (B - A) * f; };
-      for (let v = 0; v < P.count; v++) {
-        const a = ang(v), r0 = at(lo, a), t0 = at(hi, a);
-        if (r0 <= target + 0.005 || t0 - r0 < 1e-3) continue;
-        P.setY(v, t0 - (t0 - P.getY(v)) * (t0 - target) / (t0 - r0));
-      }
-    }
-    beret.geometry.computeVertexNormals();
-    beret.geometry.computeBoundingSphere();
-    // the rim's height in each direction round the head (the beret sits tilted)
-    const NA = 32, rim = new Float32Array(NA).fill(Infinity);
-    const az = (x, z) => Math.min(NA - 1, Math.floor((Math.atan2(z - c.z, x - c.x) / Math.PI + 1) / 2 * NA));
-    for (let v = 0; v < P.count; v++) { const k = az(P.getX(v), P.getZ(v)); rim[k] = Math.min(rim[k], P.getY(v)); }
-    for (let k = 0; k < NA; k++) if (!isFinite(rim[k])) rim[k] = Math.min(rim[(k + NA - 1) % NA], rim[(k + 1) % NA]);
-    // the brim's reach in each direction (horizontal radius from the beret's axis)
-    const reach = new Float32Array(NA);
-    for (let v = 0; v < P.count; v++) { const k = az(P.getX(v), P.getZ(v)); reach[k] = Math.max(reach[k], Math.hypot(P.getX(v) - c.x, P.getZ(v) - c.z)); }
-    // tuck in: hair and scalp near the band that sit outside the brim are pulled in under it
-    // (geometry, not paint — they were drawn in FRONT of the beret, so colour can't hide them)
-    root.traverse(o => {
-      if (!o.isSkinnedMesh || !['skin', 'hair'].includes(o.material.name)) return;
-      const Q = o.geometry.attributes.position;
-      for (let v = 0; v < Q.count; v++) {
-        const x = Q.getX(v) - c.x, z = Q.getZ(v) - c.z, y = Q.getY(v), k = az(Q.getX(v), Q.getZ(v));
-        if (y < rim[k] - 0.3) continue;                              // well below the band: leave the hair alone
-        const r = Math.hypot(x, z), lim = reach[k] * 0.9;
-        if (r <= lim || r < 1e-4) continue;
-        const t = THREE.MathUtils.smoothstep(y, rim[k] - 0.3, rim[k] - 0.05);   // ease in, so the hair's fall stays natural
-        const nr = r + (lim - r) * t;
-        Q.setXYZ(v, c.x + x / r * nr, y, c.z + z / r * nr);
-      }
-      o.geometry.computeVertexNormals(); o.geometry.computeBoundingSphere();
-    });
-    const felt = beret.material.color;
-    // the rolled edge: a loop just outside the brim at rim height, built per instance
-    // on the head bone (see makeHuman) so it hides the hair/felt seam from every side
-    {
-      const loop = [], NL = 48;
-      const rimR = new Float32Array(NA);
-      for (let v = 0; v < P.count; v++) { const k = az(P.getX(v), P.getZ(v)); if (P.getY(v) < rim[k] + 0.1) rimR[k] = Math.max(rimR[k], Math.hypot(P.getX(v) - c.x, P.getZ(v) - c.z)); }
-      // smooth the per-direction rim (a wide circular average), so the edge rolls round evenly
-      const sm = (arr, w = 4) => Array.from(arr, (_, k) => { let a = 0, n = 0; for (let d = -w; d <= w; d++) { const x = arr[(k + d + NA) % NA]; if (x > 0 && isFinite(x)) { a += x; n++; } } return n ? a / n : 0; });
-      const rS = sm(Array.from(rimR, (x, k) => x || reach[k] * 0.9)), yS = sm(rim);
-      for (let j = 0; j < NL; j++) {
-        const a = j / NL * Math.PI * 2 - Math.PI, f = (a / Math.PI + 1) / 2 * NA - 0.5, i = Math.floor(f), t = f - i;
-        const L = (arr) => arr[(i + NA) % NA] * (1 - t) + arr[(i + 1) % NA] * t;
-        const rr = L(rS) + 0.03;
-        loop.push(new THREE.Vector3(c.x + Math.cos(a) * rr, L(yS) + 0.02, c.z + Math.sin(a) * rr));
-      }
-      root.userData.beretRim = loop;
-      root.userData.beretCol = felt.getHex();
-    }
-    root.traverse(o => {
-      if (!o.isSkinnedMesh || !['skin', 'hair'].includes(o.material.name)) return;
-      const g = o.geometry, Q = g.attributes.position;
-      let col = g.attributes.color;
-      if (!g.userData.absColor) {                       // hair: bake its colour so single verts can differ
-        const mc = o.material.color, a = new Float32Array(Q.count * 3);
-        for (let v = 0; v < Q.count; v++) { a[v * 3] = mc.r; a[v * 3 + 1] = mc.g; a[v * 3 + 2] = mc.b; }
-        col = new THREE.BufferAttribute(a, 3); g.setAttribute('color', col); g.userData.absColor = true;
-      }
-      // anything at or above the rim in its direction is under the beret or bulging out of
-      // its band — felt. Below the rim (the fringe, the face, the hair down the back) it stays.
-      // At or above the rim in its direction: under the beret, or bulging out of its band — felt.
-      // Below the rim, bare SCALP on the sides and back (the model has no hair over her
-      // right temple, so skin showed between beret and hair) becomes hair; the face
-      // (the front of the head, +X) stays skin.
-      const scalp = o.material.name === 'skin', hairC = colOf.hair;
-      for (let v = 0; v < Q.count; v++) {
-        const y = Q.getY(v), r0 = rim[az(Q.getX(v), Q.getZ(v))];
-        if (y > r0 - 0.1) col.setXYZ(v, felt.r, felt.g, felt.b);
-        else if (scalp && y > r0 - 0.5 && Q.getX(v) - c.x < 0.42) col.setXYZ(v, hairC.r, hairC.g, hairC.b);
-      }
-      // one colour per triangle (by majority) so the felt line is crisp, not a smear —
-      // split the shared vertices first (normals are copied, so shading stays smooth)
-      const ng = g.toNonIndexed(); ng.userData = g.userData;
-      const C = ng.attributes.color, isFelt = (i) => Math.abs(C.getX(i) - felt.r) + Math.abs(C.getY(i) - felt.g) + Math.abs(C.getZ(i) - felt.b) < 1e-3;
-      for (let t = 0; t < C.count; t += 3) {
-        const f = [0, 1, 2].filter(k => isFelt(t + k));
-        if (f.length === 0 || f.length === 3) continue;
-        if (f.length >= 2) { for (let k = 0; k < 3; k++) C.setXYZ(t + k, felt.r, felt.g, felt.b); }
-        else { const o2 = [0, 1, 2].find(k => !isFelt(t + k)); for (const k of f) C.setXYZ(t + k, C.getX(t + o2), C.getY(t + o2), C.getZ(t + o2)); }
-      }
-      o.geometry = ng;
-    });
+// critic.glb assigns its colour regions wrongly (see the flat-colour part map):
+//   • SKIN holds the face, both eyes, every lock of hair on the FRONT half of the head,
+//     and the sweater cuffs at the wrists;
+//   • HAIR holds only the back half of the hair;
+//   • SWEATER holds the hair tips at the nape and over the shoulders;
+//   • JEANS holds the hands.
+// Each of those is its own connected piece of the mesh, so we recolour by PIECE: the
+// largest piece on the head is the face (skin), the two little ones at eye height are
+// the eyes, every other piece on the head is hair, the wrist pieces are sweater. The
+// colours go in as absolute vertex colours; clones share the geometry, so this runs once.
+export const CRITIC_SKIN = 0xefc3a2;     // the model's own #f9efe5 reads as blank paper in the gouache look
+const EYE = 0x3a2a30;
+// connected pieces of a mesh (vertices welded by position, then joined through triangles)
+function pieces(g) {
+  const P = g.attributes.position, n = P.count, par = Int32Array.from({ length: n }, (_, i) => i);
+  const f = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  const u = (a, b) => { a = f(a); b = f(b); if (a !== b) par[a] = b; };
+  const seen = new Map();
+  for (let v = 0; v < n; v++) { const k = Math.round(P.getX(v) * 1e4) + ',' + Math.round(P.getY(v) * 1e4) + ',' + Math.round(P.getZ(v) * 1e4); if (seen.has(k)) u(v, seen.get(k)); else seen.set(k, v); }
+  const I = g.index ? g.index.array : null;
+  if (I) for (let t = 0; t < I.length; t += 3) { u(I[t], I[t + 1]); u(I[t + 1], I[t + 2]); }
+  const map = new Map();
+  for (let v = 0; v < n; v++) {
+    const r = f(v); if (!map.has(r)) map.set(r, { verts: [], min: new THREE.Vector3(9, 9, 9), max: new THREE.Vector3(-9, -9, -9) });
+    const s = map.get(r); s.verts.push(v);
+    const p = new THREE.Vector3(P.getX(v), P.getY(v), P.getZ(v)); s.min.min(p); s.max.max(p);
   }
+  return [...map.values()].sort((a, b) => b.verts.length - a.verts.length);
+}
+function fixColors(root) {
+  const mesh = {}; root.traverse(o => { if (o.isSkinnedMesh) mesh[o.material.name] = o; });
+  const C = (hex) => new THREE.Color(hex);
+  const skin = C(CRITIC_SKIN), hair = mesh.hair.material.color.clone(), eye = C(EYE);
+  const paintVerts = (o, colourOf) => {
+    const g = o.geometry, n = g.attributes.position.count, col = new Float32Array(n * 3), old = g.attributes.color, mc = o.material.color;
+    for (let v = 0; v < n; v++) {   // default: the material colour × the model's baked shading
+      const f = (i) => old ? old.getComponent(v, i) : 1;
+      col[v * 3] = mc.r * f(0); col[v * 3 + 1] = mc.g * f(1); col[v * 3 + 2] = mc.b * f(2);
+    }
+    colourOf((v, c) => { col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b; }, col);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.userData.absColor = true;
+  };
+  // the knit: the sweater body's own baked grey
+  const sw = mesh.sweater, swP = pieces(sw.geometry), body = swP[0], sc = sw.geometry.attributes.color;
+  const knit = new THREE.Color(); for (const v of body.verts) knit.r += sc.getX(v), knit.g += sc.getY(v), knit.b += sc.getZ(v);
+  knit.multiplyScalar(1 / body.verts.length).multiply(sw.material.color).multiplyScalar(1.1);
+  // SWEATER: every piece above the collar is a hair tip
+  paintVerts(sw, (set) => { for (const p of swP) if (p.min.y > 2.5) for (const v of p.verts) set(v, hair); });
+  // SKIN: face, eyes, hair locks, cuffs
+  const sk = mesh.skin, skP = pieces(sk.geometry);
+  const headPieces = skP.filter(p => p.min.y > 2.5), face = headPieces[0];
+  const isEye = (p) => p.verts.length < 60 && p.max.x - p.min.x < 0.1 && p.min.y > 3.1 && p.max.y < 3.7 && Math.abs((p.min.z + p.max.z) / 2) > 0.1;
+  // a catchlight for each eye, placed on the head bone per instance (see makeHuman)
+  root.userData.eyes = headPieces.filter(isEye).map(p => new THREE.Vector3(p.max.x + 0.012, p.min.y + (p.max.y - p.min.y) * 0.68, (p.min.z + p.max.z) / 2 + 0.04));
+  paintVerts(sk, (set) => {
+    for (const p of skP) {
+      const c = p.max.y < 1.5 ? knit : p === face ? skin : isEye(p) ? eye : hair;
+      for (const v of p.verts) set(v, c);
+    }
+  });
+  // THE BERET. The model's own is broken past patching: its lower edge is a zigzag of
+  // teeth with hair showing between them, it's notched on one side, and the model filled
+  // the notch with face/hair geometry (the pale "lump"). So she gets a new one, modelled
+  // to the old one's size and seat: a felt dome with a rounded hem, slouched a little to
+  // her left, and the stalk on top. It's built here in the rig's bind space and put on
+  // the head bone per instance (makeHuman); the old beret is hidden.
+  {
+    const bb = pieces(mesh.beret.geometry)[0];
+    const cx = (bb.min.x + bb.max.x) / 2 + 0.02, cz = (bb.min.z + bb.max.z) / 2, rimY = 3.84;
+    const R0 = 0.9, prof = [[0.001, 0.52], [0.55, 0.48], [R0 - 0.1, 0.16], [R0 - 0.05, 0.02], [R0 + 0.01, -0.01], [R0 + 0.07, 0.04],
+      [R0 + 0.13, 0.17], [R0 + 0.12, 0.32], [R0 - 0.05, 0.52], [R0 * 0.55, 0.68], [0.001, 0.72]];
+    const g = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 48);
+    g.deleteAttribute('uv'); g.deleteAttribute('normal');
+    const geo = mergeVertices(g, 1e-4);
+    geo.scale(1.0, 1.0, 0.84);                                   // oval, longer front-to-back
+    geo.rotateX(0.12);                                           // slouched toward her left (+z)
+    geo.rotateZ(0.06);                                           // and tipped a touch back
+    geo.translate(cx, rimY, cz);
+    const stalk = new THREE.LatheGeometry([[0.001, 0], [0.05, 0], [0.04, 0.1], [0.07, 0.13], [0.06, 0.17], [0.001, 0.18]].map(([r, y]) => new THREE.Vector2(r, y)), 12);
+    stalk.deleteAttribute('uv'); stalk.deleteAttribute('normal');
+    const st = mergeVertices(stalk, 1e-4); st.rotateX(0.12); st.rotateZ(0.06); st.translate(cx - 0.02, rimY + 0.7, cz + 0.08);
+    geo.computeVertexNormals(); st.computeVertexNormals();
+    root.userData.beret = { geo, stalk: st, color: mesh.beret.material.color.getHex() };
+    mesh.beret.userData.hidden = true;
+  }
+  // the old beret's turned-up fold was modelled as separate scraps in the SKIN and HAIR
+  // meshes (wide, sitting entirely at band height). They belong to the old hat — fold
+  // them away to a point inside the new one. (Brows and eyes are small, so they're kept.)
+  for (const [m, list] of [[sk, headPieces], [mesh.hair, pieces(mesh.hair.geometry)]]) {
+    const P = m.geometry.attributes.position;
+    for (const p of list) {
+      if (p === face || isEye(p) || p.min.y < 3.45) continue;
+      if (p.max.z - p.min.z < 0.5 && p.max.x - p.min.x < 0.5) continue;
+      for (const v of p.verts) P.setXYZ(v, (p.min.x + p.max.x) / 2, 3.9, (p.min.z + p.max.z) / 2 * 0.5);
+    }
+    m.geometry.computeVertexNormals();
+  }
+  // the hair's crown must stay under the felt: for every hair point, cast a ray from inside
+  // the head out through it; if it sits outside the beret along that ray, pull it back just
+  // inside. (Exact, in bind space.)
+  {
+    const bm = new THREE.Mesh(root.userData.beret.geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+    const bb = new THREE.Box3().setFromBufferAttribute(root.userData.beret.geo.attributes.position);
+    const C = new THREE.Vector3((bb.min.x + bb.max.x) / 2, 3.5, (bb.min.z + bb.max.z) / 2);
+    const rc = new THREE.Raycaster(), p = new THREE.Vector3(), dir = new THREE.Vector3();
+    const clamp = (g, verts) => {
+      const P = g.attributes.position;
+      for (const v of verts) {
+        p.fromBufferAttribute(P, v); dir.subVectors(p, C); const len = dir.length(); if (len < 1e-4) continue; dir.divideScalar(len);
+        rc.set(C, dir); rc.far = len + 0.5;
+        const hit = rc.intersectObject(bm, false)[0];
+        if (hit && hit.distance < len + 0.02) { const t = hit.distance - 0.04; P.setXYZ(v, C.x + dir.x * t, C.y + dir.y * t, C.z + dir.z * t); }
+      }
+      g.computeVertexNormals(); g.computeBoundingSphere();
+    };
+    // and just below the brim, nothing may bulge wider than the hem: ease it in
+    const hemR = (bb.max.x - bb.min.x) / 2 * 0.86, hemY = bb.min.y;
+    const tuck = (g, verts) => {
+      const P = g.attributes.position;
+      for (const v of verts) {
+        const y = P.getY(v); if (y < hemY - 0.45 || y > hemY + 0.2) continue;
+        const x = P.getX(v) - C.x, z = (P.getZ(v) - C.z) / 0.84, r = Math.hypot(x, z);
+        if (r <= hemR) continue;
+        const t = THREE.MathUtils.smoothstep(y, hemY - 0.45, hemY - 0.05), nr = r + (hemR - r) * t;
+        P.setX(v, C.x + x / r * nr); P.setZ(v, C.z + z / r * nr * 0.84);
+      }
+    };
+    const hv = [...Array(mesh.hair.geometry.attributes.position.count).keys()], sv = headPieces.filter(p => p !== face && !isEye(p)).flatMap(p => p.verts);
+    tuck(mesh.hair.geometry, hv); tuck(sk.geometry, sv);
+    clamp(mesh.hair.geometry, hv);
+    clamp(sk.geometry, headPieces.filter(p => !isEye(p)).flatMap(p => p.verts));
+  }
+  // JEANS: the hands — skin below the cuff hem, sweater above it (the wrists reach up
+  // inside the cuff and poked out past the sleeve's side)
+  const jn = mesh.jeans, HEM = -0.6;
+  const handBones = new Set(); jn.skeleton.bones.forEach((b, i) => { if (/hand/.test(b.name)) handBones.add(i); });
+  paintVerts(jn, (set) => {
+    const g = jn.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw2 = g.attributes.skinWeight;
+    for (let v = 0; v < P.count; v++) {
+      let w = 0; for (let k = 0; k < 4; k++) if (handBones.has(si.getComponent(v, k))) w += sw2.getComponent(v, k);
+      if (w > 0.5) set(v, P.getY(v) > HEM ? knit : skin);
+    }
+  });
 }
 
 // the critic keeps her own colours; everyone else is their own person (folk.js)
@@ -228,21 +202,41 @@ export function makeHuman(glb, look = {}) {
     o.frustumCulled = false;
     const m = o.material, name = m.name;
     o.userData.part = name;                  // the model's part name (beret, hair, skin, sweater…) outlives the repaint
-    o.material = o.geometry.userData.absColor ? paint(0xffffff, { vertexColors: true })
-      : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color, side: name === 'beret' ? THREE.DoubleSide : undefined });
-    // (the beret is open on one side in the model: drawn double-sided, its inside is felt too)
+    // the hair locks are single-sided sheets: seen from behind they were culled and only
+    // their outline drew (solid black) — so anything that carries hair is double-sided
+    const side = ['hair', 'skin', 'sweater'].includes(name) ? THREE.DoubleSide : THREE.FrontSide;
+    o.material = o.geometry.userData.absColor ? paint(0xffffff, { vertexColors: true, side })
+      : paint(look[name] ?? m.color.getHex(), { vertexColors: !!o.geometry.attributes.color, side });
   });
-  const loop = glb.scene.userData.beretRim;
-  if (loop) {
-    let beret = null; rig.traverse(o => { if (o.isSkinnedMesh && o.userData.part === 'beret') beret = o; });
-    const hi = beret?.skeleton.bones.findIndex(b => b.name.replace(/\./g, '') === 'head');
-    if (beret && hi >= 0) {
-      const toBone = beret.skeleton.boneInverses[hi].clone().multiply(beret.bindMatrix);
-      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(loop, true, 'centripetal'), 96, 0.085, 8, true);
-      geo.applyMatrix4(toBone);
-      const band = new THREE.Mesh(geo, paint(look.beret ?? glb.scene.userData.beretCol ?? 0xe27e72));
-      band.userData.part = 'beret';
-      beret.skeleton.bones[hi].add(band);
+  // the new beret (see fixColors), riding the head bone; the model's own is hidden
+  const nb = glb.scene.userData.beret;
+  if (nb) {
+    let oldB = null, skinM = null;
+    rig.traverse(o => { if (o.isSkinnedMesh && o.userData.part === 'beret') oldB = o; if (o.isSkinnedMesh && o.userData.part === 'skin') skinM = o; });
+    if (oldB) { oldB.visible = false; oldB.userData.noInk = true; }
+    const hi = skinM?.skeleton.bones.findIndex(b => b.name.replace(/\./g, '') === 'head');
+    if (skinM && hi >= 0) {
+      const toBone = skinM.skeleton.boneInverses[hi].clone().multiply(skinM.bindMatrix), felt = paint(look.beret ?? nb.color);
+      for (const geo of [nb.geo, nb.stalk]) {
+        const m = new THREE.Mesh(geo.clone().applyMatrix4(toBone), felt);
+        m.userData.part = 'beret';
+        skinM.skeleton.bones[hi].add(m);
+      }
+    }
+  }
+  // the eyes' catchlights: little white dots, riding the head bone
+  const eyes = glb.scene.userData.eyes;
+  if (eyes?.length) {
+    let skinM = null; rig.traverse(o => { if (o.isSkinnedMesh && o.userData.part === 'skin') skinM = o; });
+    const hi = skinM?.skeleton.bones.findIndex(b => b.name.replace(/\./g, '') === 'head');
+    if (skinM && hi >= 0) {
+      const toBone = skinM.skeleton.boneInverses[hi].clone().multiply(skinM.bindMatrix), white = paint(0xffffff, { hatch: 0, emissive: 0xffffff });
+      for (const e of eyes) {
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8).scale(0.4, 1, 1), white);
+        dot.position.copy(e).applyMatrix4(toBone); dot.quaternion.setFromRotationMatrix(toBone);
+        dot.userData.noInk = true;
+        skinM.skeleton.bones[hi].add(dot);
+      }
     }
   }
   ink(rig, 'fine');

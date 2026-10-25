@@ -7,6 +7,11 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"What is this extra lump under the beret? Her eyes, face and hair are not properly coloured." + "there is some overlap here still"** Done in v2, checked with flat-colour part maps, raycasts and close-ups from six angles; full story play-through clean.
+  - Cause: critic.glb assigns its materials wrongly — the SKIN material covers the face, both eyes, every lock of hair on the front of the head and the sweater cuffs; HAIR is only the back half; SWEATER has the nape hair; JEANS has the hands. So her eyes and front hair rendered skin-coloured.
+  - Now recoloured by connected piece of the mesh: face = skin, the two eye pieces = dark eyes (plus a white catchlight each), all other head pieces = hair, cuffs = sweater, hands = skin below the cuff. Hair locks are drawn double-sided (seen from behind they rendered as solid black outline).
+  - The beret: the model's own has a zigzag lower edge with hair showing between the teeth, a notch on one side, and its turned-up fold built from scraps of the face/hair meshes (that was the lump). She now wears a new modelled beret (felt dome, rounded hem, slight slouch, stalk) on the head bone; the old beret and its fold scraps are removed, and hair is clamped under the felt so nothing pokes through. (Undid last round's rolled-edge band and partial repaints.)
+
 - 🟡 **"The sleeve isn't fully coloured; the backpack straps don't cover her from the front; the hat isn't fully coloured on one side."** Done in v2, checked with close-up renders from six angles and raycasts on the problem pixels.
   - Sleeves: her hands (in the jeans mesh) reach up inside the cuff and the wrists poked out past the sleeve; everything above the hem is now sweater grey, so the sleeve runs unbroken to the hand.
   - Straps: traced over her real shoulders (measured off the sweater in the pack's frame) — up the back, over the shoulder, down the chest to brass buckles; visible from the front.
