@@ -28,7 +28,9 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
    Close-up check: no part of an arm or hand may be inside the torso.
 5b. **Shoulders grow out of the torso.** The torso's profile slopes from the neck into
    the shoulder; the arm joint sits *inside* that curve so the top of the arm forms
-   the deltoid. No bolt-on shoulder balls or pads.
+   the deltoid. No bolt-on shoulder balls or pads. Limbs fade their outline out where
+   they join the body (`inkW` via `limb(..., { inkFrom, inkTo })`) so no seam line is
+   drawn round the shoulder or hip. Sleeves end in a crisp hem (`hem:`), never a colour smear.
 6. **Real hands.** A palm facing the thigh, four fingers that curl to grip (`gripHand`),
    a thumb forward — skin-coloured, sized to the wrist (≈0.03). Never a ball or a blob.
 7. **A face.** Eyes, brows, nose, mouth (and cheeks) — small and soft. Face details

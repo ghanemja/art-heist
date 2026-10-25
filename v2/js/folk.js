@@ -161,21 +161,32 @@ function smooth(pts, n = 28) {
 // a whole limb as ONE skinned tube (thigh→calf→ankle, or upper arm→forearm→wrist):
 // weights blend across the knee/elbow so it bends in a soft curve, not a hinge.
 // prof: [depth below the joint, radius] top to bottom; colAt(depth) → hex (sleeves, cuffs)
-function limb(parent, x, y, bones, l1, l2, prof, colAt) {
-  const geo = lathe(smooth(prof.map(([d, r]) => [r, -d]).reverse(), 34), 18);
+function limb(parent, x, y, bones, l1, l2, prof, colAt, { hem = null, inkFrom = 0.02, inkTo = 0.09 } = {}) {
+  let pts = smooth(prof.map(([d, r]) => [r, -d]).reverse(), 40);
+  if (hem != null) {
+    // a sleeve hem: a tiny lip, and two rings 1mm apart so the colour changes crisply
+    const rAt = (d) => { for (let i = 1; i < pts.length; i++) if (-pts[i][1] <= d) { const a = pts[i - 1], b = pts[i], k = (d + a[1]) / (a[1] - b[1]); return a[0] + (b[0] - a[0]) * k; } return pts[pts.length - 1][0]; };
+    const r = rAt(hem);
+    pts = pts.filter(([, yy]) => Math.abs(-yy - hem) > 0.008);
+    pts.push([r + 0.0035, -(hem - 0.006)], [r + 0.0045, -(hem - 0.0012)], [r - 0.0015, -(hem + 0.0006)], [r - 0.001, -(hem + 0.006)]);
+    pts.sort((a, b) => a[1] - b[1]);
+  }
+  const geo = lathe(pts, 18);
   const pos = geo.attributes.position, n = pos.count;
-  const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4), col = new Float32Array(n * 3), c = new THREE.Color();
+  const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4), col = new Float32Array(n * 3), iw = new Float32Array(n), c = new THREE.Color();
   const ss = THREE.MathUtils.smoothstep;
   for (let i = 0; i < n; i++) {
     const d = -pos.getY(i);
     const w1 = ss(d, l1 - 0.05, l1 + 0.05), w2 = ss(d, l1 + l2 - 0.012, l1 + l2 + 0.012);
     si.set([0, 1, 2, 0], i * 4); sw.set([1 - w1, Math.max(0, w1 - w2), w2, 0], i * 4);
     c.setHex(colAt(d)); col.set([c.r, c.g, c.b], i * 3);
+    iw[i] = ss(d, inkFrom, inkTo);              // no outline where the limb grows out of the body
   }
   geo.translate(x, y, 0);
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
   geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('inkW', new THREE.Float32BufferAttribute(iw, 1));
   const m = new THREE.SkinnedMesh(geo, paint(0xffffff, { vertexColors: true }));
   m.frustumCulled = false;
   m.userData.bones = bones;
@@ -230,7 +241,7 @@ export function makeFolk(spec) {
   J.spine = joint(J.hips, 0, 0.02, 0);
   // the shoulder line slopes from the neck into the arms (no bolt-on shoulder balls)
   const torso = new THREE.Mesh(lathe(smooth([[0.001, -0.01], [0.112, 0.0], [0.125, 0.1], [0.122, 0.17],
-    [0.13, 0.25], [0.128, 0.29], [0.105, 0.33], [0.06, 0.358], [0.001, 0.368]], 32), 28), top);
+    [0.132, 0.25], [0.134, 0.278], [0.12, 0.31], [0.088, 0.342], [0.05, 0.362], [0.001, 0.37]], 36), 32), top);
   const TZ = 0.78 + 0.08 * S.belly;                  // torso depth
   torso.scale.set(B, 1, TZ);
   J.spine.add(torso);
@@ -309,7 +320,8 @@ export function makeFolk(spec) {
     const cuff = S.sleeve === 'short' ? 0.085 : 0.285;
     limbs.push(limb(J.spine, x, y, [sh, fa, hd], 0.16, 0.15, [
       [-0.04, 0.001], [-0.025, 0.038 * rB], [0, 0.046 * rB], [0.07, 0.044 * rB], [0.15, 0.036], [0.17, 0.035],
-      [0.22, 0.035], [0.28, 0.028], [0.3, 0.026], [0.312, 0.001]], (d) => d < cuff ? S.top : skinHex));
+      [0.22, 0.035], [0.28, 0.028], [0.3, 0.026], [0.312, 0.001]], (d) => d < cuff ? S.top : skinHex,
+      { hem: cuff, inkFrom: 0.03, inkTo: 0.1 }));
     J['hand' + k].add(J['grip' + k] = makeHand(s, skin));
   }
   // bind the limbs in this rest pose
@@ -336,8 +348,8 @@ export function makeFolk(spec) {
     const belt = new THREE.Mesh(new THREE.TorusGeometry(0.12 * B, 0.018, 6, 22), dark); belt.rotation.x = Math.PI / 2; belt.scale.set(1.02, TZ * 1.02, 1); at(belt, 0, 0.04, 0); J.spine.add(belt);
     const badge = ball(0.018, paint(0xe4b84f), 8, 6); at(badge, -0.06, 0.25, 0.1); J.spine.add(badge);
   } else if (S.outfit === 'vest') {   // a courier's high-vis vest
-    const v = new THREE.Mesh(lathe([[0.122, 0], [0.135, 0.12], [0.135, 0.26], [0.1, 0.32]], 20), acc);
-    v.scale.set(B * 1.04, 1, 0.84); J.spine.add(v);
+    const v = new THREE.Mesh(lathe([[0.126, -0.005], [0.136, 0.12], [0.139, 0.25], [0.138, 0.285], [0.131, 0.296]], 28)   /* ends just outside the shoulder, a clean edge */, acc);
+    v.scale.set(B * 1.03, 1, TZ * 1.06); J.spine.add(v);
   } else if (S.outfit === 'cardigan') {
     const c = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.012), acc); at(c, 0, 0.16, 0.098); J.spine.add(c);
   }

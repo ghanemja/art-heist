@@ -129,7 +129,9 @@ export function ink(root, weight = 'mid') {
     line.raycast = () => {};
     line.renderOrder = -1;
     if (o.isSkinnedMesh) {                       // a skinned hull must skin too
-      const sk = new THREE.SkinnedMesh(o.geometry, skinnedInk(weight));
+      // (a geometry with an `inkW` attribute fades its stroke per vertex — limbs use it so
+      // no line is drawn where an arm or leg grows out of the body)
+      const sk = new THREE.SkinnedMesh(o.geometry, skinnedInk(weight, !!o.geometry.attributes.inkW));
       sk.bind(o.skeleton, o.bindMatrix);
       sk.userData.isInk = true; sk.raycast = () => {}; sk.frustumCulled = false;
       o.parent.add(sk);
@@ -141,8 +143,9 @@ export function ink(root, weight = 'mid') {
   return root;
 }
 const _skinInk = {};
-function skinnedInk(weight) {
-  if (_skinInk[weight]) return _skinInk[weight];
+function skinnedInk(weight, fade = false) {
+  const key = weight + (fade ? ':fade' : '');
+  if (_skinInk[key]) return _skinInk[key];
   const base = INK[weight] || INK.mid;
   const m = base.clone();
   m.uniforms = { ...inkUniforms, uWeight: base.uniforms.uWeight, uColor: base.uniforms.uColor };
@@ -151,7 +154,10 @@ function skinnedInk(weight) {
     .replace('vec4(position, 1.0)', 'vec4(transformed, 1.0)')
     .replace('normalize(normalMatrix * normal)', 'normalize(normalMatrix * objectNormal)')
     .replace('floor(position * 2.5)', 'floor(transformed * 2.5)').replace('position * 7.0', 'transformed * 7.0');
-  _skinInk[weight] = m;
+  if (fade) m.vertexShader = m.vertexShader
+    .replace('uniform float uTime,', 'attribute float inkW;\n      uniform float uTime,')
+    .replace('float w = uWidth * uWeight *', 'float w = inkW * uWidth * uWeight *');
+  _skinInk[key] = m;
   return m;
 }
 

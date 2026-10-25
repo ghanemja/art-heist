@@ -38,6 +38,7 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - Hands: palm + four fingers that curl round what they hold + a thumb.
   - Stances: Vivi holds a clipboard and taps a pen; Otto has his thumb in his belt and a torch on the ground; Pia sips a café coffee, hand on hip; Rex stands arms-crossed in a waist apron. The free hand gestures when they talk. Rules added to AGENTS.md.
 - 🟡 **Arms and hands still messed up (Otto's arm inside his body).** A belly now pushes forward instead of widening the torso; each body solves its own arm-hang angle from its waist width so arms clear the body; stance `out` is relative to that; hands are 1.3× (about face length); Otto rests his hand on his belt at the hip. Checked with hand close-ups.
+- 🟡 **Shoulders could blend more smoothly into the body.** Limbs fade their ink stroke to nothing where they grow out of the body (per-vertex `inkW` on skinned hulls), so no seam line rings the shoulder; a broader torso shoulder line; sleeves end in a crisp hem with a tiny lip instead of a blurry colour fade; the courier's vest has a clean top edge.
 - ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 
