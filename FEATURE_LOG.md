@@ -29,6 +29,10 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
   - Shoes with soles that sit on the ground (people are placed with no sink); shoes contrast with trousers.
   - Shoulders slope out of the torso, the arm joint sits inside the curve (no shoulder balls); mitten hands with a palm, finger curl and thumb.
   - New `AGENTS.md` "Making people models" rules, linked from CLAUDE.md.
+- 🟡 **Shoes look flat/unrealistic; arms stuck to the sides; fix the main character's walk (legs/arms splayed sideways instead of front-to-back).**
+  - Shoes are now drawn from a side silhouette (heel counter, collar, instep, round toe) on a separate sole, toe wider than heel, ~15% of body height; trouser hems end inside the collar.
+  - Arms hang away from the body (more over coats, dresses and bellies), hands just ahead of the hips.
+  - Main character walk: fixed in v2 earlier (model-axis poses); now ported to the ORIGINAL game's `procWalk` in planet.js too (`criticBindFrames` + model-axis turns), cache token p98.
 - ⏳ **Bring back the phone with the map + travel options; finale: someone gives you an address, you use the map and rent a car across the street or borrow Pia's bike.** Next up.
 - ⏳ **Travel: all of them** (car, walk, train, bike, boat, rocket) — walk + jeep done in v2; rest in phase 2.
 
@@ -79,7 +83,7 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 - 🟡 Cars touch the ground (not floating); tyres spin / boil for a sense of motion.
 - ✅ Create CLAUDE.md (style, bevels-vs-browser, redeploy-after-each-feature).
 - ✅ Keep this running feature-request log; reference it from CLAUDE.md.
-- ❌ Main character walk animation swings out-to-in instead of front-to-back (procWalk) — needs live view to fix the bone axis.
+- 🟡 Main character walk animation swings out-to-in instead of front-to-back (procWalk) — fixed 2026-10-25: turns are written in model axes and converted per bone.
 - 📦 Replace the bicycle with `yellow_bicycle.glb` and delete the old asset — asset processed; wiring the rigged player vehicle needs a verified pass.
 - ✅ Limo not pulling up to the gas station (stops mid-road) — increased forecourt pull-in to ~2.0 so it sits at the pumps.
 - 🟡 Cabin→window transition should feel like a head-turn (yaw in place, level), not a flashcard swipe — rewrote as a gaze yaw about the up axis.

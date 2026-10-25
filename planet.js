@@ -4079,31 +4079,50 @@ const WALK = {
 };
 const WALK_BONES = ['hips', 'spine1', 'upperlegL', 'lowerlegL', 'upperlegR', 'lowerlegR',
   'upperarmL', 'lowerarmL', 'upperarmR', 'lowerarmR'];
+// Each bone is rolled differently in the rig (the legs are flipped 180°), so a
+// rotation about a bone's LOCAL X swung the legs out sideways, not forward. We
+// now write every turn in the MODEL's axes (+X forward, +Y up, +Z side) and
+// convert it per bone from its bind-pose frame: local' = local · (Bw⁻¹ · Q · Bw).
+const _MX = new THREE.Vector3(1, 0, 0), _MY = new THREE.Vector3(0, 1, 0), _MZ = new THREE.Vector3(0, 0, 1);
+const _gqa = new THREE.Quaternion();
+function criticBindFrames(rig, bones) {
+  let root = null; rig.traverse(o => { if (o.name === 'CriticRig') root = o; });
+  root = root || rig;
+  rig.updateMatrixWorld(true);
+  const p = new THREE.Vector3(), sc = new THREE.Vector3();
+  const wq = (o) => { const q = new THREE.Quaternion(); o.matrixWorld.decompose(p, q, sc); return q; };
+  const inv = wq(root).invert(), bw = {};
+  for (const [k, b] of Object.entries(bones)) bw[k] = inv.clone().multiply(wq(b));
+  return bw;
+}
 function procWalk(inst, dt, gaitK) {
-  const pb = inst.bones, bq = inst.bind; if (!pb || !bq) return;
+  const pb = inst.bones, bq = inst.bind, bw = inst.bw; if (!pb || !bq || !bw) return;
   const k = THREE.MathUtils.clamp(gaitK, 0, 1);
   inst._wc = (inst._wc || 0) + dt * WALK.cadence * (0.4 + 0.9 * k);
-  const p = inst._wc, s = Math.sin(p), sO = Math.sin(p + Math.PI);
-  const liftL = Math.max(0, sO), liftR = Math.max(0, s);   // each knee flexes on its own swing
-  // reset the walk bones to bind, then layer the constrained rotations on top
+  const s = Math.sin(inst._wc), c = Math.cos(inst._wc);
   for (const nm of WALK_BONES) { const b = pb[nm]; if (b) b.quaternion.copy(bq[nm]); }
-  const rot = (name, ax, a) => { const b = pb[name]; if (!b || !a) return; _gax.set(ax[0], ax[1], ax[2]); _gq.setFromAxisAngle(_gax, a); b.quaternion.multiply(_gq); };
-  const W = WALK, X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
-  // legs: hips swing fore/aft (opposite phase), knees flex on the forward swing
-  rot('upperlegL', X, -W.legFwd * s * k);
-  rot('upperlegR', X, -W.legFwd * sO * k);
-  rot('lowerlegL', X,  W.knee * liftL * k);
-  rot('lowerlegR', X,  W.knee * liftR * k);
-  // arms: shoulders swing opposite the legs, with resting clearance + elbow bend
-  rot('upperarmL', X,  W.arm * sO * k);
-  rot('upperarmR', X,  W.arm * s * k);
-  rot('upperarmL', Z, -W.armOut);
-  rot('upperarmR', Z,  W.armOut);
-  rot('lowerarmL', X, -(W.elbowBase + W.elbowSwing * k));
-  rot('lowerarmR', X, -(W.elbowBase + W.elbowSwing * k));
-  // torso: a little hip roll + counter-twist so it reads alive, not stiff
-  rot('hips',   Z, W.hipRoll * s * k);
-  rot('spine1', Y, W.torsoTwist * s * k);
+  const turn = (name, axis, a) => {
+    const b = pb[name], f = bw[name]; if (!b || !f || !a) return;
+    _gqa.setFromAxisAngle(axis, a);
+    _gq.copy(f).invert().multiply(_gqa).multiply(f);
+    b.quaternion.multiply(_gq);
+  };
+  const W = WALK;
+  // legs swing forward/back about the side axis; each knee folds as its leg passes
+  turn('upperlegL', _MZ, W.legFwd * s * k);
+  turn('upperlegR', _MZ, -W.legFwd * s * k);
+  turn('lowerlegL', _MZ, -W.knee * k * Math.max(0, -c));
+  turn('lowerlegR', _MZ, -W.knee * k * Math.max(0, c));
+  // arms counter-swing, elbows soft and forward, hands clear of the hips
+  turn('upperarmL', _MZ, -W.arm * s * k);
+  turn('upperarmR', _MZ, W.arm * s * k);
+  turn('lowerarmL', _MZ, W.elbowBase + W.elbowSwing * k);
+  turn('lowerarmR', _MZ, W.elbowBase + W.elbowSwing * k);
+  turn('upperarmL', _MX, -W.armOut * 0.5);
+  turn('upperarmR', _MX, W.armOut * 0.5);
+  // a little hip twist with the stride, shoulders against it
+  turn('hips', _MY, W.torsoTwist * 1.4 * s * k);
+  turn('spine1', _MY, -W.torsoTwist * 1.6 * s * k);
 }
 function stopClip(inst) { if (inst.cur) { inst.cur.fadeOut(0.15); inst.cur = null; } }
 
@@ -4169,6 +4188,7 @@ new GLTFLoader().load('./models/critic.glb', (glb) => {
     // uses flat names (upperlegL) — normalize here or procWalk finds nothing
     // and the whole walk collapses to hip-roll (body rocking, limbs frozen)
     rig.traverse(o => { if (o.isBone) { const k = o.name.replace(/\./g, ''); inst.bones[k] = o; inst.bind[k] = o.quaternion.clone(); } });
+    inst.bw = criticBindFrames(rig, inst.bones);   // bind frames → model-axis walk turns
     for (const n of Object.keys(CRITIC.clips)) inst.actions[n] = mixer.clipAction(CRITIC.clips[n]);
     CRITIC.insts[key] = inst;
     const body = bodies[key];

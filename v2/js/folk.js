@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { paint, ink } from './style.js';
 import { lathe } from './props.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const SKINS = { fair: 0xf0d2b6, rose: 0xe6b99a, olive: 0xcf9e74, tan: 0xb57b52, brown: 0x8d5a3b, deep: 0x5e3a28 };
 
@@ -14,6 +15,46 @@ const cap = (r, len, mat, seg = 12) => new THREE.Mesh(new THREE.CapsuleGeometry(
 const ball = (r, mat, w = 20, h = 14) => new THREE.Mesh(new THREE.SphereGeometry(r, w, h), mat);
 function at(o, x, y, z) { o.position.set(x, y, z); return o; }
 function joint(parent, x, y, z) { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; }
+
+// a shoe drawn from its side silhouette, extruded with a soft bevel, then flared so
+// the toe is wider than the heel. Origin = the ankle; the sole sits ANK below it.
+const ANK = 0.045;
+let _shoe = null;
+function shoeGeo() {
+  if (_shoe) return _shoe;
+  const y0 = -ANK;
+  const ext = (sh, depth, bev) => {
+    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: bev * 0.8, bevelSegments: 4, curveSegments: 14 });
+    g.translate(0, 0, -depth / 2).rotateY(-Math.PI / 2);          // silhouette x → +Z (forward), extrusion → X (width)
+    g.deleteAttribute('uv');
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {                             // flare: wider at the toe
+      const k = THREE.MathUtils.clamp((p.getZ(i) + 0.02) / 0.09, 0, 1);
+      p.setX(i, p.getX(i) * (1 + 0.28 * k));
+    }
+    const w = mergeVertices(g, 1e-5); w.computeVertexNormals();     // weld → smooth, rounded shading
+    w.computeBoundingBox(); w.translate(0, y0 - w.boundingBox.min.y, 0);
+    return w;
+  };
+  const up = new THREE.Shape();
+  up.moveTo(-0.036, 0.012);
+  up.quadraticCurveTo(-0.05, 0.03, -0.042, 0.064);                // heel counter
+  up.quadraticCurveTo(-0.03, 0.074, -0.012, 0.07);                // collar
+  up.quadraticCurveTo(0.012, 0.068, 0.03, 0.06);                 // tongue / instep
+  up.quadraticCurveTo(0.064, 0.05, 0.085, 0.034);
+  up.quadraticCurveTo(0.102, 0.026, 0.094, 0.01);                    // round toe
+  up.lineTo(-0.036, 0.012);
+  const so = new THREE.Shape();
+  so.moveTo(-0.044, 0.0); so.lineTo(0.096, 0.0);
+  so.quadraticCurveTo(0.108, 0.004, 0.1, 0.014);
+  so.lineTo(-0.044, 0.014);
+  so.quadraticCurveTo(-0.05, 0.007, -0.044, 0.0);
+  const upper = ext(up, 0.046, 0.011), sole = ext(so, 0.056, 0.005);
+  // a foot is ~15% of a person's height: scale up so the collar rises above the ankle
+  for (const g of [upper, sole]) { g.translate(0, ANK, 0); g.scale(1.2, 1.2, 1.2); g.translate(0, -ANK, 0); }
+  upper.translate(0, 0.009, 0);                                   // the upper sits in the sole
+  return (_shoe = { upper, sole });
+}
 
 function bone(parent, x, y, z) { const b = new THREE.Bone(); b.position.set(x, y, z); parent.add(b); return b; }
 
@@ -83,10 +124,10 @@ export function makeFolk(spec) {
     const legCol = S.outfit === 'dress' ? (d) => d > 0.24 ? skinHex : S.bottom : () => S.bottom;
     limbs.push(limb(J.hips, x, 0, [th, sh, ft], 0.27, 0.25, [
       [-0.045, 0.001], [-0.032, 0.05 * B], [0, 0.066 * B], [0.1, 0.066 * B], [0.2, 0.056 * rB], [0.27, 0.047 * rB],
-      [0.33, 0.05 * rB], [0.41, 0.044], [0.49, 0.035], [0.52, 0.033], [0.535, 0.001]], legCol));
-    // a shoe: rounded, longer than wide, sole flat on the ground
-    const f = ball(0.056, shoe, 18, 10); f.scale.set(1.05, 0.62, 1.85); at(f, 0, -0.004, 0.036); ft.add(f);
-    const sole = ball(0.059, soleM, 18, 6); sole.scale.set(1.08, 0.22, 1.9); at(sole, 0, -0.03, 0.036); ft.add(sole);
+      [0.33, 0.05 * rB], [0.41, 0.044], [0.47, 0.037], [0.5, 0.036], [0.512, 0.001]], legCol));   // the hem ends just inside the shoe collar
+    // a real shoe: heel counter, collar round the ankle, instep sloping to a round toe, on a sole
+    const sg = shoeGeo();
+    ft.add(new THREE.Mesh(sg.upper, shoe), new THREE.Mesh(sg.sole, soleM));
   }
   // pelvis
   const pel = ball(0.12 * B, bottom); pel.scale.set(1.05, 0.62, 0.8); J.hips.add(pel);
@@ -202,7 +243,8 @@ export function makeFolk(spec) {
   for (const o of faceBits) o.userData.noInk = true;   // eyes, brows, cheeks: drawn, not outlined
   root.traverse(o => { if (o.isMesh) { o.castShadow = false; } });
   ink(root, 'fine');
-  return { kind: 'folk', rig: root, J, t: Math.random() * 10, wc: Math.random() * 6 };
+  const armOut = 0.17 + 0.04 * (B - 1) + (S.outfit === 'coat' || S.outfit === 'dress' ? 0.1 : 0) + 0.06 * S.belly;
+  return { kind: 'folk', rig: root, J, armOut, t: Math.random() * 10, wc: Math.random() * 6 };
 }
 
 // poses: k 0 standing … 1 walking; talk 0..1 raises a hand
@@ -214,8 +256,10 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   // forward is +Z: a negative X rotation swings a hanging limb forward
   J.thighL.rotation.x = -legA * s; J.thighR.rotation.x = legA * s;
   J.shinL.rotation.x = 0.9 * k * Math.max(0, -c); J.shinR.rotation.x = 0.9 * k * Math.max(0, c);
-  J.armL.rotation.set(armA * s, 0, -0.08 - idle * 0.02 * Math.sin(t * 1.3));
-  J.armR.rotation.set(-armA * s, 0, 0.08 + idle * 0.02 * Math.sin(t * 1.3));
+  // arms hang a little away from the body (wider over a flared coat), hands just ahead of the hips
+  const out = inst.armOut + idle * 0.02 * Math.sin(t * 1.3);
+  J.armL.rotation.set(armA * s - 0.06, 0, -out);
+  J.armR.rotation.set(-armA * s - 0.06, 0, out);
   J.foreL.rotation.x = -0.22 - 0.2 * k; J.foreR.rotation.x = -0.22 - 0.2 * k;
   J.hips.rotation.y = 0.08 * s * k; J.spine.rotation.y = -0.1 * s * k;
   J.hips.rotation.z = idle * 0.03 * Math.sin(t * 0.45);
