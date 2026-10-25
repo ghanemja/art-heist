@@ -1144,6 +1144,122 @@ export function hipRoof(w, d, h, k = 1) {
   return geo;
 }
 
+// ── Cape Far Side: the cargo launch site where the story ends ───────────────
+// Static ground (pad, gantry, tanks, floodlights, sign) goes through
+// placeOnPlanet like everything else; the parts that move — the rocket, the
+// crates' lids, the console's screen and button, the smoke — are built here
+// and placed by the game in the site's frame (origin = pad centre, +Z = the
+// road you arrive by).
+export const CAPE = {
+  rocket: [0, 0, -1.6], gantry: [2.15, 0, -1.6], gantryTop: 5.25, console: [3.4, 0, 2.1], rex: [-1.5, 0, 1.6],
+  van: [-5.6, 0, 3.8], crates: [-3.0, 0, 0.4], police: [1.6, 0, 5.2],
+};
+export function capeFarSide() {
+  const K = kit();
+  const conc = paint(0xd8d2c6), dk = DARK(), red = paint(0xd8573f), white = paint(0xf3eee4), steel = paint(0x8d8996);
+  // the pad: a raised concrete disc with a hazard ring and a painted target
+  const [rx, , rz] = CAPE.rocket;
+  K.put(lathe([[0.001, 0], [3.4, 0], [3.4, 0.1], [3.3, 0.16], [0.001, 0.16]], 40), conc, rx, 0, rz);
+  const haz = canvasTex(256, 16, (c, w, h) => { for (let k = 0; k < 16; k++) { c.fillStyle = k % 2 ? '#2a2230' : '#e4b84f'; c.beginPath(); c.moveTo(k * 16, 0); c.lineTo(k * 16 + 16, 0); c.lineTo(k * 16 + 8, h); c.lineTo(k * 16 - 8, h); c.fill(); } }, true);
+  haz.repeat.set(8, 1);
+  const ring = new THREE.RingGeometry(2.7, 3.15, 64, 1); ring.rotateX(-Math.PI / 2);
+  { const uv = ring.attributes.uv, pos = ring.attributes.position; for (let i = 0; i < uv.count; i++) { const a = Math.atan2(pos.getZ(i), pos.getX(i)); uv.setXY(i, (a / (Math.PI * 2) + 0.5), Math.hypot(pos.getX(i), pos.getZ(i)) > 2.9 ? 1 : 0); } }
+  K.put(ring, paint(0xffffff, { map: haz, hatch: 0 }), rx, 0.17, rz).userData.noInk = true;
+  const tgt = new THREE.RingGeometry(0.95, 1.1, 40); tgt.rotateX(-Math.PI / 2);
+  K.put(tgt, paint(0xf3eee4, { hatch: 0 }), rx, 0.17, rz).userData.noInk = true;
+  // the gantry: a lattice tower with a ladder, a platform and a swing arm to the rocket
+  const [gx, , gz] = CAPE.gantry, GH = 6.0, gw = 0.95;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) K.box(0.09, GH, 0.09, red, gx + sx * gw / 2, GH / 2 + 0.16, gz + sz * gw / 2, 0.02);
+  for (let y = 0.6; y < GH; y += 0.75) {
+    for (const [ax, az, len, ry] of [[0, -gw / 2, gw, 0], [0, gw / 2, gw, 0], [-gw / 2, 0, gw, Math.PI / 2], [gw / 2, 0, gw, Math.PI / 2]]) {
+      K.box(len, 0.06, 0.06, red, gx + ax, y + 0.16, gz + az, 0.015, [0, ry, 0]);
+      K.box(len * 1.38, 0.04, 0.04, red, gx + ax, y + 0.16 + 0.37, gz + az, 0.01, [0, ry, (ry ? 1 : -1) * 0.68 * (Math.round(y / 0.75) % 2 ? 1 : -1)]);
+    }
+  }
+  K.box(gw + 0.4, 0.08, gw + 0.4, steel, gx, CAPE.gantryTop, gz, 0.02);
+  for (const sx of [-1, 1]) K.box(0.04, 0.5, gw + 0.4, dk, gx + sx * (gw / 2 + 0.2), CAPE.gantryTop + 0.25, gz, 0.01);
+  K.box(gw + 0.4, 0.04, 0.04, dk, gx, CAPE.gantryTop + 0.48, gz - gw / 2 - 0.2, 0.01);
+  for (const y of [3.4, 4.6]) K.box(1.5, 0.12, 0.3, steel, gx - 1.05, y, gz, 0.03);                  // swing arms
+  for (const sz of [-0.18, 0.18]) K.box(0.04, GH - 0.3, 0.04, dk, gx + gw / 2 + 0.06, (GH - 0.3) / 2 + 0.16, gz + sz, 0.01);   // the ladder
+  for (let y = 0.4; y < GH - 0.2; y += 0.28) K.box(0.03, 0.03, 0.36, dk, gx + gw / 2 + 0.06, y + 0.16, gz, 0.008);
+  // fuel tanks, floodlights, the sign by the road
+  for (const [x, z] of [[-3.9, -1.0], [-3.9, -2.4]]) {
+    K.put(lathe([[0.001, 0], [0.5, 0], [0.55, 0.15], [0.55, 1.5], [0.4, 1.8], [0.001, 1.85]], 24), white, x, 0, z);
+    K.put(new THREE.TorusGeometry(0.555, 0.04, 6, 24), red, x, 1.0, z, [Math.PI / 2, 0, 0]);
+  }
+  for (const [x, z] of [[-3.4, -4.4], [4.2, -4.0]]) {
+    for (const sx of [-1, 1]) K.box(0.05, 3.6, 0.05, steel, x + sx * 0.12, 1.8, z, 0.01);
+    for (let y = 0.5; y < 3.5; y += 0.6) K.box(0.28, 0.03, 0.03, steel, x, y, z, 0.01);
+    K.box(0.9, 0.36, 0.2, dk, x, 3.75, z, 0.04);
+    for (const lx of [-0.24, 0, 0.24]) K.put(new THREE.CircleGeometry(0.1, 14), GLOW(), x + lx, 3.75, z + 0.11).userData.noInk = true;
+  }
+  const S = K.sub(3.2, 0, 4.4, -0.35);
+  for (const sx of [-0.7, 0.7]) S.box(0.08, 1.6, 0.08, paint(PAL.bark), sx, 0.8, 0, 0.02);
+  S.box(1.7, 0.6, 0.06, white, 0, 1.35, 0.02, 0.03);
+  S.flat(1.6, 0.5, signMat('CAPE FAR SIDE · cargo launch', { bg: '#f3eee4', fg: '#2a2230', w: 640, h: 192, font: '400 $px ' + HAND }), 0, 1.35, 0.056);
+  // the launch console's desk (screen + button are live, see launchConsole())
+  const [cx, , cz] = CAPE.console, C = K.sub(cx, 0, cz, Math.atan2(cx - rx, cz - rz));   // the operator faces the rocket
+  C.box(1.1, 0.85, 0.6, paint(0x6f7d92), 0, 0.43, 0, 0.05);
+  C.box(1.16, 0.08, 0.66, white, 0, 0.87, 0, 0.03);
+  K.g.userData.floor = (x, z) => Math.hypot(x - rx, z - rz) < 3.35 ? 0.16 : null;
+  K.g.userData.solids = [[[gx, gz], 0.75], [[-3.9, -1.7], 1.2], [[cx, cz], 0.55]];
+  return K.g;
+}
+// the cargo rocket: a fat cream body, red bands, fins, portholes, a nozzle
+export function cargoRocket() {
+  const g = new THREE.Group(), K = kit(g);
+  const cream = paint(0xf3ead7), red = paint(0xd8573f), dk = DARK();
+  K.put(lathe([[0.001, 0.3], [0.48, 0.3], [0.6, 0.7], [0.62, 3.2], [0.55, 3.9], [0.36, 4.6], [0.14, 5.1], [0.001, 5.25]], 28), cream, 0, 0, 0);
+  for (const y of [1.1, 2.6]) K.put(new THREE.TorusGeometry(0.62, 0.05, 6, 28), red, 0, y, 0, [Math.PI / 2, 0, 0]);
+  K.put(lathe([[0.001, 0], [0.36, 0], [0.42, 0.06], [0.3, 0.3], [0.001, 0.32]], 20), dk, 0, 0, 0);
+  for (let k = 0; k < 3; k++) {
+    const fin = extrude(shape([[0, 0], [0.75, -0.25], [0.7, 0.35], [0, 1.25]]), 0.07, 0.025);
+    const m = K.put(fin, red, 0, 0.35, 0); m.rotation.y = k * Math.PI * 2 / 3;
+    m.geometry.translate(0.5, 0, -0.035);
+  }
+  for (const y of [3.3, 2.1]) {
+    K.put(new THREE.TorusGeometry(0.15, 0.035, 6, 18), dk, 0, y, 0.6);
+    K.put(new THREE.CircleGeometry(0.13, 18), upperGlass(2), 0, y, 0.6).userData.noInk = true;
+  }
+  K.flat(0.3, 1.0, paint(0xffffff, { hatch: 0, map: canvasTex(96, 320, (c, w, h) => {
+    c.fillStyle = '#f3ead7'; c.fillRect(0, 0, w, h); c.font = `700 52px ${SCRIPT}`; c.fillStyle = '#d8573f'; c.textAlign = 'center';
+    [...'CARGO'].forEach((ch, i) => c.fillText(ch, w / 2, 56 + i * 60));
+  }) }), 0.0, 1.6, -0.625, [0, Math.PI, 0]);
+  return ink(g, 'heavy');
+}
+// the console's live parts: a screen that shows the count, a big red button under a flip cover
+export function launchConsole() {
+  const g = new THREE.Group(), K = kit(g);
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const draw = (text, col = '#7fe0a8') => { const c = cv.getContext('2d'); c.fillStyle = '#1c2430'; c.fillRect(0, 0, 256, 128); c.font = `700 64px ${SCRIPT}`; c.fillStyle = col; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 128, 66); tex.needsUpdate = true; };
+  draw('ARMED', '#f2d27a');
+  K.box(0.7, 0.42, 0.08, paint(0x3a3340), 0, 1.15, -0.2, 0.03, [-0.35, 0, 0]);
+  K.flat(0.62, 0.34, paint(0xffffff, { map: tex, hatch: 0 }), 0, 1.16, -0.155, [-0.35, 0, 0]);
+  K.put(lathe([[0.001, 0], [0.13, 0], [0.13, 0.06], [0.001, 0.06]], 20), paint(0x3a3340), 0.32, 0.91, 0.12);
+  const btn = K.put(lathe([[0.001, 0], [0.09, 0], [0.11, 0.05], [0.08, 0.1], [0.001, 0.11]], 20), paint(0xe2483a, { emissive: 0x7a1710 }), 0.32, 0.96, 0.12);
+  const cover = K.box(0.26, 0.02, 0.26, paint(0xe4b84f, { opacity: 0.7 }), 0.32, 1.1, 0.12, 0.01);
+  ink(g, 'mid');
+  g.userData = { draw, btn, cover };
+  return g;
+}
+// a crate for one painting, its front a lid that can pop off to show the canvas
+export function paintingCrate(i) {
+  const g = new THREE.Group(), K = kit(g);
+  const wood = paint(0xc8a47c), dkw = paint(0x9a744e);
+  K.box(1.2, 0.95, 0.2, wood, 0, 0.5, -0.04, 0.02);
+  const lid = new THREE.Group(); g.add(lid);
+  const L = kit(lid);
+  L.box(1.2, 0.95, 0.04, wood, 0, 0.5, 0.08, 0.015);
+  for (const y of [0.18, 0.82]) L.box(1.22, 0.1, 0.05, dkw, 0, y, 0.11, 0.015);
+  L.box(0.1, 0.9, 0.05, dkw, -0.55, 0.5, 0.11, 0.015, [0, 0, 0.0]);
+  L.flat(0.9, 0.3, signMat('CATERING — CAPE FAR SIDE', { bg: '#c8a47c', fg: '#3a2a20', border: false, w: 512, h: 128, font: '400 $px ' + HAND }), 0, 0.5, 0.136);
+  const art = K.flat(0.98, 0.74, paint(0x5a4632), 0, 0.5, 0.065);
+  ink(g, 'fine');
+  g.userData = { lid, art, i };
+  return g;
+}
+
 // ── finishing: merge per material, bend onto the planet, ink ─────────────────
 // Bake every mesh into the group's frame and merge by material, so a shop
 // costs a handful of draws instead of hundreds.

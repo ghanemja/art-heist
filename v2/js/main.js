@@ -61,6 +61,7 @@ function loop() {
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
   renderer.render(scene, camera);
+  game.afterRender?.();                              // the phone's camera grabs the frame here
 }
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();

@@ -9,7 +9,7 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../../museum.js';
-import { MAIN_STREET, buildShop, stripMall, station, townBlock, placeOnPlanet, batchPlaced } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -227,7 +227,15 @@ export function buildTown(scene) {
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const d = llv(s.at);
     out.sites[k] = { ...s, dir: d, frame: frame(d, TOWN_C) };
-    if (k !== 'airport' && k !== 'launchpad') spur(d, s.stop ?? s.r + 0.6, 'site:' + k);
+    if (k !== 'airport') spur(d, s.stop ?? s.r + 0.6, 'site:' + k);      // Cape Far Side: the long road round the planet
+    if (k === 'launchpad') {
+      const g = add(placeOnPlanet(capeFarSide(), d, yawToFace(d, TOWN_C), { weight: 'mid' }));
+      addFloor(g, g.userData.floor);
+      for (const [[x, z], r] of g.userData.solids) solid(g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
+      // the story places its moving parts in the site's own frame
+      out.cape = { dir: d, root: g, at: (x, z) => g.localToWorld(new THREE.Vector3(x, 0, z)).normalize() };
+      continue;
+    }
     if (k === 'station') {
       const g = add(placeOnPlanet(station(), d, yawToFace(d, TOWN_C)));
       addFloor(g, g.userData.floor);
@@ -241,6 +249,9 @@ export function buildTown(scene) {
   }
   // helpers the story uses to place things
   out.townAt = ([x, y]) => fC(x, y);
+  out.toTown = toTown;
+  out.dirC = TOWN_C;
+  out.axes = { side: _sideT, fwd: _fwdT };
   out.siteAt = (k, [x, y]) => out.sites[k].frame(x, y);
   out.solid = solid;
   out.museumFrame = mF;

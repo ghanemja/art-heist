@@ -18,9 +18,9 @@ const MODES = {
 // ── the car: a little vintage roadster. The body is its side silhouette —
 // rounded deck, long bonnet, a nose, two wheel arches — extruded across its
 // width with a deep bevel, so every edge is soft and the arches are real cut-outs.
-function buildCar() {
+export function buildCar(o = {}) {
   const g = new THREE.Group();
-  const body = paint(0xd9573f), cream = paint(0xf1e4c6), chrome = paint(0xe6e0d2, { hatch: 0 });
+  const body = paint(o.body ?? 0xd9573f), cream = paint(0xf1e4c6), chrome = paint(0xe6e0d2, { hatch: 0 });
   const dark = paint(0x2a2230, { hatch: 0 }), seatM = paint(0xb07a52), cab = paint(0x3b2f3a, { hatch: 0 });
   const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
   const WR = 0.33, WZ = 0.86, AR = 0.47;                       // wheel radius, axle offset, arch radius (before bevel)
@@ -75,7 +75,38 @@ function buildCar() {
   }
   g.add(blobShadow(1.0, 1.6));
   g.userData.wheels = wheels;
+  if (o.police) {                                     // a light bar over the windshield + a door badge
+    const bar = new THREE.Group(); bar.position.set(0, 1.45, 0.3); g.add(bar);
+    bar.add(new THREE.Mesh(rbox(0.9, 0.06, 0.18, 0.02), dark));
+    const red = new THREE.Mesh(rbox(0.36, 0.12, 0.16, 0.04), paint(0xe2483a, { emissive: 0x7a1710, unique: true })); red.position.x = -0.24; bar.add(red);
+    const blue = new THREE.Mesh(rbox(0.36, 0.12, 0.16, 0.04), paint(0x3f6fd8, { emissive: 0x16306a, unique: true })); blue.position.x = 0.24; bar.add(blue);
+    for (const x of [-0.5, 0.5]) { const p = new THREE.Mesh(rbox(0.03, 0.5, 0.03, 0.01), chrome); p.position.set(x, -0.25, 0); bar.add(p); }
+    for (const s of [-1, 1]) { const b = new THREE.Mesh(new THREE.CircleGeometry(0.17, 20), paint(0xe4b84f, { hatch: 0 })); b.position.set(s * 0.71, 0.6, 0.05); b.rotation.y = s * Math.PI / 2; g.add(b); }
+    g.userData.lights = [red.material, blue.material];
+  }
   return ink(g, 'mid');
+}
+
+// ── the critic's little backpack (the phone lives in it): a rounded mustard
+// pack, a red flap with a brass clasp, a front pocket, straps over the shoulders
+function buildBackpack() {
+  const g = new THREE.Group();
+  const body = paint(0xe1b95c), flap = paint(0xc7533e), strap = paint(0x8a6448), brass = paint(0xe4b84f);
+  const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
+  m(rbox(0.24, 0.27, 0.12, 0.05), body, 0, 0, -0.06);
+  const f = m(rbox(0.25, 0.12, 0.135, 0.045), flap, 0, 0.085, -0.065); f.rotation.x = 0.05;
+  m(rbox(0.06, 0.04, 0.02, 0.01), brass, 0, 0.04, -0.135);
+  m(rbox(0.16, 0.1, 0.05, 0.025), body, 0, -0.07, -0.135);                  // front pocket
+  m(rbox(0.17, 0.025, 0.055, 0.01), flap, 0, -0.025, -0.135);
+  const phone = m(rbox(0.05, 0.085, 0.012, 0.006), paint(0x2a2230, { hatch: 0 }), 0.135, 0.03, -0.05);   // the phone, peeking out of the side pocket
+  phone.rotation.z = -0.15;
+  m(rbox(0.035, 0.07, 0.05, 0.012), body, 0.13, -0.02, -0.05);
+  for (const sx of [-0.075, 0.075]) {                                      // straps up and over the shoulders
+    const c = new THREE.CatmullRomCurve3([new THREE.Vector3(sx, 0.11, 0.0), new THREE.Vector3(sx * 1.05, 0.2, 0.03), new THREE.Vector3(sx * 1.15, 0.22, 0.1), new THREE.Vector3(sx * 1.25, 0.14, 0.16)]);
+    m(new THREE.TubeGeometry(c, 10, 0.012, 5), strap);
+  }
+  m(new THREE.TorusGeometry(0.03, 0.008, 6, 14), brass, 0, 0.15, -0.04).rotation.x = Math.PI / 2;   // the carry loop
+  return ink(g, 'fine');
 }
 
 export function createPlayer(scene, camera, colliders, startDir, startToward) {
@@ -94,6 +125,23 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     critic.inst = makeHuman(glb, LOOKS.critic);
     stub.removeFromParent();
     bodies.walk.add(critic.inst.rig);
+    // the backpack rides on her upper spine: placed in the body's frame (behind the
+    // shoulder blades, facing back) and parented to the bone so it sways with her
+    const spine = critic.inst.bones?.spine2;
+    if (spine) {
+      root.updateMatrixWorld(true);
+      const bp = buildBackpack();
+      const bw = new THREE.Vector3(), bq = new THREE.Quaternion(), bs = new THREE.Vector3();
+      spine.matrixWorld.decompose(bw, bq, bs);
+      const at = bodies.walk.worldToLocal(bw.clone()).add(new THREE.Vector3(0, -0.02, -0.11));
+      const world = bodies.walk.localToWorld(at);
+      bp.position.copy(spine.worldToLocal(world));
+      const wq = new THREE.Quaternion(); bodies.walk.getWorldQuaternion(wq);
+      bp.quaternion.copy(bq.clone().invert().multiply(wq));
+      bp.scale.setScalar(1 / bs.x);
+      spine.add(bp);
+      critic.backpack = bp;
+    }
     // the critic also drives the jeep
     const rider = makeHuman(glb, LOOKS.critic);
     sit(rider);
@@ -315,5 +363,5 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     camera.lookAt(st.camLook);
     if (st.camHook) st.camHook(camera, root);          // dev: fixed shots for screenshots
   }
-  return { st, update, setMode, root, bodies };
+  return { st, update, setMode, root, bodies, critic };
 }

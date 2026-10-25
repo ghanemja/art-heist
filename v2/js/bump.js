@@ -83,7 +83,7 @@ export function createBumps({ camera, player }) {
     if (st.mode !== 'jeep' || Math.abs(st.speed) < 1.2) return;
     const car = player.root;
     for (const b of bodies) {
-      if (b.state !== 'ok' || !b.obj.visible) continue;
+      if (b.state !== 'ok' || !b.obj.visible || b.immune) continue;
       car.worldToLocal(_l.copy(b.obj.position));
       if (Math.abs(_l.x) > 0.95 || Math.abs(_l.z) > 1.7 || Math.abs(_l.y) > 1.5) continue;
       launch(b, Math.sign(_l.x || 1));
@@ -192,5 +192,8 @@ export function createBumps({ camera, player }) {
   const busy = (obj) => bodies.some(b => b.obj === obj && b.state !== 'ok');
   // knock someone over directly (used by tests; handy for a scripted gag later)
   const knock = (obj, side = 1) => { const b = bodies.find(x => x.obj === obj); if (b && b.state === 'ok') launch(b, side); };
-  return { add, update, busy, bodies, knock };
+  // a bubble over anyone on demand (the story uses it: "Come ON!", "…bother.")
+  const sayOver = (obj, text, dur = 2.2, cls = 'grumble') => say({ obj }, text, dur, cls);
+  const body = (obj) => bodies.find(x => x.obj === obj);
+  return { add, update, busy, bodies, knock, say: sayOver, body };
 }

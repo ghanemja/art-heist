@@ -3,14 +3,20 @@
 // letterboxed shots of the crime (≈10s, skippable), then you're in control
 // with one buzz of the phone telling you why you're here. After that the game
 // never explains a clue — you look, you listen, you decide.
+// Act 2 (once you've named the thief): the getaway to Cape Far Side, a launch
+// countdown, an ABORT button, the police, and a letterboxed epilogue.
 import * as THREE from 'three';
-import { R, arc, radiusAt, settle, yawToFace, nearestRoad } from './world.js';
+import { R, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurface, slerpDir } from './world.js';
+import { CAPE, cargoRocket, launchConsole, paintingCrate } from './buildings.js';
+import { buildCar } from './player.js';
+import { createPhone } from './phone.js';
 import { buildWalkers, tickWalkers, walkerHome, WALKERS } from './crowd.js';
 import { createBumps } from './bump.js';
 import { CLUES, PEOPLE, SUSPECTS, PLACES, judge, buildCase, sketchProp } from './story.js';
 import { paintPeople, paintThings } from './portraits.js';
 import { LOOKS } from './human.js';
 import { pose } from './human.js';
+import { poseFolk } from './folk.js';
 import { ink } from './style.js';
 
 const $ = (id) => document.getElementById(id);
@@ -18,7 +24,7 @@ const show = (el, on = true) => el.classList.toggle('hide', !on);
 
 export function createGame({ scene, camera, town, player, atmosphere, renderer }) {
   const G = {
-    state: 'title', t0: 0, found: new Set(), met: new Set(), talked: new Set(), solved: false,
+    state: 'title', t0: 0, found: new Set(), met: new Set(), talked: new Set(), solved: false, act: 1,
     ui: null, talkIdx: 0, talkWho: null, pickSus: null, pickClues: new Set(),
   };
   const items = buildCase(scene, town);
@@ -58,10 +64,10 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   };
   for (const it of items) {
     if (it.kind !== 'person') continue;
-    const pos = it.obj.position.clone(), q = it.obj.quaternion.clone();
+    it.homePos = it.obj.position.clone(); it.homeQ = it.obj.quaternion.clone();
     bumps.add(it.obj, { ...VOICE[it.id], home: () => it.dir,
       onAway: () => { it.knocked = true; },
-      onBack: () => { it.obj.position.copy(pos); it.obj.quaternion.copy(q); it.knocked = false; } });
+      onBack: () => { it.obj.position.copy(it.homePos); it.obj.quaternion.copy(it.homeQ); it.knocked = false; } });
   }
   for (const w of walkers) bumps.add(w.obj, { pitch: WALKERS[w.id].pitch, line: WALKERS[w.id].line,
     home: () => walkerHome(w), onAway: () => { w.paused = true; }, onBack: () => { w.paused = false; } });
@@ -108,8 +114,11 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   function beginPlay() {
     G.state = 'play';
-    player.st.enabled = true;
-    show($('hud')); show($('nbBtn')); showKeys();
+    player.st.enabled = true; player.st.playing = true;
+    show($('hud')); show($('nbBtn')); show($('bagBtn')); showKeys();
+    phone.push('Editor', 'You\'re at the museum? Good. All 45 paintings went overnight. The police have nothing.', { silent: true });
+    phone.push('Editor', 'You know those canvases better than anyone. Find out who — and where they\'re going.', { silent: true });
+    phone.state.unread = 0;
     updateGoal();
   }
   // the controls strip: always there (H hides it), and it changes when you drive
@@ -118,7 +127,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const k = (t) => `<kbd>${t}</kbd>`;
     $('hint').innerHTML = player.st.mode === 'jeep'
       ? `${k('W')}${k('S')} drive · ${k('A')}${k('D')} steer · ${k('E')} get out · scroll to zoom · ${k('C')} camera behind · ${k('H')} hide`
-      : `${k('WASD')} walk · ${k('Shift')} run · ${k('E')} look / talk · ${k('N')} notebook · drag to look · scroll to zoom · ${k('C')} camera behind · ${k('H')} hide`;
+      : `${k('WASD')} walk · ${k('Shift')} run · ${k('E')} look / talk · ${k('N')} notebook · ${k('B')} backpack · ${k('P')} phone · drag to look · scroll to zoom · ${k('C')} camera · ${k('H')} hide`;
     show($('hint'), keysOn && G.state === 'play');
   }
 
@@ -126,7 +135,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   let nearest = null;
   function scan() {
     nearest = null;
-    if (G.state !== 'play' || G.ui) { show($('prompt'), false); return; }
+    if (G.state !== 'play' || G.ui || phone.busy) { show($('prompt'), false); return; }
     const here = player.st.dir;
     let best = 1e9;
     if (player.st.mode === 'walk') {
@@ -137,12 +146,15 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
         if (d < lim && d < best) { best = d; nearest = it; }
       }
       const dj = arc(here, jeepDir);
-      if (dj < 2.6 && (!nearest || dj < best)) nearest = { kind: 'jeep' };
+      if (dj < 2.6 && (!nearest || dj < best)) { best = dj; nearest = { kind: 'jeep' }; }
+      if (G.act === 3 && cape.console && arc(here, cape.consoleDir) < 1.9) nearest = { kind: 'console' };
+      for (const lm of town.landmarks) { const d = arc(here, lm.dir); if (d < 3.6 && d < best) { best = d; nearest = { kind: 'project', lm }; } }
     } else nearest = { kind: 'exit' };
     const pr = $('prompt');
     if (!nearest) { show(pr, false); return; }
     const label = nearest.kind === 'person' ? `talk to ${PEOPLE.find(p => p.id === nearest.id).name.split(',')[0]}`
-      : nearest.kind === 'jeep' ? 'get in the car' : nearest.kind === 'exit' ? 'get out' : 'look closer';
+      : nearest.kind === 'jeep' ? 'get in the car' : nearest.kind === 'exit' ? 'get out'
+      : nearest.kind === 'console' ? 'ABORT THE LAUNCH' : nearest.kind === 'project' ? `visit ${nearest.lm.name}` : 'look closer';
     pr.innerHTML = `<kbd>E</kbd>${label}`;
     show(pr);
   }
@@ -154,13 +166,15 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (e.code === 'KeyH' && G.state === 'play') { keysOn = !keysOn; showKeys(); }
   });
   function act() {
-    if (G.state !== 'play') return;
+    if (G.state !== 'play' || phone.busy) return;
     if (G.ui === 'card') { closeUI(); return; }
     if (G.ui === 'talk') { nextLine(); return; }
     if (G.ui) return;
     if (!nearest) return;
     if (nearest.kind === 'clue') return openClue(nearest);
     if (nearest.kind === 'person') return openTalk(nearest.id);
+    if (nearest.kind === 'console') return abortLaunch();
+    if (nearest.kind === 'project') return openProject(nearest.lm);
     if (nearest.kind === 'jeep') { parked.visible = false; player.setMode('jeep'); player.st.heading = new THREE.Vector3(0, 0, 1).applyQuaternion(parked.quaternion); player.st.camFwd.copy(player.st.heading); showKeys(); renderCase(); return; }
     if (nearest.kind === 'exit') {
       player.setMode('walk');
@@ -175,8 +189,10 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   function closeUI() {
     if (!G.ui) return;
     if (player.st.camHook === convoCam) { player.st.camHook = null; player.st.camInit = false; }
-    show($({ card: 'card', talk: 'talk', nb: 'nb' }[G.ui]), false);
+    show($({ card: 'card', talk: 'talk', nb: 'nb', proj: 'card' }[G.ui]), false);
+    const was = G.ui;
     G.ui = null; player.st.enabled = true;
+    if (was === 'nb' && G.solved && G.act === 1) startGetaway();
   }
 
   // ── a found thing ──
@@ -185,6 +201,12 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const isNew = !G.found.has(c.id);
     G.found.add(c.id);
     if (it.glint) it.glint.visible = false;
+    if (isNew) {
+      if (G.found.size === 1) setTimeout(() => phone.push('Mum', 'saw the museum on the news!! are you safe?? are you eating??'), 2500);
+      if (c.id === 'van') setTimeout(() => phone.push('Editor', 'FRAME & CO.? Isn\'t that the framer who hung the whole show?'), 2000);
+      if (c.id === 'ticket') phone.addItem('ticket');
+      if (G.found.size === 4) setTimeout(() => phone.push('Editor', 'When you\'re sure, take it to Vivi — the police will listen to her. Name a name, show two things.'), 2500);
+    }
     $('card').innerHTML = `<div class="ic">${sketch(c.id)}</div><h3>${c.title}</h3><p>${c.text}</p>
       <div class="note">${isNew ? 'noted in your notebook' : 'already in your notebook'}</div><button class="sk" id="cardOk">ok</button>`;
     show($('card')); G.ui = 'card'; player.st.enabled = false;
@@ -220,8 +242,13 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     conv.init = false;
     player.st.camHook = convoCam;
   }
+  const REX_CAPE = { id: 'rex', name: 'Rex, framer', lines: [
+    'Persistent, aren\'t you. Forty-five canvases, one rocket, and a very private collector on the far side of nowhere.',
+    'Frames are my life\'s work, you know. Nobody ever looks at the frames.',
+    'And you can\'t stop it — the count\'s already running. Ta-ra!'] };
+  const REX_CAUGHT = { id: 'rex', name: 'Rex, framer', lines: ['I\'m not coming down.', '…Is there such a thing as a lawyer on the far side?'] };
   function openTalk(id) {
-    G.talkWho = PEOPLE.find(p => p.id === id); G.talkIdx = 0;
+    G.talkWho = id === 'rex' && G.act === 2 ? REX_CAPE : id === 'rex' && G.act >= 4 ? REX_CAUGHT : PEOPLE.find(p => p.id === id); G.talkIdx = 0;
     startConvo(items.find(i => i.id === id));
     G.met.add(id);
     const it = items.find(i => i.id === id); if (it?.glint) it.glint.visible = false;
@@ -242,6 +269,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (G.talkIdx < p.lines.length - 1) { G.talkIdx++; renderTalk(); return; }
     G.talked.add(p.id);
     closeUI(); updateGoal();
+    if (p === REX_CAPE) startCountdown();
+    else if (p.id === 'vivi' && G.talked.size === 1) setTimeout(() => phone.push('Editor', 'Three people with keys or reasons. Talk to all three — and look at everything twice.'), 1500);
   }
 
   // ── the notebook: what you saw, who you met, and (with Vivi) your case ──
@@ -284,20 +313,26 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const WHERE = { vivi: 'on the museum steps', otto: 'by the guard booth beside the museum steps', pia: 'outside Bean There Café, Main Street', rex: 'by his van at Frame & Co., Main Street' };
   const placeDir = {
     museum: town.museum.dir, main: town.townAt([2, 0]), harbour: town.sites.harbour.dir, station: town.sites.station.dir,
+    mall: town.mall.dir, cape: town.cape.dir,
   };
+  const PLACE_NAME = { ...Object.fromEntries(PLACES.map(p => [p.id, p.name])), mall: 'Maple Plaza', cape: 'Cape Far Side' };
   const personIt = (id) => items.find(i => i.kind === 'person' && i.id === id);
   const placeCount = (pl) => { const all = CLUES.filter(c => c.where === pl); return [all.filter(c => G.found.has(c.id)).length, all.length]; };
   function targetOf(key) {
     const [kind, id] = key.split(':');
-    if (kind === 'person') { const it = personIt(id); return it && { dir: it.dir, label: PEOPLE.find(p => p.id === id).name.split(',')[0], near: 2.4, h: 2.75, done: G.talked.has(id) && id !== 'vivi' }; }
-    if (kind === 'place') { const [n, t] = placeCount(id); return { dir: placeDir[id], label: PLACES.find(p => p.id === id).name, near: id === 'main' ? 6 : 5, h: 3.2, done: n >= t }; }
+    if (kind === 'person') { const it = personIt(id); return it && { dir: it.dir, label: PEOPLE.find(p => p.id === id).name.split(',')[0], near: 2.4, h: 2.75, done: G.act === 1 && G.talked.has(id) && id !== 'vivi' }; }
+    if (kind === 'place') { const [n, t] = placeCount(id); return { dir: placeDir[id], label: PLACE_NAME[id], near: id === 'main' ? 6 : id === 'cape' ? 7 : 5, h: 3.2, done: t > 0 && n >= t && G.act === 1 }; }
     if (kind === 'car') return player.st.mode === 'walk' ? { dir: jeepDir, label: 'your car', near: 2.6, h: 1.8, done: false } : null;
+    if (kind === 'console') return cape.consoleDir && { dir: cape.consoleDir, label: 'launch console', near: 1.6, h: 2.0, done: G.act !== 3 };
+    if (kind === 'lm') { const lm = town.landmarks.find(l => l.key === id); return lm && { dir: lm.dir, label: lm.name, near: 3.5, h: 5.5, done: false }; }
     return null;
   }
   // what the arrow points at: what you picked on the board, or the next lead
   function currentTarget() {
-    if (G.solved) return null;
+    if (G.act === 3) return targetOf('console');
     if (G.track) { const t = targetOf(G.track); if (t && !t.done) return t; G.track = null; }
+    if (G.act === 2) return targetOf('place:cape');
+    if (G.act >= 4) return null;
     if (!G.talked.has('vivi')) return targetOf('person:vivi');
     for (const id of ['otto', 'pia', 'rex']) if (!G.talked.has(id)) return targetOf('person:' + id);
     if (canAccuse() && G.found.size >= 4) return targetOf('person:vivi');
@@ -315,8 +350,19 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       return `<div class="cr ${done ? 'done' : ''} ${on ? 'on' : ''}" data-k="${key}">${html}</div>`;
     };
     let h = '';
-    if (G.solved) h = `<div class="st">Case closed.</div><p>The canvases leave Cape Far Side tonight — to be continued.</p>`;
-    else if (!G.talked.has('vivi')) {
+    if (G.act >= 4) {
+      h = `<div class="st go">Case closed ✓</div><p>All 45 paintings are going home. Rex is going somewhere else.</p>` +
+        `<div class="st">Janelle's projects</div><p>The buildings around town are her real work — walk up and press <kbd>E</kbd>.</p>` +
+        town.landmarks.map(lm => row('lm:' + lm.key, `<i>›</i> ${lm.name} <span class="ct">${lm.tag}</span>`)).join('');
+    } else if (G.act === 3) {
+      h = `<div class="st go">5 · ABORT the launch!</div>` + row('console', `<i>›</i> the launch console — run!`) +
+        `<p>Rex is up the gantry. The console's by the road — press <kbd>E</kbd> at it.</p>`;
+    } else if (G.act === 2) {
+      const there = arc(player.st.dir, town.cape.dir) < 12;
+      h = `<div class="st go">4 · Stop the launch at Cape Far Side</div>` +
+        row('place:cape', `<i>›</i> Cape Far Side — ${there ? 'find Rex by the crates' : 'the long road round the planet'}`) +
+        `<p>${there ? 'Walk up to Rex and press <kbd>E</kbd>.' : 'Take your car — it\'s a long way round. Follow the arrow.'}</p>`;
+    } else if (!G.talked.has('vivi')) {
       h = `<div class="st">1 · Find Director Vivi</div>` + row('person:vivi', `<i>›</i>${face('vivi', 'pt xs')} Vivi — ${WHERE.vivi}`) +
         `<p>Follow the arrow. Walk up to her and press <kbd>E</kbd>.</p>`;
     } else {
@@ -328,8 +374,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
           ? `<div class="st go">3 · Name the thief</div><p>Tell Vivi — or open your notebook (<kbd>N</kbd>) → make your case. You need a suspect and two things that prove it.</p>`
           : `<p class="soft">Glints mark things worth a closer look. Find two that point at someone.</p>`);
     }
-    if (!G.solved && player.st.mode === 'walk') h += row('car', `<i>›</i> your car — <kbd>E</kbd> to drive`);
-    if (!G.solved) h += `<p class="soft">click a line to follow it</p>`;
+    if (G.act !== 3 && player.st.mode === 'walk') h += row('car', `<i>›</i> your car — <kbd>E</kbd> to drive`);
+    if (G.act !== 3) h += `<p class="soft">click a line to follow it · <kbd>P</kbd> phone map</p>`;
     el.innerHTML = h;
     el.querySelectorAll('.cr').forEach(r => r.onclick = () => { G.track = r.dataset.k; renderCase(); });
   }
@@ -366,12 +412,253 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     show(way);
   }
 
+  // ── the phone, in the backpack ──
+  const phone = createPhone({ town, player, camera,
+    places: () => ['museum', 'main', 'station', 'harbour', 'mall', 'cape'].map(id => ({ key: 'place:' + id, name: PLACE_NAME[id], dir: placeDir[id] })),
+    onTrack: (k) => { G.track = k; renderCase(); },
+    openNotebook: () => { if (!G.ui) openNotebook(false); },
+    isTracked: (k) => { const a = currentTarget(), t = targetOf(k); return !!(a && t && a.dir === t.dir); } });
+  phone.setCar(() => jeepDir);
+  const placeName = () => {
+    let best = 'somewhere on the planet', bd = 9;
+    for (const [id, d] of Object.entries(placeDir)) { const a = arc(player.st.dir, d); if (a < bd) { bd = a; best = PLACE_NAME[id]; } }
+    return best;
+  };
+
+  // ── a project building: what it is, and a link to the real thing ──
+  function openProject(lm) {
+    const link = lm.url ? `<a class="sk btn" href="${lm.url}" target="_blank" rel="noopener">open ${lm.name} ↗</a>`
+      : lm.enter ? `<a class="sk btn" href="${lm.enter}">step inside ↗</a>` : '<p class="note">coming soon</p>';
+    $('card').innerHTML = `<h3>${lm.name}</h3><p class="tag">${lm.tag}</p><p>${lm.desc}</p><div class="row">${link}<button class="sk" id="cardOk">back</button></div>`;
+    show($('card')); G.ui = 'proj'; player.st.enabled = false;
+    $('cardOk').onclick = closeUI;
+  }
+
+  // ── ACT 2: the getaway to Cape Far Side ─────────────────────────────────────
+  // The moving parts are built at load (hidden until needed) so nothing hitches.
+  const UPV = new THREE.Vector3(0, 1, 0);
+  const CL = (x, y, z) => town.cape.root.localToWorld(new THREE.Vector3(x, y, z));
+  const capeDir = (x, z) => town.cape.at(x, z);
+  // put an object on the site in its own frame: local (x, z), turned ry about the up axis
+  const capeAttach = (obj, x, z, ry = 0, lift = 0) => {
+    obj.position.copy(CL(x, lift, z));
+    obj.quaternion.copy(town.cape.root.quaternion).multiply(new THREE.Quaternion().setFromAxisAngle(UPV, ry));
+  };
+  const cape = { count: 0, hopT: -1, puffs: [], crates: [], lidT: -1, policeT: -1, shown: -1 };
+  {
+    const [rx, , rz] = CAPE.rocket, [cx, , cz] = CAPE.console, ry = Math.atan2(cx - rx, cz - rz);
+    cape.rocket = cargoRocket(); capeAttach(cape.rocket, rx, rz, 0, 0.16); scene.add(cape.rocket);
+    cape.rocketPos = cape.rocket.position.clone(); cape.up = cape.rocketPos.clone().normalize();
+    cape.console = launchConsole(); capeAttach(cape.console, cx, cz, ry); scene.add(cape.console);
+    // the operator's spot is on the road side of the desk, facing the rocket
+    cape.consoleDir = CL(cx + Math.sin(ry) * 0.75, 0, cz + Math.cos(ry) * 0.75).normalize();
+    for (let i = 0; i < 3; i++) {
+      const c = paintingCrate(i); capeAttach(c, CAPE.crates[0] - 1.15 + i * 1.15, CAPE.crates[2] + (i % 2) * 0.12, 0.08 * (i - 1)); scene.add(c); cape.crates.push(c);
+    }
+    const puffGeo = new THREE.IcosahedronGeometry(1, 1);
+    for (let i = 0; i < 16; i++) {
+      const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xf3eee4, transparent: true, opacity: 0.85, depthWrite: false }));
+      m.visible = false; m.userData.noInk = true; scene.add(m);
+      cape.puffs.push({ m, t: 1 + i / 16, seed: i * 1.7 });
+    }
+    cape.police = buildCar({ body: 0xf3eee4, police: true }); cape.police.visible = false; scene.add(cape.police);
+  }
+  // move a story thing (and its collider and glint) to a spot at the cape
+  function relocate(it, x, z, faceX, faceZ) {
+    const old = it.dir.clone(), d = capeDir(x, z);
+    for (const c of town.colliders) if (arc(c.dir, old) < 0.05) c.dir.copy(d);
+    it.dir.copy(d);
+    it.obj.position.copy(d).multiplyScalar(standAt(d));
+    alignToSurface(it.obj, d, yawToFace(d, capeDir(faceX, faceZ)));
+    it.homePos = it.obj.position.clone(); it.homeQ = it.obj.quaternion.clone();
+    if (it.glint) it.glint.position.copy(d).multiplyScalar(standAt(d) + (it.kind === 'person' ? 1.75 : 1.6));
+  }
+  function startGetaway() {
+    G.act = 2; G.track = null;
+    const rex = personIt('rex'), van = items.find(i => i.id === 'van');
+    relocate(rex, CAPE.rex[0], CAPE.rex[2], CAPE.rex[0], CAPE.rex[2] + 5);
+    if (rex.glint) rex.glint.visible = true;
+    if (van) relocate(van, CAPE.van[0], CAPE.van[2], CAPE.rocket[0], CAPE.rocket[2]);
+    atmosphere.fadeTo(0.5, 40);                                  // dusk falls on the way
+    phone.push('Editor', 'Vivi\'s called it in — police are forty minutes out. Rex\'s van just tore out of town. There\'s a cargo launch from CAPE FAR SIDE at nine. The coast road goes all the way round. GO.');
+    setTimeout(() => phone.push('Vivi', 'Take your car. And please — bring them home.'), 4000);
+    setTimeout(() => phone.push('Mum', 'why is there a ROCKET on the local news'), 14000);
+    updateGoal();
+  }
+  // Rex bolts up the gantry; the countdown starts; the rocket rumbles
+  function startCountdown() {
+    G.act = 3; cape.count = 60; cape.shown = -1;
+    const rex = personIt('rex'), b = bumps.body(rex.obj);
+    if (b) b.immune = true;
+    rex.fleeing = { phase: 'run', y: 0 };
+    if (rex.glint) rex.glint.visible = false;
+    show($('timer'));
+    phone.push('Editor', 'Is that a ROCKET?! Stop it!!');
+    updateGoal();
+  }
+  const GANTRY_FOOT = () => capeDir(CAPE.gantry[0] + 0.95, CAPE.gantry[2]);
+  function tickRex(dt) {
+    const rex = personIt('rex'), F = rex.fleeing; if (!F) return;
+    const h = rex.obj.userData.human;
+    if (F.phase === 'run') {
+      const to = GANTRY_FOOT(), d = arc(rex.dir, to);
+      if (d < 0.08) { F.phase = 'climb'; rex.dir.copy(to); }
+      else rex.dir.copy(slerpDir(rex.dir, to, Math.min(1, 3.4 * dt / d)));
+      rex.obj.position.copy(rex.dir).multiplyScalar(standAt(rex.dir));
+      alignToSurface(rex.obj, rex.dir, yawToFace(rex.dir, to));
+      if (h) poseFolk(h, dt, 1);
+    } else if (F.phase === 'climb') {
+      F.y = Math.min(CAPE.gantryTop + 0.04, F.y + 1.5 * dt);
+      rex.obj.position.copy(rex.dir).multiplyScalar(standAt(rex.dir) + F.y);
+      alignToSurface(rex.obj, rex.dir, yawToFace(rex.dir, capeDir(CAPE.gantry[0], CAPE.gantry[2])));
+      if (h) poseFolk(h, dt, 0.9);
+      if (F.y >= CAPE.gantryTop + 0.04) {                      // on the platform: step in, turn, gloat
+        F.phase = 'top';
+        const top = capeDir(CAPE.gantry[0], CAPE.gantry[2]);
+        rex.obj.position.copy(top).multiplyScalar(standAt(top) + CAPE.gantryTop + 0.04);
+        alignToSurface(rex.obj, top, yawToFace(top, capeDir(CAPE.rocket[0] + 4, CAPE.rocket[2] + 6)));
+        rex.homePos = rex.obj.position.clone(); rex.homeQ = rex.obj.quaternion.clone();
+        bumps.say(rex.obj, 'Toodle-oo!', 2.0, 'yell');
+      }
+    } else if (h) poseFolk(h, dt, 0, { talk: 0.6 });
+  }
+  function tickCape(dt, t) {
+    if (G.act < 2) return;
+    tickRex(dt);
+    const R0 = cape.rocketPos, up = cape.up;
+    if (G.act === 3) {
+      cape.count -= dt;
+      const n = Math.max(0, Math.ceil(cape.count));
+      if (n !== cape.shown && cape.hopT < 0) {
+        cape.shown = n;
+        cape.console.userData.draw(`T-${String(n).padStart(2, '0')}`, n <= 10 ? '#f2a07a' : '#7fe0a8');
+        $('timer').textContent = `LAUNCH IN ${n}`;
+      }
+      if (cape.count <= 0 && cape.hopT < 0) hop();
+    }
+    // the rocket: rumbles harder as the count runs down; hops if it hits zero
+    let lift = 0, shake = 0;
+    if (G.act === 3) shake = 0.012 + 0.05 * (1 - Math.min(1, cape.count / 60));
+    if (cape.hopT >= 0) {
+      cape.hopT += dt;
+      const k = cape.hopT / 2.4;
+      lift = 1.6 * Math.sin(Math.PI * Math.min(1, k)); shake = 0.08;
+      if (k >= 1) { cape.hopT = -1; cape.count = 30; cape.shown = -1; }
+    }
+    cape.rocket.position.copy(R0).addScaledVector(up, lift);
+    if (shake) cape.rocket.position.add(new THREE.Vector3(Math.sin(t * 61) * shake, Math.sin(t * 53) * shake, Math.sin(t * 47) * shake).projectOnPlane(up));
+    // smoke: puffs roll out from the base while it's live
+    const live = G.act === 3;
+    for (const P of cape.puffs) {
+      P.t += dt * (0.55 + (cape.hopT >= 0 ? 1.2 : 0));
+      if (P.t > 1) { if (!live) { P.m.visible = false; continue; } P.t -= 1; P.a = P.seed + t; }
+      if (!live && !P.m.visible) continue;
+      const k = P.t, a = P.a ?? P.seed, r = 0.5 + 2.2 * k;
+      const side = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).applyQuaternion(town.cape.root.quaternion);
+      P.m.position.copy(R0).addScaledVector(side, r).addScaledVector(up, 0.25 + 0.9 * k * k);
+      P.m.scale.setScalar(0.35 + 0.9 * k);
+      P.m.material.opacity = 0.85 * (1 - k);
+      P.m.visible = true;
+    }
+    // police lights, and the car rolling up the road
+    if (cape.police.visible) {
+      const [red, blue] = cape.police.userData.lights, f = Math.sin(t * 9) > 0;
+      red.emissiveIntensity = f ? 2.2 : 0.2; blue.emissiveIntensity = f ? 0.2 : 2.2;
+      if (cape.policeT >= 0 && cape.policeT < 1) {
+        cape.policeT = Math.min(1, cape.policeT + dt / 2.5);
+        const e = 1 - (1 - cape.policeT) ** 3, [px, , pz] = CAPE.police;
+        capeAttach(cape.police, px, pz + 9 * (1 - e), Math.PI);
+      }
+    }
+    // crate lids pop off (the epilogue)
+    if (cape.lidT >= 0) {
+      cape.lidT += dt;
+      cape.crates.forEach((c, i) => {
+        const k = THREE.MathUtils.clamp((cape.lidT - i * 0.35) / 0.6, 0, 1), lid = c.userData.lid;
+        lid.position.set(0, 0.06 * Math.sin(Math.PI * k), 0.3 * k); lid.rotation.x = 1.45 * k * k;
+      });
+    }
+  }
+  // the overloaded rocket coughs, hops and sinks back — forty-five paintings is a lot of cargo
+  function hop() {
+    cape.hopT = 0;
+    cape.console.userData.draw('OVERWEIGHT', '#f2a07a');
+    $('timer').textContent = 'TOO HEAVY — RETRYING';
+    bumps.say(personIt('rex').obj, 'Come ON!', 2.4, 'yell');
+    phone.push('Editor', 'It\'s too heavy to fly — it\'s trying again! The CONSOLE, quick!');
+  }
+  function abortLaunch() {
+    if (G.act !== 3) return;
+    G.act = 4; cape.hopT = -1;
+    const U = cape.console.userData;
+    U.draw('ABORTED', '#ff8a7a');
+    U.btn.position.y -= 0.045; U.cover.rotation.x = -1.2; U.cover.position.z -= 0.1;
+    show($('timer'), false);
+    const rex = personIt('rex');
+    bumps.say(rex.obj, '…bother.', 3, 'grumble');
+    if (rex.fleeing) rex.fleeing.phase = rex.fleeing.phase === 'top' ? 'top' : rex.fleeing.phase;
+    rex.dir.copy(GANTRY_FOOT());                                   // shout up at him from the foot of the gantry
+    phone.push('Editor', 'You stopped a ROCKET. Front page. Tomorrow. Yours.');
+    cape.police.visible = true; cape.policeT = 0;
+    updateGoal();
+    setTimeout(startEpilogue, 4200);
+  }
+
+  // ── the epilogue: three letterboxed shots, then the papers ──
+  const ARTS = ['art_cows_in_storm.jpg', 'art_IMG_5262.jpg', 'art_IMG_7152.jpg'];
+  const EPI = [
+    { dur: 4.4, cap: 'Forty-five canvases. Not a scratch.', at: CL, from: [-2.3, 1.5, 2.7], to: [-3.0, 1.15, 1.9], look: [-3.0, 0.6, 0.4] },
+    { dur: 3.8, cap: 'Rex Calloway — framed, at last.', at: CL, from: [6.4, 3.0, 5.2], to: [5.4, 3.8, 3.6], look: [2.15, 5.6, -1.6] },
+    { dur: 4.4, cap: 'Back on the walls by morning.', at: ML, from: [0, 3.2, 17], to: [0, 4.2, 11.5], look: [0, 3, -5] },
+  ];
+  function startEpilogue() {
+    G.state = 'epilogue'; G.ui = null; G.epiT = 0; G.epiShot = -1;
+    phone.closeAll();
+    for (const k of ['card', 'talk', 'nb', 'prompt', 'way', 'timer']) show($(k), false);
+    player.st.enabled = false;
+    document.body.classList.add('cine');
+    const loader = new THREE.TextureLoader();
+    cape.crates.forEach((c, i) => loader.load('../artworks/' + ARTS[i % ARTS.length], (tx) => {
+      tx.colorSpace = THREE.SRGBColorSpace;
+      c.userData.art.material = new THREE.MeshBasicMaterial({ map: tx });
+    }));
+    cape.lidT = 0;
+  }
+  function tickEpilogue(dt) {
+    G.epiT += dt;
+    let acc = 0, i = 0;
+    while (i < EPI.length - 1 && G.epiT > acc + EPI[i].dur) acc += EPI[i++].dur;
+    if (i !== G.epiShot) { G.epiShot = i; if (i === 2) atmosphere.fadeTo(0, 1.2); }
+    const S = EPI[i], k = Math.min(1, (G.epiT - acc) / S.dur), e = k * k * (3 - 2 * k);
+    const from = S.at(...S.from), to = S.at(...S.to);
+    camera.position.copy(from.lerp(to, e));
+    camera.up.copy(camera.position).normalize();
+    camera.lookAt(S.at(...S.look));
+    const cap = $('caption');
+    if (cap.textContent !== S.cap) { cap.textContent = S.cap; show(cap, false); requestAnimationFrame(() => show(cap)); }
+    else show(cap, k > 0.08 && k < 0.92);
+    if (G.epiT >= EPI.reduce((a, s) => a + s.dur, 0)) endEpilogue();
+  }
+  function endEpilogue() {
+    G.state = 'play'; G.act = 5;
+    document.body.classList.remove('cine'); show($('caption'), false);
+    player.st.enabled = true; player.st.camInit = false;
+    phone.push('The Chronicle', 'FRONT PAGE: CRITIC CATCHES THE FRAMER — all 45 paintings home safe. Rex Calloway charged. Story & photos: you.');
+    setTimeout(() => phone.push('Mum', 'SO proud!!! dinner sunday. bring the newspaper'), 3000);
+    $('endcard').innerHTML = `<h2>Case closed.</h2><p>Forty-five paintings, home by morning. Thank you for playing <b>The Vanishing Gallery</b>.</p>
+      <p class="soft">The planet's still yours — and the buildings around town are Janelle's real projects. Walk up to one and press <kbd>E</kbd>.</p>
+      <button class="sk" id="endOk">keep exploring</button>`;
+    show($('endcard'));
+    $('endOk').onclick = () => show($('endcard'), false);
+    updateGoal();
+  }
+
   // ── per frame ──
   // the people: breathe, gesture while they talk, turn to face you as you come up
   const _pv = new THREE.Vector3();
   function tickPeople(dt) {
     for (const it of items) {
-      if (it.kind !== 'person' || it.knocked) continue;
+      if (it.kind !== 'person' || it.knocked || it.fleeing) continue;
       const h = it.obj.userData.human; if (!h) continue;
       const talking = G.ui === 'talk' && G.talkWho?.id === it.id;
       h.talkK = (h.talkK || 0) + ((talking ? 1 : 0) - (h.talkK || 0)) * (1 - Math.exp(-5 * dt));
@@ -386,7 +673,10 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   function update(dt, t) {
     tickPeople(dt);
     tickWalkers(walkers, dt);
+    tickCape(dt, t);
+    phone.tick(dt);
     if (G.state === 'play') bumps.update(dt);
+    if (G.state === 'epilogue') { tickEpilogue(dt); return true; }
     if (G.state === 'cold') {
       const e = performance.now() / 1000 - G.t0;
       let acc = 0, i = 0;
@@ -416,5 +706,6 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     updateWaypoint();
     return false;
   }
-  return { G, update, items, FACE, SKETCH, bumps, walkers, jeepSpot: () => jeepDir.clone() };
+  const afterRender = () => phone.afterRender(renderer, placeName());
+  return { G, update, items, FACE, SKETCH, bumps, walkers, phone, afterRender, startGetaway, startCountdown, abortLaunch, jeepSpot: () => jeepDir.clone() };
 }

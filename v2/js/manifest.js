@@ -33,7 +33,7 @@ export default {
     station:   { at: [-10, -18], r: 7.4, shift: -1.45, stop: 3.5, name: 'Central Station' },  // hall + platform + track
     harbour:   { at: [-20, 10], r: 4.0, name: 'The Harbour' },
     airport:   { at: [30, 92], r: 14, name: 'Airport' },
-    launchpad: { at: [-8, -150], r: 5, name: 'Cape Far Side' },
+    launchpad: { at: [-8, -150], r: 7, stop: 6.2, name: 'Cape Far Side' },   // the finale: pad, gantry, rocket, crates
     overlook:  { at: [49, -40], r: 3.5, name: 'Summit Overlook' },
   },
   // Janelle's projects: buildings around town, each a portfolio piece
