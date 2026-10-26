@@ -139,6 +139,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
   const root = new THREE.Group();            // positioned on the planet each frame
   const squash = new THREE.Group();          // squash & stretch lives here
   root.add(squash);
+  root.userData.noGround = true;
   scene.add(root);
   const bodies = { walk: new THREE.Group(), jeep: buildCar() };
   for (const b of Object.values(bodies)) { squash.add(b); b.visible = false; }

@@ -80,7 +80,19 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
     show($('toast'), false);
     player.st.enabled = app === 'camera';                 // you can walk around to frame a photo
   }
+  // a suggested reply under the thread (the opening's "on it"): tapping it sends it as
+  // your own message, puts the phone away and runs the callback. Closing the phone counts.
+  function sendReply() {
+    const r = S.reply; if (!r) return;
+    S.reply = null;
+    S.msgs.push({ from: 'You', text: r.label, t: clock(), me: true });
+    render();
+    setTimeout(() => { close(); r.cb(); }, 650);
+  }
+  function setReply(label, cb) { S.reply = label ? { label, cb } : null; if (S.open && S.app === 'messages') render(); }
+  function setTyping(on) { S.typing = on; if (S.open && S.app === 'messages') render(); }
   function close() {
+    if (S.reply) { const r = S.reply; S.reply = null; S.open = false; S.app = null; show($('handset'), false); r.cb(); return; }
     S.open = false; S.app = null;
     show($('handset'), false);
     player.st.enabled = true;
@@ -97,8 +109,11 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
       scr.querySelectorAll('.app').forEach(b => b.onclick = () => b.dataset.a === 'case' ? (close(), openNotebook()) : open(b.dataset.a));
     } else if (S.app === 'messages') {
       scr.innerHTML = hdr('Messages') + `<div class="msgs" id="msgs">${S.msgs.map(m =>
-        `<div class="m ${m.from === 'Mum' ? 'mum' : ''}"><b>${esc(m.from)}</b><p>${esc(m.text)}</p><small>${m.t}</small></div>`).join('') || '<p class="empty">no messages</p>'}</div>`;
+        `<div class="m ${m.from === 'Mum' ? 'mum' : ''} ${m.me ? 'me' : ''}"><b>${esc(m.from)}</b><p>${esc(m.text)}</p><small>${m.t}</small></div>`).join('') || '<p class="empty">no messages</p>'}</div>`
+        + (S.typing ? `<div class="typing"><span></span><span></span><span></span></div>` : '')
+        + (S.reply ? `<button class="sk reply" id="phReply">${esc(S.reply.label)}</button>` : '');
       const box = $('msgs'); box.scrollTop = box.scrollHeight;
+      if (S.reply) $('phReply').onclick = () => sendReply();
     } else if (S.app === 'map') {
       scr.innerHTML = hdr('Map') + `<canvas id="mapCv" width="560" height="640"></canvas><div class="legend">tap a place to follow it</div>`;
       drawMap();
@@ -219,5 +234,5 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
     if (e.code === 'Escape') closeAll();
   });
   $('bagBtn').onclick = () => (S.bag ? closeAll() : openBag());
-  return { push, open, close, closeAll, openBag, addItem, tick, afterRender, setCar, state: S, get busy() { return S.bag || (S.open && S.app !== 'camera'); } };
+  return { push, open, close, closeAll, openBag, addItem, tick, afterRender, setCar, setReply, setTyping, state: S, get busy() { return S.bag || (S.open && S.app !== 'camera'); } };
 }

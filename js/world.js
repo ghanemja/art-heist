@@ -181,7 +181,62 @@ export function roadLift(d) {
   }
   return lift;
 }
-export const standAt = (d) => groundAt(d) + roadLift(d);
+// …but the truth is what's DRAWN: forecourts, plazas, roads laid over slopes and
+// bent buildings' floors can sit a few cm above the numbers above. Once the town is
+// built, registerGround() indexes the static meshes; standAt then drops a short ray
+// onto them and stands on the highest upward-facing surface just above the base ground.
+const _ground = { meshes: [], spheres: [] };
+const _rc = new THREE.Raycaster(), _ro = new THREE.Vector3(), _rd = new THREE.Vector3();
+export function registerGround(roots) {
+  _ground.meshes.length = 0; _ground.spheres.length = 0; _standCache.clear();
+  const walk = (o) => {                                   // skip whole subtrees that move (people, cars)
+    if (o.userData.noGround) return;
+    visit(o); for (const c of o.children) walk(c);
+  };
+  const visit = (o) => {
+    if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.userData.isInk || o.userData.noGround) return;
+    if (o.name === 'planet' || o.name === 'sea' || !o.geometry?.attributes?.position) return;
+    if (o.material?.transparent || o.material?.blending === THREE.AdditiveBlending) return;
+    o.updateWorldMatrix(true, false);
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    const sph = o.geometry.boundingSphere.clone().applyMatrix4(o.matrixWorld);
+    if (sph.radius > 60) return;
+    _ground.meshes.push(o); _ground.spheres.push(sph);
+  };
+  for (const root of roots) walk(root);
+}
+const STEP_UP = 0.45;                                   // how far above the base ground a walkable surface may be
+// the ground never moves, so each ~0.2-unit patch of the planet is measured once and cached
+const _standCache = new Map(), CELL = 0.2;
+export function standAt(d) {
+  if (!_ground.meshes.length) return groundAt(d) + roadLift(d);
+  const k = Math.round(d.x * R / CELL) + ',' + Math.round(d.y * R / CELL) + ',' + Math.round(d.z * R / CELL);
+  let v = _standCache.get(k);
+  if (v === undefined) { v = measureStand(d); _standCache.set(k, v); }
+  return v;
+}
+function measureStand(d) {
+  const base = groundAt(d) + roadLift(d);
+  _rd.copy(d).negate(); _ro.copy(d).multiplyScalar(base + STEP_UP + 0.05);
+  const near = [];
+  for (let i = 0; i < _ground.meshes.length; i++) {
+    const s = _ground.spheres[i];
+    if (_rc.ray.set(_ro, _rd), _rc.ray.distanceSqToPoint(s.center) <= s.radius * s.radius) near.push(_ground.meshes[i]);
+  }
+  if (!near.length) return base;
+  _rc.set(_ro, _rd); _rc.near = 0; _rc.far = STEP_UP + 0.15;
+  let best = base;
+  for (const h of _rc.intersectObjects(near, false)) {
+    if (!h.face) continue;
+    const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+    let up = n.dot(d);
+    if (h.object.material?.side === THREE.DoubleSide) up = Math.abs(up);   // ribbons are drawn from both sides
+    if (up < 0.6) continue;                             // walls and undersides don't count
+    const r = h.point.length();
+    if (r > best && r < base + STEP_UP) best = r;
+  }
+  return best;
+}
 export function onRoad(d, pad = 0) {
   for (const rd of ROADS) for (const p of rd.pts) if (arc(d, p) < rd.half + pad) return true;
   return false;

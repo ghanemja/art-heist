@@ -72,7 +72,10 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
   // an ornate gilded frame, empty: a cushion moulding with a raised outer lip,
   // a bead of pearls round the sight edge, a shell-and-boss cartouche on every
   // corner and a pair of scrolls mid-side. Origin at its centre, face to +Z.
-  const ornateFrame = (w, h, parent) => {
+  // style: 'baroque' (gilt: pearls, shell cartouches, scrolls) · 'walnut' (dark wood, a gilt
+  // liner, egg-and-dart round the outer edge) · 'fluted' (Arts & Crafts: ribbed sides, rosette blocks)
+  const WALNUT = S(0x5a3523, { roughness: 0.55 }), SILVERGILT = S(0xd8c48a, { roughness: 0.3, metalness: 0.8 });
+  const ornateFrame = (w, h, parent, style = 'baroque') => {
     const F = new THREE.Group(); parent.add(F);
     const b = Math.min(w, h) * 0.17;
     const ring = (ow, oh, iw, ih) => {
@@ -80,6 +83,45 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
       const hh = new THREE.Path(); hh.moveTo(-iw / 2, -ih / 2); hh.lineTo(-iw / 2, ih / 2); hh.lineTo(iw / 2, ih / 2); hh.lineTo(iw / 2, -ih / 2); hh.closePath();
       s.holes.push(hh); return s;
     };
+    // points spaced along the four sides of a rectangle (half-sizes hx, hy), with each side's angle
+    const alongSides = (hx, hy, step) => {
+      const out = [];
+      for (const [x0, y0, x1, y1] of [[-hx, -hy, hx, -hy], [hx, -hy, hx, hy], [hx, hy, -hx, hy], [-hx, hy, -hx, -hy]]) {
+        const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / step)), ang = Math.atan2(y1 - y0, x1 - x0);
+        for (let k = 1; k < n; k++) out.push([x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, ang, k]);
+      }
+      return out;
+    };
+    if (style === 'walnut') {
+      add(extrude(ring(w, h, w - 2 * b, h - 2 * b), 0.06, 0.035), WALNUT, 0, 0, 0, F);                         // the wood moulding
+      add(extrude(ring(w - 2 * b + 0.07, h - 2 * b + 0.07, w - 2 * b, h - 2 * b), 0.1, 0.01), SILVERGILT, 0, 0, -0.01, F);   // a gilt liner
+      add(extrude(ring(w + 0.04, h + 0.04, w - 0.05, h - 0.05), 0.04, 0.012), WALNUT, 0, 0, -0.03, F);
+      const egg = new THREE.SphereGeometry(1, 10, 8), dart = new THREE.ConeGeometry(0.008, 0.04, 6);
+      for (const [x, y, ang, k] of alongSides(w / 2 - 0.035, h / 2 - 0.035, 0.05)) {                     // egg-and-dart round the edge
+        if (k % 2) { const e = add(egg, SILVERGILT, x, y, 0.085, F); e.scale.set(0.018, 0.012, 0.01); e.rotation.z = ang + Math.PI / 2; }
+        else { const d = add(dart, SILVERGILT, x, y, 0.085, F); d.rotation.set(Math.PI / 2, 0, ang + Math.PI / 2); }
+      }
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                                             // a gilt leaf in each corner
+        const L = add(new THREE.SphereGeometry(1, 12, 8), SILVERGILT, sx * (w / 2 - b * 0.5), sy * (h / 2 - b * 0.5), 0.09, F);
+        L.scale.set(b * 0.32, b * 0.13, b * 0.08); L.rotation.z = Math.atan2(sy, sx);
+      }
+      return F;
+    }
+    if (style === 'fluted') {
+      add(extrude(ring(w, h, w - 2 * b, h - 2 * b), 0.045, 0.02), GOLD, 0, 0, 0, F);                          // a flat gilt band
+      add(extrude(ring(w - 2 * b + 0.04, h - 2 * b + 0.04, w - 2 * b, h - 2 * b), 0.08, 0.006), GOLD, 0, 0, -0.005, F);
+      const rib = new THREE.CylinderGeometry(0.009, 0.009, 1, 6);
+      for (const [x, y, ang] of alongSides(w / 2 - b / 2, h / 2 - b / 2, 0.03)) {                       // flutes across the band
+        const r = add(rib, GOLD, x, y, 0.07, F); r.scale.y = b * 0.62; r.rotation.z = ang + Math.PI / 2;
+      }
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                                             // a square block with a rosette
+        const cx = sx * (w / 2 - b / 2), cy = sy * (h / 2 - b / 2);
+        add(rbox(b * 1.05, b * 1.05, 0.05, 0.012), GOLD, cx, cy, 0.075, F);
+        for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; const p = add(new THREE.SphereGeometry(1, 8, 6), GOLD, cx + Math.cos(a) * b * 0.2, cy + Math.sin(a) * b * 0.2, 0.105, F); p.scale.set(b * 0.14, b * 0.07, 0.012); p.rotation.z = a; }
+        add(new THREE.SphereGeometry(b * 0.11, 10, 8), GOLD, cx, cy, 0.11, F);
+      }
+      return F;
+    }
     add(extrude(ring(w, h, w - 2 * b, h - 2 * b), 0.05, 0.04), GOLD, 0, 0, 0, F);                       // the cushion
     add(extrude(ring(w + 0.05, h + 0.05, w - 0.06, h - 0.06), 0.035, 0.015), GOLD, 0, 0, -0.03, F);     // raised outer lip
     add(extrude(ring(w - 2 * b + 0.05, h - 2 * b + 0.05, w - 2 * b, h - 2 * b), 0.09, 0.008), GOLD, 0, 0, -0.01, F);   // sight-edge bead
@@ -415,9 +457,10 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
         sh.scale.set(s2, s2 * 0.25, s2 * 0.7); sh.rotation.set(k, k * 2.1, 0.3); shardKeep.push(sh);
       }
     }
-    // the grappling hook, caught on the rib over the top edge of the hole
+    // the grappling hook, caught over the rib at the BOTTOM edge of the hole (the
+    // rope hangs from there, so it never runs across the open pane)
     const holeA = PH0 + PHL / 2;
-    const hookAt = onDome(T1 - 0.04, holeA, DOME_R + 0.08);
+    const hookAt = onDome(T2 + 0.02, holeA, DOME_R + 0.08);
     {
       const H = new THREE.Group(); H.position.copy(hookAt);
       H.lookAt(new THREE.Vector3(0, dy, DOME_Z)); H.rotateX(Math.PI / 2);
@@ -435,7 +478,7 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
     {
       const roofAt = (x) => ROOF_Y + PED_H * Math.max(0, 1 - Math.abs(x) / (PED_W / 2)) + 0.06;
       const pts = [hookAt.clone()];
-      for (let k = 1; k <= 6; k++) pts.push(onDome(T1 + (Math.PI / 2 - T1) * k / 6, holeA + 0.08 * k / 6, DOME_R + 0.06));
+      for (let k = 1; k <= 4; k++) pts.push(onDome(T2 + 0.02 + (Math.PI / 2 - T2 - 0.02) * k / 4, holeA + 0.08 * k / 4, DOME_R + 0.06));
       const drumX = Math.sin(holeA + 0.08) * 2.12, drumZ = DOME_Z + Math.cos(holeA + 0.08) * 2.12;
       pts.push(new THREE.Vector3(drumX, DRUM_Y + 0.1, drumZ), new THREE.Vector3(drumX + 0.05, roofAt(drumX) + 0.05, drumZ));
       const zEnd = -8.6;
@@ -554,9 +597,9 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
     add(new THREE.PlaneGeometry(0.98, 0.7), S(0x5a4632, { roughness: 1 }), 0, 1.15, 0.05, easel);
     add(rbox(0.36, 0.16, 0.02, 0.01), S(0xfff6e6), 0, 0.42, 0.14, easel);   // the little wall-card
     // two more of the stolen paintings' frames, carried out and leaned behind it — all empty
-    for (const [x, z, ry, fw, fh] of [[3.05, 0.0, -0.75, 1.0, 0.78], [2.7, -0.62, -0.45, 0.72, 0.95]]) {
+    for (const [x, z, ry, fw, fh, style] of [[3.05, 0.0, -0.75, 1.0, 0.78, 'walnut'], [2.7, -0.62, -0.45, 0.72, 0.95, 'fluted']]) {
       const lean = new THREE.Group(); lean.position.set(x, PZ, z); lean.rotation.set(0, ry, 0); g.add(lean);
-      const f = ornateFrame(fw, fh, lean); f.position.set(0, fh / 2 + 0.02, 0); f.rotation.x = -0.2; f.position.z = -Math.sin(0.2) * fh / 2;
+      const f = ornateFrame(fw, fh, lean, style); f.position.set(0, fh / 2 + 0.02, 0); f.rotation.x = -0.2; f.position.z = -Math.sin(0.2) * fh / 2;
       add(new THREE.PlaneGeometry(fw * 0.66, fh * 0.6), S(0x5a4632, { roughness: 1 }), 0, 0, -0.005, f);
     }
   }

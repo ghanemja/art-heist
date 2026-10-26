@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES } from './world.js';
+import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, registerGround, standAt } from './world.js';
 import { styleTick } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
@@ -39,9 +39,12 @@ const atmosphere = {
   fadeTo(k, secs) { atm.from = atm.k; atm.to = k; atm.t = 0; atm.dur = secs; },
 };
 
+registerGround([scene]);          // everything static drawn so far is walkable ground (people come after)
 const mf = town.museum.frame;
 const player = createPlayer(scene, camera, town.colliders, mf(0.8, 3.4), mf(0, -6));
 const game = createGame({ scene, camera, town, player, atmosphere, renderer });
+registerGround([scene]);          // again, now the case's props (café deck, booth…) are down too
+for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 window.__v2 = { scene, camera, renderer, town, player, game, ROADS, ZONES };
 
 const clock = new THREE.Clock();

@@ -138,6 +138,12 @@
   #screen .msgs { overflow: auto; padding: 8px 10px; flex: 1; }
   #screen .m { background: #fffaf0; border: 2px solid var(--ink); border-radius: 14px 14px 14px 4px; padding: 4px 9px 2px; margin: 7px 0; max-width: 92%; }
   #screen .m.mum { background: #f6d6dc; margin-left: auto; border-radius: 14px 14px 4px 14px; }
+  #screen .m.me { background: #cfe6d8; margin-left: auto; border-radius: 14px 14px 4px 14px; }
+  #screen .typing { display: flex; gap: 4px; padding: 6px 12px 10px; } #screen .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--ink2); animation: tdot 1s infinite; }
+  #screen .typing span:nth-child(2) { animation-delay: .15s; } #screen .typing span:nth-child(3) { animation-delay: .3s; }
+  @keyframes tdot { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+  #screen .reply { margin: 6px 12px 12px auto; font-size: 18px; padding: 4px 18px; background: var(--gold); animation: tpop .35s ease; }
+  @keyframes tpop { from { transform: scale(.8); opacity: 0; } }
   #screen .m b { font-size: 13px; color: var(--ink2); } #screen .m p { margin: 0; font-size: 16px; line-height: 1.25; } #screen .m small { font-size: 11px; color: var(--ink2); }
   #screen canvas { width: 100%; flex: 1; min-height: 0; object-fit: contain; cursor: pointer; }
   #screen .legend { font-size: 13px; text-align: center; color: var(--ink2); padding: 4px; }

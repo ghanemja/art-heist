@@ -52,6 +52,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   settle(parked, jeepSpot, 1.0, 0.02, yawToFace(jeepSpot, jeepFace));
   parked.visible = true;                 // the player's car body starts hidden (you're on foot), and so did its clone
+  parked.userData.noGround = true;
   scene.add(parked);
   let jeepDir = jeepSpot.clone();
 
@@ -103,21 +104,20 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     player.st.camInit = false;
     setTimeout(openPhone, 900);
   }
+  // the opening brief arrives as texts on the critic's own phone: it buzzes, comes up
+  // open on Messages, the editor types, and you answer "on it"
   function openPhone() {
-    const P = $('phone');
-    P.innerHTML = `<div class="hd">Editor · The Chronicle</div>
-      <div class="msg">You're at the museum? Good. All 45 paintings went overnight. The police have nothing.</div>
-      <div class="msg">You know those canvases better than anyone. Find out who — and where they're going.</div>
-      <button class="sk" id="phOk">on it</button>`;
-    show(P);
-    $('phOk').onclick = () => { show(P, false); beginPlay(); };
+    navigator.vibrate?.([60, 80, 60]);
+    phone.open('messages');
+    phone.setTyping(true);
+    setTimeout(() => { phone.setTyping(false); phone.push('Editor', 'You\'re at the museum? Good. All 45 paintings went overnight. The police have nothing.'); phone.setTyping(true); }, 900);
+    setTimeout(() => { phone.setTyping(false); phone.push('Editor', 'You know those canvases better than anyone. Find out who — and where they\'re going.');
+      phone.setReply('on it', beginPlay); }, 2400);
   }
   function beginPlay() {
     G.state = 'play';
     player.st.enabled = true; player.st.playing = true;
     show($('hud')); show($('nbBtn')); show($('bagBtn')); showKeys();
-    phone.push('Editor', 'You\'re at the museum? Good. All 45 paintings went overnight. The police have nothing.', { silent: true });
-    phone.push('Editor', 'You know those canvases better than anyone. Find out who — and where they\'re going.', { silent: true });
     phone.state.unread = 0;
     updateGoal();
   }
@@ -461,7 +461,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       m.visible = false; m.userData.noInk = true; scene.add(m);
       cape.puffs.push({ m, t: 1 + i / 16, seed: i * 1.7 });
     }
-    cape.police = buildCar({ body: 0xf3eee4, police: true }); cape.police.visible = false; scene.add(cape.police);
+    cape.police = buildCar({ body: 0xf3eee4, police: true }); cape.police.visible = false; cape.police.userData.noGround = true; scene.add(cape.police);
   }
   // move a story thing (and its collider and glint) to a spot at the cape
   function relocate(it, x, z, faceX, faceZ) {
