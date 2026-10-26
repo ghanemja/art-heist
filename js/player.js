@@ -417,9 +417,16 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     const camD = M.camD * st.zoom, camH = M.camH * (0.55 + 0.45 * st.zoom);
     // never look through a building: swing to the nearest clear angle,
     // pull in if that fails, and rise over your shoulder as a last resort
+    // COMFORT: the camera never follows the body's small bumps. Its anchor takes her
+    // position across the ground exactly, but her height only through a slow spring
+    // (steps, kerbs, the walk's bob never jolt the view)
+    const rr = root.position.length();
+    if (!st.anchorR || !st.camInit) st.anchorR = rr;            // a cut starts fresh
+    st.anchorR += (rr - st.anchorR) * (1 - Math.exp(-3.5 * dt));
+    const anchor = st.dir.clone().multiplyScalar(st.anchorR);
     const lead = Math.min(1, Math.abs(st.speed) / M.max);
-    const head = root.position.clone().addScaledVector(up, M.look);
-    const camAt = (yaw) => root.position.clone()
+    const head = anchor.clone().addScaledVector(up, M.look);
+    const camAt = (yaw) => anchor.clone()
       .addScaledVector(st.camFwd.clone().applyAxisAngle(up, yaw), -camD * (1 + st.camPitch * 0.25))
       .addScaledVector(up, camH + st.camPitch * 4.5 * st.zoom);
     const near = colliders.filter(c => c.r >= 0.5 && arc(st.dir, c.dir) < c.r + camD + 2);
@@ -438,16 +445,24 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // still blocked: come in only so far, and rise over the obstacle instead —
     // diving in close leaves you staring into the car's cockpit or the back of your head
     const want = camAt(0);
-    const f = reach(want);
-    if (f < 1) {
+    // the blocked-view pull-in eases (the check works in 10% steps: snapping to them popped)
+    const f0 = reach(want);
+    if (st.reachS == null || !st.camInit) st.reachS = f0;
+    st.reachS += (f0 - st.reachS) * (1 - Math.exp(-(f0 < st.reachS ? 6 : 2.5) * dt));
+    const f = st.reachS;
+    if (f < 0.999) {
       const keep = Math.max(f, st.mode === 'jeep' ? 0.6 : 0.4);
       want.lerpVectors(head, want, keep).addScaledVector(up, (1 - f) * (st.mode === 'jeep' ? 4.5 : 2.4));
     }
-    const look = head.clone().addScaledVector(st.heading, 1.6 * lead);
+    // look a little ahead of where you're going — the lead itself on a slow spring, so a
+    // quick turn doesn't whip the view round
+    if (!st.leadV) st.leadV = new THREE.Vector3();
+    st.leadV.lerp(st.heading.clone().multiplyScalar((st.mode === 'jeep' ? 1.6 : 0.9) * lead), 1 - Math.exp(-2.5 * dt));
+    const look = head.clone().add(st.leadV);
     if (!st.camInit) { st.camPos.copy(want); st.camLook.copy(look); st.camInit = true; }
     const pullIn = want.distanceTo(head) < st.camPos.distanceTo(head) - 0.3;
-    st.camPos.lerp(want, 1 - Math.exp(-(pullIn ? 10 : 5) * dt));
-    st.camLook.lerp(look, 1 - Math.exp(-8 * dt));
+    st.camPos.lerp(want, 1 - Math.exp(-(pullIn ? 6 : 4) * dt));
+    st.camLook.lerp(look, 1 - Math.exp(-5 * dt));
     // keep the eye above ground
     const cr = st.camPos.length(), cg = groundAt(st.camPos.clone().normalize()) + 0.8;
     if (cr < cg) st.camPos.setLength(cg);
