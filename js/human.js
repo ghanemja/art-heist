@@ -393,7 +393,9 @@ function fixColors(root) {
       const armShare = (y, az) => {
         const zArm = y > 1.2 ? 1.12 + (y - 1.2) / 1.35 * (0.8 - 1.12) : 1.12 + Math.min(1, (1.2 - y) / 1.3) * 0.16;   // shoulder → elbow → wrist
         const zIn = zArm - (y > 1.2 ? 0.38 : 0.3 + 0.08 * THREE.MathUtils.clamp((y + 0.1) / 1.3, 0, 1));
-        return ss2(zIn - 0.12, zIn + 0.02, az);
+        // the body's cloth stays wholly with the body; only the sleeve's own inner wall blends
+        // (a blend reaching onto her side pulled the sweater out wide with every arm swing)
+        return ss2(zIn + 0.01, zIn + 0.11, az);
       };
       if (part === 'sweater') {
         subdivide(G, 0.22);
