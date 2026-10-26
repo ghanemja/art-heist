@@ -324,7 +324,7 @@ function fixColors(root) {
   }
   // JEANS: the hands — skin below the cuff hem, sweater above it (the wrists reach up
   // inside the cuff and poked out past the sleeve's side)
-  const jn = mesh.jeans, HEM = -0.47;              // the sleeve's cuff ends at ≈-0.49: below it, all hand
+  const jn = mesh.jeans, HEM = -0.72;              // the wrist stays sleeve-wide down to ≈-0.7 (measured), then narrows into the hand: grey above, skin below
   const handBones = new Set(); jn.skeleton.bones.forEach((b, i) => { if (/hand/.test(b.name)) handBones.add(i); });
   paintVerts(jn, (set) => {
     const g = jn.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw2 = g.attributes.skinWeight;
