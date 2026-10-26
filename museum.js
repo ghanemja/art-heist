@@ -330,13 +330,20 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
   const banners = [['art_cows_in_storm.jpg', 'COWS IN STORM'], ['art_IMG_5262.jpg', 'OPENING NIGHT']];
   banners.forEach(([fn, title], i) => {
     const s = i ? 1 : -1;
-    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 576;
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 1152;
     const c = cv.getContext('2d');
+    c.scale(2, 2);                                     // drawn in 256×576 units, at double resolution
+    // every line of lettering fits inside the banner's margins (shrinks to fit, never runs off the edge)
+    const fitText = (txt, y, weight, size, family = 'Georgia, serif', maxW = 216) => {
+      let px = size; c.font = `${weight} ${px}px ${family}`;
+      while (c.measureText(txt).width > maxW && px > 8) { px -= 1; c.font = `${weight} ${px}px ${family}`; }
+      c.fillText(txt, 128, y);
+    };
     const paint = (img) => {
-      c.fillStyle = '#7a1f2b'; c.fillRect(0, 0, 256, 576);
+      c.setTransform(2, 0, 0, 2, 0, 0); c.fillStyle = '#7a1f2b'; c.fillRect(0, 0, 256, 576);
       c.fillStyle = '#e3b44c'; c.fillRect(14, 14, 228, 4); c.fillRect(14, 558, 228, 4);
-      c.fillStyle = '#fff4e0'; c.font = '600 22px Georgia, serif'; c.textAlign = 'center';
-      c.fillText('THE DOWNTOWN MUSEUM', 128, 50);
+      c.fillStyle = '#fff4e0'; c.textAlign = 'center';
+      fitText('THE DOWNTOWN MUSEUM', 50, '600', 22);
       // the painting in a painted gilt frame: gradient bands, a pearl bead, corner bosses
       const gilt = (x, y, w2, h2) => {
         const F = 18;
@@ -356,11 +363,9 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
         gilt(128 - bw / 2, 92, bw, bh);
         c.drawImage(img, 128 - bw / 2, 92, bw, bh);
       } else { gilt(34, 92, 188, 280); c.fillStyle = '#5a1620'; c.fillRect(34, 92, 188, 280); }
-      c.fillStyle = '#fff4e0'; c.font = '700 30px Georgia, serif';
-      c.fillText(title, 128, 440);
-      c.font = 'italic 20px Georgia, serif'; c.fillStyle = '#f2d39a';
-      c.fillText('45 acrylics · one night only', 128, 478);
-      c.font = '600 18px Georgia, serif'; c.fillText('TONIGHT', 128, 530);
+      c.fillStyle = '#fff4e0'; fitText(title, 440, '700', 30);
+      c.fillStyle = '#f2d39a'; fitText('45 acrylics · one night only', 478, 'italic', 20);
+      fitText('TONIGHT', 530, '600', 18);
     };
     paint(null);
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
