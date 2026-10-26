@@ -136,6 +136,18 @@ function fixColors(root) {
   }
   // a catchlight for each eye, placed on the head bone per instance (see makeHuman)
   root.userData.eyes = headPieces.filter(isEye).map(p => new THREE.Vector3(p.max.x + 0.012, p.min.y + (p.max.y - p.min.y) * 0.68, (p.min.z + p.max.z) / 2 + 0.04));
+  // a chin line: a soft curve under the mouth, traced onto the face's surface (found by
+  // casting rays at the face from the front), drawn in ink on the head bone (see makeHuman)
+  {
+    const fm = new THREE.Mesh(sk.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), rc = new THREE.Raycaster(), pts = [];
+    for (let k = -6; k <= 6; k++) {
+      const z = k / 6 * 0.1, y = 2.85 + 2.6 * z * z;            // a short, rounded U under the lower lip
+      rc.set(new THREE.Vector3(2, y, z), new THREE.Vector3(-1, 0, 0));
+      const h = rc.intersectObject(fm, false).find(h => face.verts.includes(h.face.a));
+      if (h) pts.push(h.point.clone().add(new THREE.Vector3(0.012, 0, 0)));
+    }
+    if (pts.length > 4) root.userData.chinLine = pts;
+  }
   paintVerts(sk, (set) => {
     for (const p of skP) {
       if (p === face) {                      // the face piece is the whole skull: only its front is face
@@ -383,6 +395,25 @@ export function makeHuman(glb, look = {}) {
       tube.applyMatrix4(N.m);
       const knitRoll = paint(new THREE.Color(col.color).multiplyScalar(0.92).getHex()); const roll = new THREE.Mesh(tube, knitRoll);
       roll.userData.part = 'collar'; N.bone.add(roll);
+    }
+  }
+  // the chin line, riding the head bone, in the same ink as her mouth
+  const chin = glb.scene.userData.chinLine;
+  if (chin) {
+    let skinM = null; rig.traverse(o => { if (o.isSkinnedMesh && o.userData.part === 'skin') skinM = o; });
+    const hi = skinM?.skeleton.bones.findIndex(b => b.name.replace(/\./g, '') === 'head');
+    if (skinM && hi >= 0) {
+      const toBone = skinM.skeleton.boneInverses[hi].clone().multiply(skinM.bindMatrix);
+      const curve = new THREE.CatmullRomCurve3(chin);
+      const g = new THREE.TubeGeometry(curve, 24, 0.008, 5);
+      // taper the stroke to fine ends, like a pen line
+      const P = g.attributes.position, c = new THREE.Vector3();
+      for (let i = 0; i < P.count; i++) { const t = Math.floor(i / 6) / 24; curve.getPointAt(Math.min(1, t), c); const w = 0.35 + 0.65 * Math.sin(Math.PI * t);
+        P.setXYZ(i, c.x + (P.getX(i) - c.x) * w, c.y + (P.getY(i) - c.y) * w, c.z + (P.getZ(i) - c.z) * w); }
+      g.applyMatrix4(toBone);
+      const line = new THREE.Mesh(g, paint(0xa8705a, { hatch: 0 }));     // a shade of her skin, softer than the mouth
+      line.userData.noInk = true;
+      skinM.skeleton.bones[hi].add(line);
     }
   }
   // the eyes' catchlights: little white dots, riding the head bone
