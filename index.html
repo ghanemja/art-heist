@@ -144,6 +144,35 @@
   @keyframes tdot { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
   #screen .reply { margin: 6px 12px 12px auto; font-size: 18px; padding: 4px 18px; background: var(--gold); animation: tpop .35s ease; }
   @keyframes tpop { from { transform: scale(.8); opacity: 0; } }
+  /* the chat: bubbles with tails, a composer, suggested replies, a keypad */
+  #screen .sbar.chat { padding: 4px 8px; } #screen .contact { display: flex; flex-direction: column; align-items: center; line-height: 1; }
+  #screen .contact .av { width: 26px; height: 26px; border-radius: 50%; background: #93abc0; color: #fff; display: grid; place-items: center; font-size: 15px; border: 2px solid var(--ink); }
+  #screen .contact b { font-size: 13px; margin-top: 2px; }
+  #screen .msgs.chat { padding: 6px 10px 4px; display: flex; flex-direction: column; }
+  #screen .who { font-size: 12px; color: var(--ink2); margin: 6px 0 1px 10px; }
+  #screen .b { position: relative; max-width: 78%; padding: 6px 11px; margin: 2px 0; font-size: 15px; line-height: 1.25; border-radius: 17px; border: 2px solid var(--ink); animation: tpop .25s ease; }
+  #screen .b.them { align-self: flex-start; background: #fffaf0; }
+  #screen .b.me { align-self: flex-end; background: #7fb3a8; color: #10221e; }
+  #screen .b.mum { background: #f6d6dc; }
+  #screen .b.them.tail { border-bottom-left-radius: 4px; } #screen .b.me.tail { border-bottom-right-radius: 4px; }
+  #screen .b.them.tail::after { content: ''; position: absolute; left: -7px; bottom: -2px; width: 10px; height: 10px; background: inherit; border-left: 2px solid var(--ink); border-bottom: 2px solid var(--ink); border-bottom-left-radius: 10px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); transform: skewX(20deg); }
+  #screen .b.me.tail::after { content: ''; position: absolute; right: -7px; bottom: -2px; width: 10px; height: 10px; background: inherit; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); border-bottom-right-radius: 10px; transform: skewX(-20deg); }
+  #screen .t { font-size: 10px; color: var(--ink2); margin: 1px 6px 4px; } #screen .t.me { align-self: flex-end; }
+  #screen .b.typing { display: flex; gap: 4px; padding: 9px 12px; }
+  #screen .b.typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--ink2); animation: tdot 1s infinite; }
+  #screen .b.typing span:nth-child(2) { animation-delay: .15s; } #screen .b.typing span:nth-child(3) { animation-delay: .3s; }
+  #screen .sugg { display: flex; gap: 6px; padding: 6px 8px 2px; overflow-x: auto; }
+  #screen .chip { font: inherit; font-size: 14px; white-space: nowrap; padding: 4px 11px; border-radius: 16px; border: 2px solid var(--ink); background: #fff3c9; cursor: pointer; color: var(--ink); animation: tpop .3s ease; }
+  #screen .chip:hover { background: var(--gold); transform: translateY(-1px); }
+  #screen .composer { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 2px dashed rgba(42,34,48,.2); }
+  #screen .field { flex: 1; border: 2px solid rgba(42,34,48,.45); border-radius: 16px; padding: 3px 10px; font-size: 14px; color: rgba(42,34,48,.4); min-height: 20px; }
+  #screen .field.on { color: var(--ink); border-color: var(--ink); }
+  #screen .send { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--ink); background: #7fb3a8; font: inherit; font-weight: 700; cursor: pointer; padding: 0; }
+  #screen .kb { background: #d9cfba; padding: 5px 3px 7px; display: flex; flex-direction: column; gap: 5px; }
+  #screen .kb .row { display: flex; justify-content: center; gap: 3px; }
+  #screen .kb .k { flex: 0 0 8.4%; text-align: center; background: #fffaf0; border-radius: 5px; box-shadow: 0 2px 0 rgba(42,34,48,.45); font-size: 13px; padding: 5px 0 4px; transition: background .08s, transform .08s; }
+  #screen .kb .k.wide { flex-basis: 13%; font-size: 10px; background: #bfb39b; } #screen .kb .k.space { flex: 0 0 48%; font-size: 11px; color: var(--ink2); }
+  #screen .kb .k.hit { background: var(--gold); transform: translateY(1px) scale(1.12); box-shadow: none; }
   #screen .m b { font-size: 13px; color: var(--ink2); } #screen .m p { margin: 0; font-size: 16px; line-height: 1.25; } #screen .m small { font-size: 11px; color: var(--ink2); }
   #screen canvas { width: 100%; flex: 1; min-height: 0; object-fit: contain; cursor: pointer; }
   #screen .legend { font-size: 13px; text-align: center; color: var(--ink2); padding: 4px; }
@@ -211,6 +240,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=34"></script>
+<script type="module" src="./js/main.js?cb=35"></script>
 </body>
 </html>

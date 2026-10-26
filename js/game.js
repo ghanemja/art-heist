@@ -112,7 +112,16 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     phone.setTyping(true);
     setTimeout(() => { phone.setTyping(false); phone.push('Editor', 'You\'re at the museum? Good. All 45 paintings went overnight. The police have nothing.'); phone.setTyping(true); }, 900);
     setTimeout(() => { phone.setTyping(false); phone.push('Editor', 'You know those canvases better than anyone. Find out who — and where they\'re going.');
-      phone.setReply('on it', beginPlay); }, 2400);
+      // three ways to answer; the editor answers back, then you're off
+      const BACK = ['Good. Start with Director Vivi — she\'s on the museum steps.',
+        'That\'s why I called you. Vivi\'s on the steps — start there.',
+        'You\'re the one who reviewed every one of them. Vivi\'s waiting on the steps.'];
+      phone.setReply(['on it', 'heading in now', 'why me??'], (i) => {
+        if (!phone.state.open) { beginPlay(); return; }
+        phone.setTyping(true);
+        setTimeout(() => { phone.setTyping(false); phone.push('Editor', BACK[i] ?? BACK[0]); }, 1000);
+        setTimeout(() => { phone.close(); beginPlay(); }, 3400);         // time to read the answer
+      }); }, 2400);
   }
   function beginPlay() {
     G.state = 'play';
