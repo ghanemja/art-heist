@@ -80,19 +80,38 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
     show($('toast'), false);
     player.st.enabled = app === 'camera';                 // you can walk around to frame a photo
   }
-  // a suggested reply under the thread (the opening's "on it"): tapping it sends it as
-  // your own message, puts the phone away and runs the callback. Closing the phone counts.
-  function sendReply() {
-    const r = S.reply; if (!r) return;
-    S.reply = null;
-    S.msgs.push({ from: 'You', text: r.label, t: clock(), me: true });
-    render();
-    setTimeout(() => { close(); r.cb(); }, 650);
+  // suggested replies above the keyboard (the opening's "on it"…): tapping one types it
+  // out on the keypad, key by key, then sends it as your own bubble; the callback gets
+  // the index of the reply you chose. Closing the phone picks the first.
+  function sendReply(i = 0) {
+    const r = S.reply; if (!r || S.composing != null) return;
+    const text = r.options[i];
+    S.composing = '';
+    let k = 0;
+    const step = () => {
+      if (!S.open || S.app !== 'messages') return;
+      if (k < text.length) {
+        S.composing = text.slice(0, ++k);
+        const field = $('phField'); if (field) { field.textContent = S.composing; field.classList.add('on'); }
+        const ch = text[k - 1].toLowerCase();
+        document.querySelectorAll('#screen .kb [data-k]').forEach(b => b.classList.toggle('hit', b.dataset.k === (ch === ' ' ? 'space' : ch)));
+        setTimeout(step, 55 + Math.random() * 45);
+      } else {
+        S.reply = null; S.composing = null;
+        S.msgs.push({ from: 'You', text, t: clock(), me: true });
+        render();
+        setTimeout(() => r.cb(i), 450);
+      }
+    };
+    step();
   }
-  function setReply(label, cb) { S.reply = label ? { label, cb } : null; if (S.open && S.app === 'messages') render(); }
+  function setReply(options, cb) {
+    S.reply = options ? { options: [].concat(options), cb } : null; S.composing = null;
+    if (S.open && S.app === 'messages') render();
+  }
   function setTyping(on) { S.typing = on; if (S.open && S.app === 'messages') render(); }
   function close() {
-    if (S.reply) { const r = S.reply; S.reply = null; S.open = false; S.app = null; show($('handset'), false); r.cb(); return; }
+    if (S.reply) { const r = S.reply; S.reply = null; S.composing = null; S.open = false; S.app = null; show($('handset'), false); r.cb(0); return; }
     S.open = false; S.app = null;
     show($('handset'), false);
     player.st.enabled = true;
@@ -108,12 +127,24 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
         <div class="hint">P closes the phone</div>`;
       scr.querySelectorAll('.app').forEach(b => b.onclick = () => b.dataset.a === 'case' ? (close(), openNotebook()) : open(b.dataset.a));
     } else if (S.app === 'messages') {
-      scr.innerHTML = hdr('Messages') + `<div class="msgs" id="msgs">${S.msgs.map(m =>
-        `<div class="m ${m.from === 'Mum' ? 'mum' : ''} ${m.me ? 'me' : ''}"><b>${esc(m.from)}</b><p>${esc(m.text)}</p><small>${m.t}</small></div>`).join('') || '<p class="empty">no messages</p>'}</div>`
-        + (S.typing ? `<div class="typing"><span></span><span></span><span></span></div>` : '')
-        + (S.reply ? `<button class="sk reply" id="phReply">${esc(S.reply.label)}</button>` : '');
+      // a chat thread: bubbles with tails (theirs left, yours right), the sender's name
+      // once per run, a time under the last of a run; a composer and keypad at the bottom
+      const who = S.msgs.filter(m => !m.me).slice(-1)[0]?.from || 'Messages';
+      const runs = S.msgs.map((m, i) => {
+        const prev = S.msgs[i - 1], next = S.msgs[i + 1];
+        const first = !prev || prev.from !== m.from, last = !next || next.from !== m.from;
+        return `${first && !m.me ? `<div class="who">${esc(m.from)}</div>` : ''}<div class="b ${m.me ? 'me' : 'them'} ${m.from === 'Mum' ? 'mum' : ''} ${last ? 'tail' : ''}">${esc(m.text)}</div>${last ? `<div class="t ${m.me ? 'me' : ''}">${m.me ? 'Delivered · ' : ''}${m.t}</div>` : ''}`;
+      }).join('');
+      const keys = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+      scr.innerHTML = `<div class="sbar chat"><button class="back" id="phBack">‹</button><div class="contact"><span class="av">${esc(who[0])}</span><b>${esc(who)}</b></div><span>${clock()}</span></div>
+        <div class="msgs chat" id="msgs">${runs || '<p class="empty">no messages</p>'}${S.typing ? `<div class="b them typing"><span></span><span></span><span></span></div>` : ''}</div>
+        ${S.reply ? `<div class="sugg">${S.reply.options.map((o, i) => `<button class="chip" data-i="${i}">${esc(o)}</button>`).join('')}</div>` : ''}
+        <div class="composer"><div class="field ${S.composing ? 'on' : ''}" id="phField">${S.composing ? esc(S.composing) : 'iMessage'}</div><button class="send" id="phSend" aria-label="send">↑</button></div>
+        ${S.reply ? `<div class="kb">${keys.map((row, r) => `<div class="row">${r === 2 ? '<span class="k wide">⇧</span>' : ''}${[...row].map(c => `<span class="k" data-k="${c}">${c}</span>`).join('')}${r === 2 ? '<span class="k wide">⌫</span>' : ''}</div>`).join('')}
+          <div class="row"><span class="k wide">123</span><span class="k space" data-k="space">space</span><span class="k wide">return</span></div></div>` : ''}`;
       const box = $('msgs'); box.scrollTop = box.scrollHeight;
-      if (S.reply) $('phReply').onclick = () => sendReply();
+      scr.querySelectorAll('.sugg .chip').forEach(b => b.onclick = () => sendReply(+b.dataset.i));
+      const send = $('phSend'); if (send && S.reply) send.onclick = () => sendReply(0);
     } else if (S.app === 'map') {
       scr.innerHTML = hdr('Map') + `<canvas id="mapCv" width="560" height="640"></canvas><div class="legend">tap a place to follow it</div>`;
       drawMap();

@@ -1,4 +1,4 @@
-# shelfie-jg — a tiny planet
+# art-heist — a tiny planet (live at https://art-heist.netlify.app)
 
 A browser 3D scene (three.js r160, plain ES modules, no build step). Deploy is manual Netlify.
 
