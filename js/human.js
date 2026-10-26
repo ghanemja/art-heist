@@ -293,6 +293,79 @@ function fixColors(root) {
       if (w > 0.5) set(v, P.getY(v) > HEM ? knit : skin);
     }
   });
+  // SKIN WEIGHTS: the model's are smeared — the upper-arm bones pull sweater all the way
+  // across her chest and down to the hem (an arm swing drags the hem out like a bat wing),
+  // and the thigh bones pull on the cuffs and hands. Below the shoulder the arms sit apart
+  // from the body (torso surface |z| < 0.5, sleeves, cuffs and hands |z| > 0.65), so re-skin
+  // by place: arm vertices down their own arm chain, the sweater's body up the spine.
+  // (After the hand painting above, which reads the old hand weights.)
+  {
+    const ramp = (y, pts) => {                       // [[y, bone], …] high → low: a weight per bone
+      if (y >= pts[0][0]) return { [pts[0][1]]: 1 };
+      for (let i = 1; i < pts.length; i++) if (y >= pts[i][0]) {
+        const t = (y - pts[i][0]) / (pts[i - 1][0] - pts[i][0]), r = {};
+        r[pts[i - 1][1]] = t; r[pts[i][1]] = (r[pts[i][1]] || 0) + 1 - t;
+        return r;
+      }
+      return { [pts[pts.length - 1][1]]: 1 };
+    };
+    const ss2 = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+    const armRamp = (y, L) => ramp(y, [[1.6, 'upperarm' + L], [0.8, 'lowerarm' + L], [0.1, 'lowerarm' + L], [-0.25, 'hand' + L]]);
+    for (const part of ['sweater', 'jeans', 'skin']) {
+      const o = mesh[part]; if (!o) continue;
+      const G = o.geometry; let P = G.attributes.position, SI = G.attributes.skinIndex, SW = G.attributes.skinWeight;
+      const ix = {}; o.skeleton.bones.forEach((b, i) => { ix[b.name.replace(/\./g, '')] = i; });
+      const armBone = new Set(o.skeleton.bones.map((b, i) => /arm|hand/.test(b.name) ? i : -1));
+      // the jeans hold the hands, and their thighs are as wide as the hands hang: tell them
+      // apart by the model's own arm weight. The mesh welds each hand to the back of the hip;
+      // the triangles of that weld keep the hip closed, on their own thigh-skinned copies of
+      // the hand-side corners, so the hand comes free and leaves no hole behind it.
+      let isHand = null;
+      if (part === 'jeans') {
+        const n0 = P.count; isHand = new Uint8Array(n0);
+        for (let v = 0; v < n0; v++) { let a = 0; for (let j = 0; j < 4; j++) if (armBone.has(SI.getComponent(v, j))) a += SW.getComponent(v, j); isHand[v] = a >= 0.5; }
+        const I = G.index.array, dup = new Map(), add = [];
+        for (let t = 0; t < I.length; t += 3) {
+          const c = [I[t], I[t + 1], I[t + 2]], n = isHand[c[0]] + isHand[c[1]] + isHand[c[2]];
+          if (n === 0 || n === 3) continue;
+          const thigh = c.find(v => !isHand[v]);
+          for (let k = 0; k < 3; k++) if (isHand[c[k]]) {
+            if (!dup.has(c[k])) { dup.set(c[k], n0 + add.length); add.push([c[k], thigh]); }
+            I[t + k] = dup.get(c[k]);
+          }
+        }
+        for (const [name, A] of Object.entries(G.attributes)) {
+          const out = new A.array.constructor((n0 + add.length) * A.itemSize); out.set(A.array);
+          add.forEach(([h, th], i) => { const from = /^(position|normal)$/.test(name) ? h : th; for (let e = 0; e < A.itemSize; e++) out[(n0 + i) * A.itemSize + e] = A.array[from * A.itemSize + e]; });
+          G.setAttribute(name, new THREE.BufferAttribute(out, A.itemSize, A.normalized));
+        }
+        G.index.needsUpdate = true;
+        const h2 = new Uint8Array(n0 + add.length); h2.set(isHand); isHand = h2;
+        P = G.attributes.position; SI = G.attributes.skinIndex; SW = G.attributes.skinWeight;
+      }
+      for (let v = 0; v < P.count; v++) {
+        const y = P.getY(v), z = P.getZ(v), az = Math.abs(z), L = z < 0 ? 'L' : 'R';
+        if (y > 2.5 || y < -1.15) continue;
+        let want = null;
+        if (isHand) {
+          if (isHand[v]) want = armRamp(y, L);
+          else {                                       // a thigh: drop whatever arm pull it had
+            let rest = 0; for (let j = 0; j < 4; j++) if (armBone.has(SI.getComponent(v, j))) SW.setComponent(v, j, 0); else rest += SW.getComponent(v, j);
+            if (rest > 0) for (let j = 0; j < 4; j++) SW.setComponent(v, j, SW.getComponent(v, j) / rest);
+            continue;
+          }
+        } else if (az > 0.6) want = armRamp(y, L);
+        else if (part === 'sweater' && az < 0.58 && y > -0.6) want = ramp(y, [[1.6, 'spine2'], [1.1, 'spine1'], [0.5, 'spine1'], [-0.1, 'hips']]);
+        if (!want) continue;
+        const k = 1 - ss2(2.2, 2.5, y);                // into the shoulder: hand back to the model's own blend
+        const w = {}; for (let j = 0; j < 4; j++) { const b = SI.getComponent(v, j), q = SW.getComponent(v, j); if (q) w[b] = (w[b] || 0) + q * (1 - k); }
+        for (const [n, q] of Object.entries(want)) if (ix[n] != null && q) w[ix[n]] = (w[ix[n]] || 0) + q * k;
+        const top = Object.entries(w).sort((a, b) => b[1] - a[1]).slice(0, 4), sum = top.reduce((s, e) => s + e[1], 0) || 1;
+        for (let j = 0; j < 4; j++) { SI.setComponent(v, j, top[j] ? +top[j][0] : 0); SW.setComponent(v, j, top[j] ? top[j][1] / sum : 0); }
+      }
+      SI.needsUpdate = SW.needsUpdate = true;
+    }
+  }
 }
 
 // the critic keeps her own colours; everyone else is their own person (folk.js)
@@ -381,12 +454,28 @@ export function makeHuman(glb, look = {}) {
         lace.geometry.applyMatrix4(B.m); lace.userData.noInk = true; B.bone.add(lace);
       }
     }
-    // NOSE: her face is nearly flat — a nose drawn from its side silhouette, out along +X
+    // NOSE: her face is nearly flat — a small, soft snub drawn from its side silhouette,
+    // out along +X, un-inked (an outlined long nose reads as a beak on her flat face)
     const H = toBone('head');
     if (H) {
-      const g = noseGeo('straight', 5.2).rotateY(Math.PI / 2);   // silhouette out of the face (+Z) → her forward (+X)
-      g.translate(0.46, 3.19, 0.0).applyMatrix4(H.m);
+      const g = noseGeo('snub', 3.3).rotateY(Math.PI / 2);       // silhouette out of the face (+Z) → her forward (+X)
+      g.translate(0.44, 3.12, 0.0).applyMatrix4(H.m);
       const n = new THREE.Mesh(g, paint(CRITIC_SKIN)); n.userData.part = 'nose'; H.bone.add(n);
+      // SKULL: the model's head is a face mask with hair locks hung round it — no skull
+      // behind them, so you see straight through her hair under the beret. Fill it.
+      const sk = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16).scale(0.46, 0.56, 0.7).translate(-0.22, 3.45, 0).applyMatrix4(H.m),
+        paint(glb.scene.userData.hairCol ?? 0xc2a889, { soft: true, hatch: 0.3 }));
+      sk.userData.part = 'skull'; sk.userData.noInk = true; H.bone.add(sk);
+      // JAW: the face plate stops flat at the collar. A rounded jaw under it, narrowing to a
+      // chin, inked where it meets the collar (its top half sits behind the face)
+      const jg = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).scale(0.3, 0.3, 0.34).translate(0.13, 3.06, 0);
+      const jp = jg.attributes.position;
+      for (let i = 0; i < jp.count; i++) {                         // narrow toward the bottom: a chin, not a bowl
+        const t = THREE.MathUtils.clamp((3.06 - jp.getY(i)) / 0.3, 0, 1);
+        jp.setZ(i, jp.getZ(i) * (1 - 0.45 * t * t)); jp.setX(i, jp.getX(i) + 0.16 * t);   // …and the chin forward, over the collar
+      }
+      jg.computeVertexNormals(); jg.applyMatrix4(H.m);
+      const jaw = new THREE.Mesh(jg, paint(CRITIC_SKIN)); jaw.userData.part = 'jaw'; H.bone.add(jaw);
     }
     // NECKLINE: a soft rolled edge round the turtleneck's top, so the collar reads as a collar
     const col = glb.scene.userData.collar, N = toBone('spine2') || toBone('neck');
@@ -499,8 +588,11 @@ export function pose(inst, dt, k, { talk = 0, run = 0 } = {}) {
   turn(inst, 'upperarmR', side, arm * s);
   turn(inst, 'lowerarmL', side, 0.22 + 0.25 * k + 0.1 * run);
   turn(inst, 'lowerarmR', side, 0.22 + 0.25 * k + 0.1 * run);
-  turn(inst, 'upperarmL', fwd, -0.22);              // arms a little off her sides, so the outline
-  turn(inst, 'upperarmR', fwd, 0.22);               // can draw between arm and body
+  // arms a little off her sides, so the outline can draw between arm and body. (Her left
+  // arm is at -Z: about +X a POSITIVE turn lifts it outward — the other sign folds both
+  // hands together in front of her and squeezes the sweater; see sit() for the same signs.)
+  turn(inst, 'upperarmL', fwd, 0.09);
+  turn(inst, 'upperarmR', fwd, -0.09);
   // the body: hips twist with the stride, shoulders against them; a lean when running
   turn(inst, 'hips', up, 0.09 * s * k);
   turn(inst, 'spine2', up, -0.12 * s * k);
@@ -549,5 +641,5 @@ export function sit(inst) {
   for (const n of ['lowerlegL', 'lowerlegR']) turn(inst, n, side, -1.35);
   for (const n of ['upperarmL', 'upperarmR']) turn(inst, n, side, 0.75);
   for (const n of ['lowerarmL', 'lowerarmR']) turn(inst, n, side, 0.6);
-  turn(inst, 'upperarmL', fwd, 0.12); turn(inst, 'upperarmR', fwd, -0.12);
+  turn(inst, 'upperarmL', fwd, 0.09); turn(inst, 'upperarmR', fwd, -0.09);
 }
