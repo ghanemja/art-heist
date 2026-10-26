@@ -232,20 +232,52 @@ export function buildCase(scene, W) {
 const _glints = {};
 function glintTex(kind) {
   if (_glints[kind]) return _glints[kind];
-  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  // drawn like the world: loose, thin, double-traced ink over a paper-and-gouache fill —
+  // never a crisp vector icon. Big canvas so it stays soft-edged, not blurry, up close.
+  const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
   const c = cv.getContext('2d');
-  c.strokeStyle = '#2a2230'; c.lineWidth = 4; c.lineCap = 'round';
-  if (kind === 'person') {             // a little speech scribble
-    c.fillStyle = '#fffaf0'; c.beginPath(); c.ellipse(32, 28, 22, 16, 0, 0, Math.PI * 2); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(24, 42); c.lineTo(18, 54); c.lineTo(32, 43); c.stroke();
-    c.fillStyle = '#2a2230'; for (const x of [22, 32, 42]) { c.beginPath(); c.arc(x, 28, 3, 0, 7); c.fill(); }
-  } else {                              // a drawn sparkle
-    c.fillStyle = '#ffe9a0';
-    c.beginPath();
-    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, r = i % 2 ? 9 : 24; c.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r); }
-    c.closePath(); c.fill(); c.stroke();
+  let seed = kind === 'person' ? 11 : 29;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const wob = (k = 1) => (rnd() - 0.5) * 1.6 * k;
+  // a shape outline as points (closed), traced as ink twice, slightly off each time
+  const ink = (pts, w, a, closed = true) => {
+    c.strokeStyle = `rgba(42,34,48,${a})`; c.lineWidth = w; c.lineCap = c.lineJoin = 'round';
+    const P = pts.map(([x, y]) => [x + wob(), y + wob()]); if (closed) P.push(P[0], P[1]);
+    c.beginPath(); c.moveTo((P[0][0] + P[1][0]) / 2, (P[0][1] + P[1][1]) / 2);
+    for (let i = 1; i < P.length - 1; i++) c.quadraticCurveTo(P[i][0], P[i][1], (P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2);
+    c.stroke();
+  };
+  const fill = (pts, col) => { c.fillStyle = col; c.beginPath(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.fill(); };
+  const grain = (pts) => {                       // paper tooth + a soft wash darker to one side
+    c.save(); c.beginPath(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.clip();
+    const g = c.createLinearGradient(40, 40, 220, 220); g.addColorStop(0, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(120,96,110,0.18)');
+    c.fillStyle = g; c.fillRect(0, 0, N, N);
+    for (let i = 0; i < 900; i++) { c.fillStyle = `rgba(90,70,80,${0.03 + rnd() * 0.05})`; c.fillRect(rnd() * N, rnd() * N, 1.5, 1.5); }
+    // a few pencil hatch strokes in the shadow corner, like the world's shading
+    c.strokeStyle = 'rgba(42,34,48,0.12)'; c.lineWidth = 1.4;
+    for (let i = 0; i < 7; i++) { const o = 150 + i * 9; c.beginPath(); c.moveTo(o, 230); c.lineTo(o + 60, 170); c.stroke(); }
+    c.restore();
+  };
+  if (kind === 'person') {             // a speech bubble, sketched
+    // one continuous outline: round body, and a curved tail drawn out of it at the lower left
+    const body = [];
+    const a0 = Math.PI * 0.62, a1 = Math.PI * 0.78;                  // where the tail leaves and rejoins
+    for (let i = 0; i <= 36; i++) {
+      const a = a1 + i / 36 * (Math.PI * 2 - (a1 - a0));
+      body.push([128 + Math.cos(a) * 88, 108 + Math.sin(a) * 62]);
+    }
+    body.push([128 + Math.cos(a0) * 88, 108 + Math.sin(a0) * 62], [86, 192], [60, 226], [72, 184]);
+    fill(body, '#f7f0df'); grain(body);
+    ink(body, 4.5, 0.85); ink(body, 2, 0.4);
+    for (const x of [92, 128, 164]) {                    // three brushy dots
+      c.fillStyle = 'rgba(42,34,48,0.88)'; c.beginPath(); c.ellipse(x + wob(), 108 + wob(), 9 + wob(0.6), 8 + wob(0.6), wob(0.2), 0, 7); c.fill();
+    }
+  } else {                              // a sparkle: a four-point star with soft curved arms + a small one
+    const star = (cx, cy, R, r) => { const p = []; for (let i = 0; i < 64; i++) { const a = i / 64 * Math.PI * 2 - Math.PI / 2; const k = Math.pow(Math.abs(Math.cos(2 * a)), 5.5); p.push([cx + Math.cos(a) * (r + (R - r) * k), cy + Math.sin(a) * (r + (R - r) * k)]); } return p; };
+    const big = star(120, 132, 98, 30), small = star(200, 58, 34, 11);
+    for (const p of [big, small]) { fill(p, '#ffe7a0'); grain(p); ink(p, 4, 0.85); ink(p, 1.8, 0.4); }
   }
-  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   _glints[kind] = t; return t;
 }
 
