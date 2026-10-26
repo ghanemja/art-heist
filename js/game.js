@@ -37,7 +37,10 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const ML = (x, y, z) => mus.localToWorld(new THREE.Vector3(x, y, z));
 
   // ── a parked jeep you can walk up to ──
-  const parked = player.bodies.jeep.clone(true);
+  // (a level frame on the planet, with the car inside it pitched/rolled onto its four tyres)
+  const parked = new THREE.Group(), parkedBody = player.bodies.jeep.clone(true);
+  parked.add(parkedBody); parkedBody.visible = true;
+  const seatParked = () => { parked.position.setLength(standAt(parked.position.clone().normalize())); parkedBody.position.y = 0; parkedBody.rotation.set(0, 0, 0); player.fitToGround(parkedBody, parked); };
   // beside the plaza, in view when you start — not behind you where the camera sits —
   // and ON the road, pulled in to the kerb, pointing along it (the car keeps to roads)
   let jeepSpot = town.museumFrame(5.4, 2.2), jeepFace = town.museumFrame(5.4, 12);
@@ -50,10 +53,11 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       jeepFace = jeepSpot.clone().multiplyScalar(R).addScaledVector(nr.tangent, 5).normalize();
     }
   }
-  settle(parked, jeepSpot, 1.0, 0.02, yawToFace(jeepSpot, jeepFace));
+  settle(parked, jeepSpot, 1.0, 0, yawToFace(jeepSpot, jeepFace));
   parked.visible = true;                 // the player's car body starts hidden (you're on foot), and so did its clone
   parked.userData.noGround = true;
   scene.add(parked);
+  seatParked();
   let jeepDir = jeepSpot.clone();
 
   // ── townsfolk out walking, and what happens when the car meets anyone ──
@@ -188,7 +192,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (nearest.kind === 'exit') {
       player.setMode('walk');
       jeepDir = player.st.dir.clone();
-      parked.position.copy(player.root.position); parked.quaternion.copy(player.root.quaternion); parked.visible = true;
+      parked.position.copy(player.root.position); parked.quaternion.copy(player.root.quaternion); parked.visible = true; seatParked();
       // step out beside the car
       const side = new THREE.Vector3().crossVectors(player.st.dir, player.st.heading).normalize();
       player.st.dir.multiplyScalar(40).addScaledVector(side, 1.6).normalize();

@@ -4,6 +4,7 @@
 // most adventure games live or die by. On foot, controls are camera-relative;
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { R, radiusAt, groundAt, standAt, isWater, arc, nearestRoad, slerpDir } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
@@ -18,6 +19,71 @@ const MODES = {
 // ── the car: a little vintage roadster. The body is its side silhouette —
 // rounded deck, long bonnet, a nose, two wheel arches — extruded across its
 // width with a deep bevel, so every edge is soft and the arches are real cut-outs.
+// ── a wheel, axle along X; side +1 = its outer face looks to +X ──
+const RUBBER = paint(0x2b2730), WALL = paint(0x3c3742, { hatch: 0 }), RIM = paint(0xc9ccd2, { hatch: 0 }), RIMD = paint(0x8f939c, { hatch: 0 });
+let _tyreGeo = null;
+function tyreGeo() {
+  if (_tyreGeo) return _tyreGeo;
+  // profile (radius, across the tread), sampled finely over the tread so it can be cut
+  const prof = [[0.2, -0.104], [0.262, -0.112], [0.302, -0.103], [0.327, -0.082], [0.338, -0.06], [0.341, -0.035], [0.342, -0.016], [0.342, -0.006],
+    [0.342, 0.006], [0.342, 0.016], [0.341, 0.035], [0.338, 0.06], [0.327, 0.082], [0.302, 0.103], [0.262, 0.112], [0.2, 0.104]];
+  const g = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 72);
+  g.deleteAttribute('uv'); g.deleteAttribute('normal');
+  const w = mergeVertices(g, 1e-5), P = w.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z);
+    if (r < 0.325 || Math.abs(y) > 0.088) continue;
+    const a = Math.atan2(z, x), side = Math.sign(y) || 1;
+    // staggered tread blocks either side of a centre groove
+    const block = Math.cos(a * 26 + side * 0.6) > -0.2 ? 0.0 : -0.011;
+    const groove = Math.abs(y) < 0.011 ? -0.013 : 0;
+    const nr = r + block + groove;
+    P.setX(i, x / r * nr); P.setZ(i, z / r * nr);
+  }
+  w.computeVertexNormals();
+  return (_tyreGeo = w);
+}
+function makeWheel(side) {
+  const W = new THREE.Group();                         // spins about X (rotation.x)
+  const A = new THREE.Group(); A.rotation.z = -side * Math.PI / 2; W.add(A);   // lathe axis Y → X, outer face (+Y) to `side`
+  A.add(new THREE.Mesh(tyreGeo(), RUBBER));
+  // raised sidewall ring + a few raised lettering blocks round it
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.272, 0.006, 6, 48), WALL); ring.rotation.x = Math.PI / 2; ring.position.y = 0.106; A.add(ring);
+  for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2; const b = new THREE.Mesh(rbox(0.035, 0.004, 0.012, 0.002), WALL); b.position.set(Math.cos(a) * 0.243, 0.108, Math.sin(a) * 0.243); b.rotation.y = -a; A.add(b); }
+  // the rim: a dish sunk into the tyre, a polished lip, five spokes, lug nuts, a cap
+  A.add(new THREE.Mesh(lathe([[0.001, 0.03], [0.06, 0.03], [0.17, 0.05], [0.198, 0.075], [0.21, 0.09], [0.204, 0.098], [0.19, 0.088], [0.17, 0.068]], 36), RIM));
+  A.add(new THREE.Mesh(lathe([[0.001, 0.07], [0.055, 0.072], [0.06, 0.085], [0.035, 0.1], [0.001, 0.102]], 24), RIM));
+  for (let k = 0; k < 5; k++) {
+    const a = k / 5 * Math.PI * 2, sp = new THREE.Mesh(rbox(0.12, 0.022, 0.034, 0.01), RIM);
+    sp.position.set(Math.cos(a) * 0.115, 0.073, Math.sin(a) * 0.115); sp.rotation.y = -a; A.add(sp);
+    const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.012, 6), RIMD);
+    nut.position.set(Math.cos(a + 0.63) * 0.048, 0.09, Math.sin(a + 0.63) * 0.048); A.add(nut);
+  }
+  return W;
+}
+
+// set a car body down on its FOUR contact patches: pitch and roll it to the ground
+// under the wheels and lift it so no tyre is ever below the surface. `body` is the
+// car's own group (rotated/raised within its parent, whose frame is up = local +Y).
+const WHEEL_AT = [[-0.6, 0.86], [0.6, 0.86], [-0.6, -0.86], [0.6, -0.86]];
+const _wp = new THREE.Vector3(), _wq = new THREE.Quaternion();
+export function fitToGround(body, frameObj, k = 1) {
+  frameObj.updateWorldMatrix(true, false);
+  const g = WHEEL_AT.map(([x, z]) => {
+    _wp.set(x, 0, z).applyMatrix4(frameObj.matrixWorld);
+    return standAt(_wp.clone().normalize()) - _wp.length();          // ground height under this wheel, in the car's frame
+  });
+  const front = (g[0] + g[1]) / 2, back = (g[2] + g[3]) / 2, left = (g[0] + g[2]) / 2, right = (g[1] + g[3]) / 2;
+  const pitch = -Math.atan2(front - back, 2 * 0.86), roll = Math.atan2(right - left, 1.2);
+  const mean = (front + back) / 2;
+  let lift = 0;                                                      // no wheel left below its ground
+  WHEEL_AT.forEach(([x, z], i) => { const pred = mean - z * Math.sin(pitch) + x * Math.sin(roll); lift = Math.max(lift, g[i] - pred); });
+  const y = mean + lift;
+  body.position.y += (y - body.position.y) * k;
+  body.rotation.x += (pitch - body.rotation.x) * k;
+  body.rotation.z += (roll - body.rotation.z) * k;
+}
+
 export function buildCar(o = {}) {
   const g = new THREE.Group();
   const body = paint(o.body ?? 0xd9573f), cream = paint(0xf1e4c6), chrome = paint(0xe6e0d2, { hatch: 0 });
@@ -62,15 +128,11 @@ export function buildCar(o = {}) {
   for (let i = -2; i <= 2; i++) m(rbox(0.02, 0.14, 0.02, 0.008), dark, i * 0.08, 0.46, 1.5);
   m(rbox(1.5, 0.1, 0.12, 0.05), chrome, 0, 0.3, 1.5);
   m(rbox(1.5, 0.1, 0.12, 0.05), chrome, 0, 0.3, -1.52);
-  // wheels: fat rounded tyres, whitewalls, domed hubcaps
-  const tyre = lathe([[0.2, -0.11], [0.3, -0.11], [WR, -0.07], [WR + 0.005, 0], [WR, 0.07], [0.3, 0.11], [0.2, 0.11]], 22);
-  tyre.rotateZ(Math.PI / 2);
+  // wheels: real tyres — rounded rubber with tread blocks and a centre groove, raised
+  // sidewall lettering, a dished silver rim with five spokes, lug nuts and a centre cap
   const wheels = [];
   for (const [x, z] of [[-0.6, WZ], [0.6, WZ], [-0.6, -WZ], [0.6, -WZ]]) {
-    const w = m(tyre, dark, x, WR, z);
-    const s = Math.sign(x);
-    const wall = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.035, 6, 22).rotateY(Math.PI / 2), cream); wall.position.x = s * 0.1; w.add(wall);
-    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-s * Math.PI / 2), chrome); hub.position.x = s * 0.09; w.add(hub);
+    const w = makeWheel(Math.sign(x)); w.position.set(x, WR + 0.01, z); g.add(w);
     wheels.push(w);
   }
   g.add(blobShadow(1.0, 1.6));
@@ -335,7 +397,10 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       bob = pose(critic.inst, dt, Math.min(1, sp / M.max), { run: THREE.MathUtils.clamp((sp - M.max) / (M.max * 0.6), 0, 1) });
     }
     squash.position.y = bob;
-    if (st.mode === 'jeep') for (const w of bodies.jeep.userData.wheels) w.rotation.x += st.speed * dt / 0.36;
+    if (st.mode === 'jeep') {
+      for (const w of bodies.jeep.userData.wheels) w.rotation.x += st.speed * dt / 0.35;
+      fitToGround(bodies.jeep, root, 1 - Math.exp(-14 * dt));       // all four tyres on the road
+    } else { bodies.jeep.position.y = 0; bodies.jeep.rotation.x = bodies.jeep.rotation.z = 0; }
 
     // ── camera ──
     // trails on a spring. On foot it only eases round behind you while you walk
@@ -391,5 +456,5 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     camera.lookAt(st.camLook);
     if (st.camHook) st.camHook(camera, root);          // dev: fixed shots for screenshots
   }
-  return { st, update, setMode, root, bodies, critic };
+  return { st, update, setMode, root, bodies, critic, fitToGround };
 }

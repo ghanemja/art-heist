@@ -22,7 +22,7 @@ function joint(parent, x, y, z) { const g = new THREE.Group(); g.position.set(x,
 // the toe is wider than the heel. Origin = the ankle; the sole sits ANK below it.
 const ANK = 0.045;
 let _shoe = null;
-function shoeGeo() {
+export function shoeGeo() {
   if (_shoe) return _shoe;
   const y0 = -ANK;
   const ext = (sh, depth, bev) => {

@@ -9,7 +9,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { paint, ink, blobShadow } from './style.js';
-import { makeFolk, poseFolk } from './folk.js';
+import { makeFolk, poseFolk, shoeGeo } from './folk.js';
+import { noseGeo } from './faces.js';
 
 export const HUMAN_SCALE = 0.13;           // ≈1.2 units tall
 const FOOT = 4.593;                        // model units from the origin down to the soles
@@ -115,6 +116,23 @@ function fixColors(root) {
       SP.setY(v, y + (ny - y) * front);
     }
     sw.geometry.computeVertexNormals();
+    // the collar's top edge, round the neck (for the rolled neckline in makeHuman): per
+    // direction, the OUTER surface's radius and the rim height there, then smoothed round
+    const NB = 36, ring = Array.from({ length: NB }, () => ({ r: 0, y: [] }));
+    for (const v of body.verts) {
+      const x = SP.getX(v) - cx, y = SP.getY(v), z = SP.getZ(v) - cz; if (y < top - 0.3) continue;
+      const k = Math.min(NB - 1, Math.floor((Math.atan2(z, x) / Math.PI + 1) / 2 * NB)), r = Math.hypot(x, z);
+      if (r > ring[k].r) ring[k].r = r;
+      ring[k].y.push(y);
+    }
+    const med = (a) => { const b = [...a].sort((p, q) => p - q); return b.length ? b[Math.floor(b.length * 0.8)] : null; };
+    let R = ring.map(r => r.r), Y = ring.map(r => med(r.y));
+    if (Y.filter(y => y != null).length > NB * 0.7) {
+      const fill = (a) => a.map((v, i) => v ?? a.find((w, j) => w != null && Math.abs(j - i) < 4) ?? 0);
+      R = fill(R); Y = fill(Y);
+      for (let pass = 0; pass < 3; pass++) { R = R.map((v, i) => (R[(i + NB - 1) % NB] + 2 * v + R[(i + 1) % NB]) / 4); Y = Y.map((v, i) => (Y[(i + NB - 1) % NB] + 2 * v + Y[(i + 1) % NB]) / 4); }
+      root.userData.collar = { color: knit.getHex(), pts: R.map((r, k) => { const a = ((k + 0.5) / NB * 2 - 1) * Math.PI; return new THREE.Vector3(cx + Math.cos(a) * (r + 0.015), Y[k] - 0.03, cz + Math.sin(a) * (r + 0.015)); }) };
+    }
   }
   // a catchlight for each eye, placed on the head bone per instance (see makeHuman)
   root.userData.eyes = headPieces.filter(isEye).map(p => new THREE.Vector3(p.max.x + 0.012, p.min.y + (p.max.y - p.min.y) * 0.68, (p.min.z + p.max.z) / 2 + 0.04));
@@ -207,9 +225,54 @@ function fixColors(root) {
     clamp(mesh.hair.geometry, hv);
     clamp(sk.geometry, headPieces.filter(p => !isEye(p)).flatMap(p => p.verts));
   }
+  // SHOES: the model's white sole has a zigzag top edge and the shoe's lower edge zigzags
+  // over it (teeth of white biting into black — it reads as the foot sinking in). Level
+  // the sole's rim to one clean line per shoe, and tuck the shoe's bottom edge just
+  // inside it, so the join is a single smooth line.
+  {
+    const boundary = (geo) => {
+      const P = geo.attributes.position, I = geo.index.array;
+      const key = (v) => Math.round(P.getX(v) * 1e4) + ',' + Math.round(P.getY(v) * 1e4) + ',' + Math.round(P.getZ(v) * 1e4);
+      const edges = new Map();
+      for (let t = 0; t < I.length; t += 3) for (let e = 0; e < 3; e++) {
+        const ka = key(I[t + e]), kb = key(I[t + (e + 1) % 3]), k = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+        edges.set(k, (edges.get(k) || 0) + 1);
+      }
+      const ks = new Set(); for (const [k, n] of edges) if (n === 1) for (const kk of k.split('|')) ks.add(kk);
+      return (v) => ks.has(key(v));
+    };
+    if (mesh.sole && mesh.shoe && mesh.sole.geometry.index && mesh.shoe.geometry.index) {
+      const SG = mesh.sole.geometry, SP = SG.attributes.position, onS = boundary(SG);
+      const HG = mesh.shoe.geometry, HP = HG.attributes.position, onH = boundary(HG);
+      for (const piece of pieces(SG)) {                      // one per shoe
+        const cx = (piece.min.x + piece.max.x) / 2, cz = (piece.min.z + piece.max.z) / 2, rx = (piece.max.x - piece.min.x) / 2 + 0.05, rz = (piece.max.z - piece.min.z) / 2 + 0.05;
+        const rim = piece.verts.filter(v => onS(v) && SP.getY(v) > piece.min.y + 0.05);
+        if (!rim.length) continue;
+        let top = 0; for (const v of rim) top += SP.getY(v); top /= rim.length;
+        for (const v of rim) SP.setY(v, top);
+        // the shoe's lower edge over this sole: down to just inside the sole's rim
+        for (let v = 0; v < HP.count; v++) {
+          if (Math.abs(HP.getX(v) - cx) > rx || Math.abs(HP.getZ(v) - cz) > rz) continue;
+          if (onH(v) && HP.getY(v) < top + 0.12) HP.setY(v, top - 0.025);
+        }
+      }
+      SG.computeVertexNormals(); HG.computeVertexNormals();
+    }
+    // the jeans' hem is a zigzag too: level each leg's bottom edge to one line
+    if (mesh.jeans?.geometry.index) {
+      const JG = mesh.jeans.geometry, JP = JG.attributes.position, onJ = boundary(JG);
+      for (const sgn of [-1, 1]) {
+        const hem = []; for (let v = 0; v < JP.count; v++) if (onJ(v) && JP.getY(v) < -3.5 && Math.sign(JP.getZ(v)) === sgn) hem.push(v);
+        if (!hem.length) continue;
+        let lo = 9; for (const v of hem) lo = Math.min(lo, JP.getY(v));
+        for (const v of hem) JP.setY(v, lo);
+      }
+      JG.computeVertexNormals();
+    }
+  }
   // JEANS: the hands — skin below the cuff hem, sweater above it (the wrists reach up
   // inside the cuff and poked out past the sleeve's side)
-  const jn = mesh.jeans, HEM = -0.6;
+  const jn = mesh.jeans, HEM = -0.47;              // the sleeve's cuff ends at ≈-0.49: below it, all hand
   const handBones = new Set(); jn.skeleton.bones.forEach((b, i) => { if (/hand/.test(b.name)) handBones.add(i); });
   paintVerts(jn, (set) => {
     const g = jn.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw2 = g.attributes.skinWeight;
@@ -277,6 +340,49 @@ export function makeHuman(glb, look = {}) {
         m.userData.part = 'beret';
         skinM.skeleton.bones[hi].add(m);
       }
+    }
+  }
+  // ── her own pieces, modelled clean and riding her bones (the model's versions are broken):
+  // sneakers on the foot bones, a nose and a rolled turtleneck edge on the head/neck bones
+  {
+    const byPart = {}; rig.traverse(o => { if (o.isSkinnedMesh) byPart[o.userData.part] = o; });
+    const ref = byPart.skin || byPart.jeans;
+    const boneIx = (n) => ref.skeleton.bones.findIndex(b => b.name.replace(/\./g, '') === n);
+    const toBone = (n) => { const i = boneIx(n); return i < 0 ? null : { bone: ref.skeleton.bones[i], m: ref.skeleton.boneInverses[i].clone().multiply(ref.bindMatrix) }; };
+    // SHOES: hide the zigzag ones, fit an S-profile sneaker (folk.js) to each foot's old box
+    for (const k of ['shoe', 'sole']) if (byPart[k]) { byPart[k].visible = false; byPart[k].userData.noInk = true; }
+    const upperM = paint(look.shoe ?? 0x2b2a31), soleM = paint(look.sole ?? 0xece6da, { hatch: 0 }), laceM = paint(0xece6da, { hatch: 0 });
+    for (const [foot, zSide] of [['footL', -1], ['footR', 1]]) {
+      const B = toBone(foot); if (!B) continue;
+      const box = zSide < 0 ? { x: [-0.46, 1.0], z: [-0.88, -0.2] } : { x: [-0.38, 1.08], z: [0.21, 0.88] };
+      const sg = shoeGeo(), up = sg.upper.clone().rotateY(Math.PI / 2), so = sg.sole.clone().rotateY(Math.PI / 2);
+      const bb = new THREE.Box3().setFromBufferAttribute(up.attributes.position).union(new THREE.Box3().setFromBufferAttribute(so.attributes.position));
+      const sx = (box.x[1] - box.x[0]) / (bb.max.x - bb.min.x), sz = (box.z[1] - box.z[0]) / (bb.max.z - bb.min.z), sy = (-3.86 + 4.593) / (bb.max.y - bb.min.y);
+      for (const [geo, mat] of [[up, upperM], [so, soleM]]) {
+        geo.translate(-bb.min.x, -bb.min.y, -bb.min.z).scale(sx, sy, sz).translate(box.x[0], -4.593, box.z[0]);
+        const m = new THREE.Mesh(geo.applyMatrix4(B.m), mat); m.userData.part = 'newshoe'; B.bone.add(m);
+      }
+      // laces: three little bars across the tongue
+      for (let i = 0; i < 3; i++) {
+        const lace = new THREE.Mesh(new THREE.CapsuleGeometry(0.022, (box.z[1] - box.z[0]) * 0.3, 3, 6).rotateX(Math.PI / 2), laceM);
+        lace.geometry.translate(box.x[0] + (box.x[1] - box.x[0]) * (0.42 + i * 0.1), -4.593 + (0.68 - i * 0.07) * (-3.86 + 4.593), (box.z[0] + box.z[1]) / 2);
+        lace.geometry.applyMatrix4(B.m); lace.userData.noInk = true; B.bone.add(lace);
+      }
+    }
+    // NOSE: her face is nearly flat — a nose drawn from its side silhouette, out along +X
+    const H = toBone('head');
+    if (H) {
+      const g = noseGeo('straight', 5.2).rotateY(Math.PI / 2);   // silhouette out of the face (+Z) → her forward (+X)
+      g.translate(0.46, 3.19, 0.0).applyMatrix4(H.m);
+      const n = new THREE.Mesh(g, paint(CRITIC_SKIN)); n.userData.part = 'nose'; H.bone.add(n);
+    }
+    // NECKLINE: a soft rolled edge round the turtleneck's top, so the collar reads as a collar
+    const col = glb.scene.userData.collar, N = toBone('spine2') || toBone('neck');
+    if (col && N) {
+      const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(col.pts, true, 'centripetal'), 72, 0.05, 8, true);
+      tube.applyMatrix4(N.m);
+      const knitRoll = paint(new THREE.Color(col.color).multiplyScalar(0.92).getHex()); const roll = new THREE.Mesh(tube, knitRoll);
+      roll.userData.part = 'collar'; N.bone.add(roll);
     }
   }
   // the eyes' catchlights: little white dots, riding the head bone
@@ -362,8 +468,8 @@ export function pose(inst, dt, k, { talk = 0, run = 0 } = {}) {
   turn(inst, 'upperarmR', side, arm * s);
   turn(inst, 'lowerarmL', side, 0.22 + 0.25 * k + 0.1 * run);
   turn(inst, 'lowerarmR', side, 0.22 + 0.25 * k + 0.1 * run);
-  turn(inst, 'upperarmL', fwd, -0.07);
-  turn(inst, 'upperarmR', fwd, 0.07);
+  turn(inst, 'upperarmL', fwd, -0.22);              // arms a little off her sides, so the outline
+  turn(inst, 'upperarmR', fwd, 0.22);               // can draw between arm and body
   // the body: hips twist with the stride, shoulders against them; a lean when running
   turn(inst, 'hips', up, 0.09 * s * k);
   turn(inst, 'spine2', up, -0.12 * s * k);

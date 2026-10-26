@@ -330,13 +330,61 @@ export function resample(pts, step = 0.6, closed = false) {
 }
 export function buildRoad(scene, pts, { half = 1.1, closed = false, dashed = true } = {}) {
   pts = resample(pts, 0.6, closed);
-  ROADS.push({ pts, half });
   const g = new THREE.Group();
+  ROADS.push({ pts, half, closed, dashed: dashed && half > 0.8, group: g });
   g.add(ribbon(pts, half + 0.28, 0.035, closed, kerbMat));
   g.add(ribbon(pts, half, 0.05, closed, roadMat));
-  if (dashed && half > 0.8) g.add(ribbon(pts, 0.07, 0.065, closed, dashMat, true));
   scene.add(g);
   return pts;
+}
+
+// ── centre lines, painted once every road exists ──
+// Straight dashes at an even spacing along each road's length (never bent round a
+// sample corner). None inside a junction: a dash is dropped where another road's
+// carriageway crosses it, and where two roads run on top of each other only the
+// first-built one is painted — so lines never double up, kink or form L shapes.
+export function paintRoadMarkings() {
+  const DASH = 0.8, GAP = 1.1, W = 0.07;
+  const near = (d, i, tang) => {
+    for (let j = 0; j < ROADS.length; j++) {
+      if (j === i) continue;
+      const o = ROADS[j];
+      for (let k = 0; k < o.pts.length; k++) {
+        if (arc(d, o.pts[k]) * 1 >= (o.half + 0.35) / R) continue;
+        const ot = o.pts[Math.min(k + 1, o.pts.length - 1)].clone().sub(o.pts[Math.max(k - 1, 0)]).normalize();
+        if (j < i || Math.abs(ot.dot(tang)) < 0.9) return true;          // a crossing, or an earlier road on the same line
+      }
+    }
+    return false;
+  };
+  ROADS.forEach((rd, i) => {
+    if (!rd.dashed) return;
+    const P = rd.closed ? [...rd.pts, rd.pts[0]] : rd.pts;
+    const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + arc(P[k - 1], P[k]) * R);
+    const total = cum[cum.length - 1];
+    const at = (s) => { let k = 1; while (k < cum.length - 1 && cum[k] < s) k++; const t = (s - cum[k - 1]) / Math.max(1e-6, cum[k] - cum[k - 1]); return slerpDir(P[k - 1], P[k], THREE.MathUtils.clamp(t, 0, 1)); };
+    const pos = [], idx = [];
+    for (let s = GAP / 2; s + DASH < total - GAP / 2; s += DASH + GAP) {
+      const c = at(s + DASH / 2), a = at(s), b = at(s + DASH);
+      const tang = b.clone().sub(a).normalize();
+      if (near(c, i, tang) || near(a, i, tang) || near(b, i, tang)) continue;
+      const lat = new THREE.Vector3().crossVectors(c, tang).normalize();
+      const base = pos.length / 3;
+      for (let u = 0; u <= 3; u++) {                           // a straight dash, draped in 3 steps along its length
+        const along = (u / 3 - 0.5) * DASH;
+        for (const sx of [-1, 1]) {
+          const d = c.clone().multiplyScalar(R).addScaledVector(tang, along).addScaledVector(lat, sx * W).normalize();
+          pos.push(...d.multiplyScalar(standAt(d) + 0.014).toArray());
+        }
+      }
+      for (let u = 0; u < 3; u++) { const q = base + u * 2; idx.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
+    }
+    if (!idx.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, dashMat); m.userData.noInk = true; m.userData.noGround = true;
+    rd.group.add(m);
+  });
 }
 
 // ── the planet mesh: painted in posterized bands with a watercolour wobble ──
