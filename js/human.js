@@ -50,6 +50,46 @@ function pieces(g) {
   }
   return [...map.values()].sort((a, b) => b.verts.length - a.verts.length);
 }
+// split every edge longer than `max` at its middle (conforming: a triangle splits into
+// 2, 3 or 4 by how many of its edges split), interpolating every attribute; skin weights
+// come out as the two ends' blend (re-chosen where it matters, in fixColors)
+function subdivide(G, max) {
+  for (let pass = 0; pass < 6; pass++) {
+    const P = G.attributes.position, I = Array.from(G.index.array), mid = new Map(), add = [];
+    const len = (a, b) => Math.hypot(P.getX(a) - P.getX(b), P.getY(a) - P.getY(b), P.getZ(a) - P.getZ(b));
+    const m = (a, b) => { const k = a < b ? a + ',' + b : b + ',' + a; if (!mid.has(k)) { mid.set(k, P.count + add.length); add.push([a, b]); } return mid.get(k); };
+    const out = [];
+    for (let t = 0; t < I.length; t += 3) {
+      const [a, b, c] = [I[t], I[t + 1], I[t + 2]];
+      const ab = len(a, b) > max ? m(a, b) : -1, bc = len(b, c) > max ? m(b, c) : -1, ca = len(c, a) > max ? m(c, a) : -1;
+      const n = (ab >= 0) + (bc >= 0) + (ca >= 0);
+      if (n === 0) out.push(a, b, c);
+      else if (n === 3) out.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+      else if (n === 1) { if (ab >= 0) out.push(a, ab, c, ab, b, c); else if (bc >= 0) out.push(a, b, bc, a, bc, c); else out.push(a, b, ca, ca, b, c); }
+      else {                                     // two: a corner triangle + a quad
+        if (ab < 0) out.push(c, ca, bc, ca, a, b, ca, b, bc);
+        else if (bc < 0) out.push(a, ab, ca, ab, b, c, ab, c, ca);
+        else out.push(b, bc, ab, ab, bc, c, ab, c, a);
+      }
+    }
+    if (!add.length) return;
+    for (const [name, A] of Object.entries(G.attributes)) {
+      const n0 = A.count, w = A.itemSize, arr = new A.array.constructor((n0 + add.length) * w); arr.set(A.array);
+      add.forEach(([a, b], i) => {
+        const o = (n0 + i) * w;
+        if (name === 'skinIndex' || name === 'skinWeight') {    // the ends' weights, merged → top 4
+          const SI = G.attributes.skinIndex, SW = G.attributes.skinWeight, acc = {};
+          for (const v of [a, b]) for (let j = 0; j < 4; j++) { const q = SW.getComponent(v, j); if (q) acc[SI.getComponent(v, j)] = (acc[SI.getComponent(v, j)] || 0) + q / 2; }
+          const top = Object.entries(acc).sort((p, q) => q[1] - p[1]).slice(0, 4), sum = top.reduce((s, e) => s + e[1], 0) || 1;
+          for (let j = 0; j < 4; j++) arr[o + j] = name === 'skinIndex' ? (top[j] ? +top[j][0] : 0) : (top[j] ? top[j][1] / sum : 0);
+        } else for (let e = 0; e < w; e++) arr[o + e] = (A.array[a * w + e] + A.array[b * w + e]) / 2;
+      });
+      G.setAttribute(name, new THREE.BufferAttribute(arr, w, A.normalized));
+    }
+    G.setIndex(out);
+  }
+  G.computeVertexNormals();
+}
 function fixColors(root) {
   const mesh = {}; root.traverse(o => { if (o.isSkinnedMesh) mesh[o.material.name] = o; });
   const C = (hex) => new THREE.Color(hex);
@@ -316,46 +356,63 @@ function fixColors(root) {
       const G = o.geometry; let P = G.attributes.position, SI = G.attributes.skinIndex, SW = G.attributes.skinWeight;
       const ix = {}; o.skeleton.bones.forEach((b, i) => { ix[b.name.replace(/\./g, '')] = i; });
       const armBone = new Set(o.skeleton.bones.map((b, i) => /arm|hand/.test(b.name) ? i : -1));
-      // the jeans hold the hands, and their thighs are as wide as the hands hang: tell them
-      // apart by the model's own arm weight. The mesh welds each hand to the back of the hip;
-      // the triangles of that weld keep the hip closed, on their own thigh-skinned copies of
-      // the hand-side corners, so the hand comes free and leaves no hole behind it.
-      let isHand = null;
+      // the jeans hold the hands, but their thighs are as wide as the hands hang: which
+      // vertices are hand goes by the model's own arm weight
+      let isArm = null;
       if (part === 'jeans') {
-        const n0 = P.count; isHand = new Uint8Array(n0);
-        for (let v = 0; v < n0; v++) { let a = 0; for (let j = 0; j < 4; j++) if (armBone.has(SI.getComponent(v, j))) a += SW.getComponent(v, j); isHand[v] = a >= 0.5; }
-        const I = G.index.array, dup = new Map(), add = [];
+        isArm = new Uint8Array(P.count);
+        for (let v = 0; v < P.count; v++) { let a = 0; for (let j = 0; j < 4; j++) if (armBone.has(SI.getComponent(v, j))) a += SW.getComponent(v, j); isArm[v] = a >= 0.5; }
+      }
+      // …and the mesh welds each hand to the back of the hip: swing the arm and the weld
+      // stretches. The weld's triangles stay with the hip, on their own thigh-skinned copies
+      // of the hand-side corners, so the hand comes free and leaves no hole behind it.
+      if (isArm) {
+        const n0 = P.count, I = G.index.array, dup = new Map(), add = [];
+        const copy = (v, from) => { if (!dup.has(v)) { dup.set(v, n0 + add.length); add.push([v, from, 0]); } return dup.get(v); };
         for (let t = 0; t < I.length; t += 3) {
-          const c = [I[t], I[t + 1], I[t + 2]], n = isHand[c[0]] + isHand[c[1]] + isHand[c[2]];
+          const c = [I[t], I[t + 1], I[t + 2]], n = isArm[c[0]] + isArm[c[1]] + isArm[c[2]];
           if (n === 0 || n === 3) continue;
-          const thigh = c.find(v => !isHand[v]);
-          for (let k = 0; k < 3; k++) if (isHand[c[k]]) {
-            if (!dup.has(c[k])) { dup.set(c[k], n0 + add.length); add.push([c[k], thigh]); }
-            I[t + k] = dup.get(c[k]);
-          }
+          const body = c.find(v => !isArm[v]);
+          for (let k = 0; k < 3; k++) if (isArm[c[k]]) I[t + k] = copy(c[k], body);
         }
         for (const [name, A] of Object.entries(G.attributes)) {
           const out = new A.array.constructor((n0 + add.length) * A.itemSize); out.set(A.array);
-          add.forEach(([h, th], i) => { const from = /^(position|normal)$/.test(name) ? h : th; for (let e = 0; e < A.itemSize; e++) out[(n0 + i) * A.itemSize + e] = A.array[from * A.itemSize + e]; });
+          add.forEach(([a, b], i) => { const from = /^(position|normal)$/.test(name) ? a : b; for (let e = 0; e < A.itemSize; e++) out[(n0 + i) * A.itemSize + e] = A.array[from * A.itemSize + e]; });
           G.setAttribute(name, new THREE.BufferAttribute(out, A.itemSize, A.normalized));
         }
         G.index.needsUpdate = true;
-        const h2 = new Uint8Array(n0 + add.length); h2.set(isHand); isHand = h2;
+        const a2 = new Uint8Array(n0 + add.length); a2.set(isArm); add.forEach(([, , arm], i) => { a2[n0 + i] = arm; }); isArm = a2;
+        P = G.attributes.position; SI = G.attributes.skinIndex; SW = G.attributes.skinWeight;
+      }
+      // the sweater's sleeves are welded to its body all the way down, and its front is a few
+      // long triangles from the centre line straight into the sleeve: an arm swing dragged
+      // the whole front up after the hand. Subdivide it so there is cloth in between, and
+      // blend body → arm across her side, so it drapes instead of sweeping. The blend follows
+      // the sleeve's inner wall (the arm angles out as it goes down, the sleeve narrows to the
+      // cuff): the hem flares as wide as the sleeve sits higher up, and stays with the body
+      const armShare = (y, az) => {
+        const zArm = y > 1.2 ? 1.12 + (y - 1.2) / 1.35 * (0.8 - 1.12) : 1.12 + Math.min(1, (1.2 - y) / 1.3) * 0.16;   // shoulder → elbow → wrist
+        const zIn = zArm - (y > 1.2 ? 0.38 : 0.3 + 0.08 * THREE.MathUtils.clamp((y + 0.1) / 1.3, 0, 1));
+        return ss2(zIn - 0.12, zIn + 0.02, az);
+      };
+      if (part === 'sweater') {
+        subdivide(G, 0.22);
         P = G.attributes.position; SI = G.attributes.skinIndex; SW = G.attributes.skinWeight;
       }
       for (let v = 0; v < P.count; v++) {
         const y = P.getY(v), z = P.getZ(v), az = Math.abs(z), L = z < 0 ? 'L' : 'R';
         if (y > 2.5 || y < -1.15) continue;
         let want = null;
-        if (isHand) {
-          if (isHand[v]) want = armRamp(y, L);
-          else {                                       // a thigh: drop whatever arm pull it had
-            let rest = 0; for (let j = 0; j < 4; j++) if (armBone.has(SI.getComponent(v, j))) SW.setComponent(v, j, 0); else rest += SW.getComponent(v, j);
-            if (rest > 0) for (let j = 0; j < 4; j++) SW.setComponent(v, j, SW.getComponent(v, j) / rest);
-            continue;
-          }
-        } else if (az > 0.6) want = armRamp(y, L);
-        else if (part === 'sweater' && az < 0.58 && y > -0.6) want = ramp(y, [[1.6, 'spine2'], [1.1, 'spine1'], [0.5, 'spine1'], [-0.1, 'hips']]);
+        if (part === 'sweater') {
+          const a = armShare(y, az), arm = armRamp(y, L), torso = y > -0.6 ? ramp(y, [[1.6, 'spine2'], [1.1, 'spine1'], [0.5, 'spine1'], [-0.1, 'hips']]) : { hips: 1 };
+          want = {}; for (const [n, q] of Object.entries(arm)) want[n] = (want[n] || 0) + q * a;
+          for (const [n, q] of Object.entries(torso)) want[n] = (want[n] || 0) + q * (1 - a);
+        } else if (isArm?.[v] || (!isArm && az > 0.6)) want = armRamp(y, L);
+        else if (part === 'jeans') {                   // a thigh: drop whatever arm pull it had
+          let rest = 0; for (let j = 0; j < 4; j++) if (armBone.has(SI.getComponent(v, j))) SW.setComponent(v, j, 0); else rest += SW.getComponent(v, j);
+          if (rest > 0) for (let j = 0; j < 4; j++) SW.setComponent(v, j, SW.getComponent(v, j) / rest);
+          continue;
+        }
         if (!want) continue;
         const k = 1 - ss2(2.2, 2.5, y);                // into the shoulder: hand back to the model's own blend
         const w = {}; for (let j = 0; j < 4; j++) { const b = SI.getComponent(v, j), q = SW.getComponent(v, j); if (q) w[b] = (w[b] || 0) + q * (1 - k); }
@@ -573,7 +630,7 @@ export function pose(inst, dt, k, { talk = 0, run = 0 } = {}) {
   const s = Math.sin(inst.wc), c = Math.cos(inst.wc);
   for (const n of BONES) if (inst.bones[n]) inst.bones[n].quaternion.copy(inst.bind[n]);
   const { fwd, up, side } = AX;
-  const leg = (0.48 + 0.18 * run) * k, arm = (0.42 + 0.2 * run) * k;
+  const leg = (0.48 + 0.18 * run) * k, arm = (0.32 + 0.2 * run) * k;
   // legs swing forward/back about the side axis; the knee folds on the way through
   turn(inst, 'upperlegL', side, leg * s);
   turn(inst, 'upperlegR', side, -leg * s);
