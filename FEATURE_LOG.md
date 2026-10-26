@@ -7,6 +7,8 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
+- 🟡 **"Just put a line for her chin."** Done: a short, rounded chin curve under her lower lip, traced onto her face and riding her head bone, in a darker shade of her skin (softer than the mouth). Checked front, three-quarter and at game distance.
+
 - 🟡 **"The left side of her head is still missing, and her chin is still coloured like the sweater."** Done in v2, checked from ten angles (incl. the game's own camera) and by picking the exact pixels; story run clean.
   - The "missing" side: her skin mesh was drawn double-sided, so through a gap in her hair you saw the INSIDE of her face (and the temples were painted skin). Skin is now front-only with a hair-coloured back-face twin, so hair-lock backs and the inside of the head read as hair; only the forward-facing face oval is skin.
   - Chin: from the game's slightly-down camera the collar still covered everything below the mouth. The chin is now a real one (~0.25 below the mouth at the centre, rising to the jaw) with the collar's front turned down under it.
