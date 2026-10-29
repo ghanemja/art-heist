@@ -5,6 +5,10 @@ Append each new request here as it comes in (see the rule in CLAUDE.md). Format:
 `- [status] request — short note`. Status: ✅ done+verified · 🟡 done, needs live
 check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
+## Session 2026-10-29 (phone play)
+
+- ⏳ **"Can you make art-heist playable via phone?"** Added on-screen controls (`js/touch.js`, `#touch` in `index.html`): a d-pad for walking and driving (W/A/S/D), a run button (Shift), a phone button (P) and an E button for interacting. They show only on touch devices and only while the case is live. Looking around is still a drag and pinch to zoom. Needs a live check on a real phone.
+
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
 - 🟡 **"Just put a line for her chin."** Done: a short, rounded chin curve under her lower lip, traced onto her face and riding her head bone, in a darker shade of her skin (softer than the mouth). Checked front, three-quarter and at game distance.

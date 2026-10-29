@@ -206,6 +206,20 @@
   #card .row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; clear: both; }
   #card a.btn { font-size: 20px; color: var(--ink); text-decoration: none; padding: 8px 18px; background: var(--gold); }
   @media (max-width: 640px) { #hint { display: none; } #nbBtn { top: auto; bottom: 16px; } #bagBtn { top: auto; bottom: 16px; right: 150px; } }
+  /* touch: on-screen d-pad and action buttons (js/touch.js); only while the case is live */
+  #touch { display: none; position: fixed; inset: 0; z-index: 9; pointer-events: none; }
+  body.touch.touch-play #touch { display: block; }
+  body.touch #hint { display: none; }
+  #touch button { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    font: inherit; font-size: 24px; line-height: 1; color: var(--ink); background: #fffaf0; width: 60px; height: 60px; padding: 0; cursor: pointer;
+    border: 2.5px solid var(--ink); border-radius: var(--sketch); box-shadow: 2px 3px 0 rgba(42,34,48,.8); }
+  #touch button.on { background: var(--gold); transform: translate(1px, 2px); box-shadow: 1px 1px 0 rgba(42,34,48,.8); }
+  #touch .pad { position: absolute; left: 14px; bottom: 14px; display: grid; gap: 6px;
+    grid-template: ". up ." "left . right" ". down ." 60px / 60px 60px 60px; }
+  #touch .up { grid-area: up; } #touch .down { grid-area: down; } #touch .left { grid-area: left; } #touch .right { grid-area: right; }
+  #touch .acts { position: absolute; right: 16px; bottom: 74px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  #touch .act { width: 84px; height: 84px; font-family: 'Caveat', cursive; font-weight: 700; font-size: 34px; background: var(--gold); }
+  #touch .sm { width: auto; height: 44px; padding: 0 14px; font-size: 18px; }
 </style>
 </head>
 <body>
@@ -235,6 +249,20 @@
 <div id="hint" class="ui sk fade hide"></div>
 <div id="prompt" class="ui sk fade hide"></div>
 
+<div id="touch" aria-label="on-screen controls">
+  <div class="pad">
+    <button class="up" data-hold="KeyW" aria-label="forward">↑</button>
+    <button class="left" data-hold="KeyA" aria-label="left">←</button>
+    <button class="right" data-hold="KeyD" aria-label="right">→</button>
+    <button class="down" data-hold="KeyS" aria-label="back or brake">↓</button>
+  </div>
+  <div class="acts">
+    <button class="sm" data-hold="ShiftLeft" aria-label="run">run</button>
+    <button class="sm" data-tap="KeyP" aria-label="phone">phone</button>
+    <button class="act" data-tap="KeyE" aria-label="interact">E</button>
+  </div>
+</div>
+
 <div id="card" class="ui sk fade hide"></div>
 <div id="talk" class="ui sk fade hide"></div>
 <div id="nb" class="ui sk fade hide"></div>
@@ -246,6 +274,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=49"></script>
+<script type="module" src="./js/main.js?cb=50"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@ import { styleTick } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
 import { createGame } from './game.js';
+import { createTouchControls } from './touch.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
@@ -44,6 +45,7 @@ paintRoadMarkings();             // centre lines last: they need every road (and
 const mf = town.museum.frame;
 const player = createPlayer(scene, camera, town.colliders, mf(0.8, 3.4), mf(0, -6));
 const game = createGame({ scene, camera, town, player, atmosphere, renderer });
+createTouchControls(player);
 registerGround([scene]);          // again, now the case's props (café deck, booth…) are down too
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 window.__v2 = { scene, camera, renderer, town, player, game, ROADS, ZONES };
