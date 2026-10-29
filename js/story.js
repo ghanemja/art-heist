@@ -107,8 +107,8 @@ function van() {
     onScreen(at(rbox(1.18, 0.46, 0.02, 0.07), glass, 0, 0, 0), 0, 0.012);
     for (const x of [-0.3, 0.25]) { const w = onScreen(at(rbox(0.42, 0.025, 0.02, 0.008), rim, x, 0, 0), 0, 0.025); w.position.y -= 0.17 * nz; w.position.z += 0.17 * ny; w.rotation.z = 0.35; }
     for (const s of [-1, 1]) {
-      at(rbox(0.03, 0.42, 0.5, 0.06), rim, s * 0.752, 1.32, 1.12);
-      at(rbox(0.03, 0.36, 0.44, 0.05), glass, s * 0.762, 1.32, 1.12);
+      at(rbox(0.05, 0.42, 0.5, 0.06), rim, s * 0.75, 1.32, 1.12);              // the frame stands proud…
+      at(new THREE.PlaneGeometry(0.42, 0.34), glass, s * 0.777, 1.32, 1.12, 0, s * Math.PI / 2).userData.noInk = true;   // …the glass is a pane on its face, inside its edge
       at(new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18).rotateX(Math.PI / 2), steel, s * 0.48, 0.66, 2.43);
       at(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 18).rotateX(Math.PI / 2), lampM, s * 0.48, 0.66, 2.45);
       at(rbox(0.05, 0.05, 0.22, 0.015), rim, s * 0.8, 1.2, 1.52);                    // mirror arm
