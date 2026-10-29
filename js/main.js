@@ -45,6 +45,8 @@ const mf = town.museum.frame;
 const player = createPlayer(scene, camera, town.colliders, mf(0.8, 3.4), mf(0, -6));
 const game = createGame({ scene, camera, town, player, atmosphere, renderer });
 registerGround([scene]);          // again, now the case's props (café deck, booth…) are down too
+// compile every shader up front, so nothing hitches the first time it comes into view
+try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 window.__v2 = { scene, camera, renderer, town, player, game, ROADS, ZONES };
 

@@ -133,7 +133,9 @@
   #handset { right: 26px; bottom: 26px; width: min(300px, 80vw); height: min(560px, 78vh); background: #2a2230; border-radius: 34px; padding: 34px 12px 40px; z-index: 23;
     box-shadow: 4px 6px 0 rgba(42,34,48,.6); transform: rotate(1.5deg); display: flex; flex-direction: column; }
   #handset .ear { position: absolute; top: 14px; left: 50%; width: 54px; height: 6px; margin-left: -27px; border-radius: 3px; background: #4a3f52; }
-  #handset .homebtn { position: absolute; bottom: 10px; left: 50%; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; border: 2px solid #4a3f52; }
+  #handset .homebtn { position: absolute; bottom: 10px; left: 50%; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; border: 2px solid #4a3f52; background: none; padding: 0; cursor: pointer; }
+  #handset .homebtn:hover { border-color: #8a7f92; }
+  #phClose { position: absolute; top: -44px; right: 4px; font-size: 17px; padding: 3px 12px; transform: rotate(-1.5deg); }
   #screen { flex: 1; background: var(--paper); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; }
   #screen .sbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-size: 15px; border-bottom: 2px dashed rgba(42,34,48,.25); }
   #screen .sbar b { font-size: 17px; } #screen .back { font: inherit; font-size: 24px; line-height: 1; border: none; background: none; cursor: pointer; color: var(--ink); padding: 0 6px; }
@@ -228,7 +230,7 @@
 <button id="nbBtn" class="ui sk fade hide">notebook<i id="nbCount">0</i></button>
 <button id="bagBtn" class="ui sk fade hide" title="backpack (B)"><svg viewBox="0 0 40 40" width="30" height="30"><rect x="9" y="11" width="22" height="24" rx="7" fill="#e1b95c" stroke="#2a2230" stroke-width="2.4"/><path d="M9 19 q11 -6 22 0 v-4 q-11 -7 -22 0z" fill="#c7533e" stroke="#2a2230" stroke-width="2"/><rect x="17" y="17" width="6" height="4" rx="1" fill="#e4b84f" stroke="#2a2230" stroke-width="1.4"/><path d="M15 11 q5 -8 10 0" fill="none" stroke="#2a2230" stroke-width="2.4"/></svg><i id="bagCount" style="display:none">0</i></button>
 <div id="bag" class="ui sk fade hide"></div>
-<div id="handset" class="ui fade hide"><div class="ear"></div><div id="screen"></div><div class="homebtn"></div></div>
+<div id="handset" class="ui fade hide"><button id="phClose" class="sk" title="put the phone away (P)">put away ✕</button><div class="ear"></div><div id="screen"></div><button class="homebtn" id="phHome" title="home · press again to put away"></button></div>
 <div id="toast" class="ui sk fade hide"></div>
 <div id="flash" class="ui"></div>
 <div id="timer" class="ui sk fade hide"></div>
@@ -247,6 +249,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=53"></script>
+<script type="module" src="./js/main.js?cb=55"></script>
 </body>
 </html>

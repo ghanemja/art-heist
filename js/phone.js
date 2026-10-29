@@ -124,7 +124,7 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
       const apps = [['messages', 'Messages'], ['map', 'Map'], ['camera', 'Camera'], ['photos', 'Photos'], ['case', 'Case']];
       scr.innerHTML = `<div class="sbar"><span></span><b>${clock()}</b><span>●●●</span></div><div class="apps">${apps.map(([k, n]) =>
         `<button class="app" data-a="${k}">${ICON[k]}<span>${n}</span>${k === 'messages' && S.unread ? `<i>${S.unread}</i>` : ''}</button>`).join('')}</div>
-        <div class="hint">P closes the phone</div>`;
+        <div class="hint">P or "put away" closes the phone</div>`;
       scr.querySelectorAll('.app').forEach(b => b.onclick = () => b.dataset.a === 'case' ? (close(), openNotebook()) : open(b.dataset.a));
     } else if (S.app === 'messages') {
       // a chat thread: bubbles with tails (theirs left, yours right), the sender's name
@@ -265,5 +265,8 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
     if (e.code === 'Escape') closeAll();
   });
   $('bagBtn').onclick = () => (S.bag ? closeAll() : openBag());
+  // a visible way to put the phone away (and the home button: home, then away)
+  $('phClose').onclick = () => close();
+  $('phHome').onclick = () => (S.app === 'home' || S.reply ? close() : open('home'));
   return { push, open, close, closeAll, openBag, addItem, tick, afterRender, setCar, setReply, setTyping, state: S, get busy() { return S.bag || (S.open && S.app !== 'camera'); } };
 }

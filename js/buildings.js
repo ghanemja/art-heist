@@ -1437,5 +1437,5 @@ export function bookLibrary() {
   OB.box(0.04, 0.3, 0.02, paint(PAL.accent, { hatch: 0 }), 0.05, -0.08, 0.44, 0.005);
   OB.g.rotation.x = -0.35;
   lampPost(K, -2.15, 1.45, 1.5); lampPost(K, 2.15, 1.45, 1.5);
-  return K.g;
+  return bake(K.g);                                           // one mesh per material: ~400 parts → a few dozen draws
 }

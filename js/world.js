@@ -350,7 +350,7 @@ export function paintRoadMarkings() {
       if (j === i) continue;
       const o = ROADS[j];
       for (let k = 0; k < o.pts.length; k++) {
-        if (arc(d, o.pts[k]) * 1 >= (o.half + 0.35) / R) continue;
+        if (arc(d, o.pts[k]) >= o.half + 0.35) continue;              // arc() is already in world units
         const ot = o.pts[Math.min(k + 1, o.pts.length - 1)].clone().sub(o.pts[Math.max(k - 1, 0)]).normalize();
         if (j < i || Math.abs(ot.dot(tang)) < 0.9) return true;          // a crossing, or an earlier road on the same line
       }
@@ -360,7 +360,7 @@ export function paintRoadMarkings() {
   ROADS.forEach((rd, i) => {
     if (!rd.dashed) return;
     const P = rd.closed ? [...rd.pts, rd.pts[0]] : rd.pts;
-    const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + arc(P[k - 1], P[k]) * R);
+    const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + arc(P[k - 1], P[k]));
     const total = cum[cum.length - 1];
     const at = (s) => { let k = 1; while (k < cum.length - 1 && cum[k] < s) k++; const t = (s - cum[k - 1]) / Math.max(1e-6, cum[k] - cum[k - 1]); return slerpDir(P[k - 1], P[k], THREE.MathUtils.clamp(t, 0, 1)); };
     const pos = [], idx = [];

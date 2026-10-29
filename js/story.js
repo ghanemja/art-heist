@@ -87,8 +87,31 @@ function ruts() {
 function van() {
   const g = new THREE.Group(), white = paint(0xf4f1ea), dark = paint(PAL.ink, { hatch: 0 });
   g.add(new THREE.Mesh(rbox(1.5, 1.45, 3.2, 0.25, 3), white).translateY(1.05));
-  g.add(new THREE.Mesh(rbox(1.42, 0.55, 0.9, 0.18, 2), white).translateY(0.62).translateZ(1.95));
-  const ws = new THREE.Mesh(rbox(1.3, 0.5, 0.06, 0.03), paint(0x9fc4cc, { hatch: 0 })); ws.position.set(0, 1.25, 1.62); ws.rotation.x = -0.25; g.add(ws);
+  g.add(new THREE.Mesh(rbox(1.44, 0.6, 0.86, 0.22, 3), white).translateY(0.66).translateZ(1.96));
+  // ── the front: a windscreen set flush in a dark surround, wipers, cab side windows,
+  // round headlamps either side of a slatted grille, a bumper, mirrors, a plate ──
+  { const glass = paint(0x9fc4cc, { hatch: 0 }), rim = paint(0x4a4552, { hatch: 0 }), steel = paint(0xb9bcc4, { hatch: 0 }), lampM = paint(0xfff1c8, { emissive: 0x6a5a30, hatch: 0 });
+    const at = (geo, mat, x, y, z, rx = 0, ry = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.rotation.set(rx, ry, 0); g.add(o); return o; };
+    at(rbox(1.34, 0.64, 0.03, 0.08), rim, 0, 1.3, 1.6);
+    at(rbox(1.22, 0.54, 0.03, 0.07), glass, 0, 1.3, 1.615);
+    for (const x of [-0.3, 0.25]) at(rbox(0.42, 0.025, 0.02, 0.008), rim, x, 1.08, 1.635, 0, 0).rotation.z = 0.35;
+    for (const s of [-1, 1]) {
+      at(rbox(0.03, 0.46, 0.5, 0.06), rim, s * 0.752, 1.3, 1.25);
+      at(rbox(0.03, 0.4, 0.44, 0.05), glass, s * 0.762, 1.3, 1.25);
+      at(new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18).rotateX(Math.PI / 2), steel, s * 0.48, 0.74, 2.38);
+      at(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 18).rotateX(Math.PI / 2), lampM, s * 0.48, 0.74, 2.4);
+      at(rbox(0.05, 0.05, 0.22, 0.015), rim, s * 0.8, 1.2, 1.52);                    // mirror arm
+      at(rbox(0.06, 0.2, 0.13, 0.03), rim, s * 0.86, 1.24, 1.44);                    // mirror
+      at(rbox(0.08, 0.06, 0.03, 0.02), paint(0xe8a040, { emissive: 0x5a3010, hatch: 0 }), s * 0.62, 0.56, 2.39);   // indicator
+    }
+    at(rbox(0.58, 0.24, 0.03, 0.05), rim, 0, 0.74, 2.385);
+    for (const y of [0.67, 0.74, 0.81]) at(rbox(0.5, 0.025, 0.02, 0.008), steel, 0, y, 2.405);
+    at(rbox(1.5, 0.14, 0.2, 0.05), paint(0x4a4552), 0, 0.42, 2.42);
+    { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 48; const c = cv.getContext('2d');
+      c.fillStyle = '#f6f2e6'; c.fillRect(0, 0, 128, 48); c.strokeStyle = '#2a2230'; c.lineWidth = 4; c.strokeRect(2, 2, 124, 44);
+      c.fillStyle = '#2a2230'; c.font = '700 26px "Patrick Hand", "Comic Sans MS", cursive'; c.textAlign = 'center'; c.fillText('FRM 4C0', 64, 34);
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+      const pl = at(new THREE.PlaneGeometry(0.3, 0.11), paint(0xffffff, { map: t, hatch: 0 }), 0, 0.43, 2.525); pl.userData.noInk = true; } }
   // FRAME & CO. painted on the side
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 96;
   const c = cv.getContext('2d'); c.fillStyle = '#f4f1ea'; c.fillRect(0, 0, 256, 96);
