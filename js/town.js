@@ -8,8 +8,8 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js?v=2';
-import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced } from './buildings.js';
+import { buildMuseum } from '../museum.js?v=3';
+import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -116,7 +116,7 @@ export function buildTown(scene) {
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
   {
-    const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/' });
+    const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/', openDoor: true });
     restyle(mus.group);
     ink(mus.group, 'mid');
     settle(mus.group, mDir, 6, 0.1, yawToFace(mDir, TOWN_C));
@@ -183,8 +183,13 @@ export function buildTown(scene) {
     if (r < 0.12) { b = park(); }
     else if (rr < 0.45) b = townBlock({ w: room * 0.9, d: room * 0.9, h: 6 + rnd() * 4 });
     else if (rr < 0.8) b = townBlock({ w: room * 0.9, d: room * 0.85, h: 3.1 + rnd() * 1.7 });
-    else b = house({ w: room * 0.75, d: room * 0.6, h: 1.7 });
-    add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5)) + (rnd() > 0.5 ? Math.PI : 0), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
+    else b = house({ w: room * 0.92, d: room * 0.76, h: 1.7 });
+    // every block faces a street on purpose: the rows behind Main Street turn their backs to
+    // the backs of its shops (fronts outward), the next row faces back across the street at
+    // them, and so on — fronts face fronts across each street, backs face backs
+    const n = j > 0 ? j : -1 - j, away = Math.sign(y) || 1;
+    const faceY = n % 2 ? away : -away;
+    add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5 * faceY)), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
     if (r >= 0.12) solid(d, room * 0.5);
   }
   // street lamps at junctions, trees along the boulevard verge
@@ -311,8 +316,10 @@ function park() {
   const g = new THREE.Group();
   const lawn = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.55, 0.12, 24), paint(PAL.grass));
   lawn.position.y = 0.06; g.add(lawn);
-  const t = tree({ s: 1.0 }); t.position.set(-0.4, 0.1, 0.2); g.add(t);
-  const b = bench(); b.position.set(0.5, 0.1, -0.5); b.rotation.y = 0.6; g.add(b);
+  // seen from the street (the park's front, +z): the tree on the left, the bench to its right,
+  // facing the street
+  const t = tree({ s: 1.0 }); t.position.set(-0.55, 0.1, -0.25); g.add(t);
+  const b = bench(); b.position.set(0.55, 0.1, 0.2); b.rotation.y = 0; g.add(b);
   return ink(g, 'fine');
 }
 
@@ -326,11 +333,7 @@ function landmark(p) {
   const body = paint(col), trim = paint(PAL.cream), dark = paint(PAL.ink, { hatch: 0 });
   const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
   if (p.style === 'library') {
-    m(rbox(3.4, 2.2, 2.4, 0.15), body, 0, 1.25, 0);
-    const roof = new THREE.Mesh(lathe([[0.001, 0], [2.3, 0], [2.0, 0.3], [0.001, 1.2]], 4), paint(PAL.roofRed));
-    roof.position.y = 2.35; roof.rotation.y = Math.PI / 4; roof.scale.set(1.05, 1, 0.75); g.add(roof);
-    for (let i = 0; i < 3; i++) for (let b = 0; b < 6; b++)
-      m(rbox(0.22, 0.42, 0.1, 0.03), paint([PAL.accent, PAL.dusty, PAL.mustard, PAL.teal, PAL.rose][(i + b) % 5]), -0.8 + b * 0.32, 0.95 + i * 0.6, 1.22);
+    const lib = bookLibrary(); lib.position.y = 0.14; g.add(lib);    // the bookcase building (buildings.js)
   } else if (p.style === 'dome') {
     m(lathe([[0.001, 0], [1.9, 0], [1.9, 1.0], [2.0, 1.1], [1.75, 1.2], [0.001, 1.2]], 32), trim, 0, 0.16, 0);
     m(new THREE.SphereGeometry(1.75, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), body, 0, 1.35, 0);
@@ -348,7 +351,7 @@ function landmark(p) {
     const a = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.42, 14, 28, Math.PI), body);
     a.position.y = 3.3; g.add(a);
   }
-  m(rbox(0.7, 1.1, 0.12, 0.05), paint(PAL.bark), 0, 0.7, p.style === 'arch' ? -0.6 : (p.style === 'library' ? 1.22 : 1.75));
+  if (p.style !== 'library') m(rbox(0.7, 1.1, 0.12, 0.05), paint(PAL.bark), 0, 0.7, p.style === 'arch' ? -0.6 : 1.75);
   g.add(blobShadow(3.2));
   return ink(g, 'heavy');
 }

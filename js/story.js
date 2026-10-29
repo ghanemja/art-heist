@@ -98,8 +98,32 @@ function van() {
   for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.8), paint(0xffffff, { map: tx, hatch: 0 })); p.position.set(s * 0.77, 1.15, 0); p.rotation.y = s * Math.PI / 2; p.userData.noInk = true; g.add(p); }
   const tyre = lathe([[0.15, -0.1], [0.3, -0.1], [0.33, 0], [0.3, 0.1], [0.15, 0.1]], 16).rotateZ(Math.PI / 2);
   for (const [x, z] of [[-0.72, 1.2], [0.72, 1.2], [-0.72, -1.1], [0.72, -1.1], [-0.52, -1.1], [0.52, -1.1]]) g.add(new THREE.Mesh(tyre, dark).translateX(x).translateY(0.32).translateZ(z));
-  // rear doors ajar
-  const door = new THREE.Mesh(rbox(0.7, 1.3, 0.06, 0.03), white); door.position.set(0.62, 1.0, -1.62); door.rotation.y = 0.5; g.add(door);
+  // ── the back: two rear doors (the right one swung open on its hinges), the dark load
+  // space with packing foam and the museum's grey tape inside, tail lights, a bumper with a
+  // step, a number plate
+  const BZ = -1.6, glassM = paint(0x9fc4cc, { hatch: 0 }), steel = paint(0xb9bcc4, { hatch: 0 }), redL = paint(0xd9483a, { emissive: 0x5a1410, hatch: 0 });
+  const inside = new THREE.Mesh(rbox(1.24, 1.12, 0.05, 0.04), paint(0x3a3340, { hatch: 0 })); inside.position.set(0, 1.04, BZ + 0.005); g.add(inside);
+  const foam = new THREE.Mesh(rbox(0.42, 0.34, 0.2, 0.08, 2), paint(0xece8de)); foam.position.set(0.32, 0.66, BZ - 0.02); foam.rotation.z = 0.08; g.add(foam);
+  const tape = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.04, 8, 18), paint(0x8f939c)); tape.position.set(0.12, 0.56, BZ - 0.08); tape.rotation.y = 0.4; g.add(tape);
+  const door = (hx, dir, open) => {                    // a door hinged at x = hx, hanging toward the middle
+    const hinge = new THREE.Group(); hinge.position.set(hx, 0, BZ - 0.035); hinge.rotation.y = open; g.add(hinge);
+    const d = new THREE.Group(); d.position.x = dir * 0.36; hinge.add(d);
+    d.add(new THREE.Mesh(rbox(0.7, 1.24, 0.06, 0.03), white).translateY(1.04));
+    const w = new THREE.Mesh(rbox(0.5, 0.36, 0.02, 0.06), glassM); w.position.set(dir * -0.02, 1.38, -0.035); d.add(w);
+    const h = new THREE.Mesh(rbox(0.05, 0.16, 0.04, 0.015), steel); h.position.set(dir * 0.27, 0.98, -0.05); d.add(h);
+    for (const y of [0.62, 1.42]) { const hg = new THREE.Mesh(rbox(0.06, 0.1, 0.05, 0.015), steel); hg.position.set(-dir * 0.33, y, -0.03); d.add(hg); }
+    return hinge;
+  };
+  door(-0.72, 1, 0);                                   // left door: shut
+  door(0.72, -1, -1.15);                               // right door: swung wide open, rear doors "not quite shut"
+  for (const x of [-0.66, 0.66]) { const l = new THREE.Mesh(rbox(0.12, 0.3, 0.05, 0.02), redL); l.position.set(x, 0.72, BZ - 0.01); g.add(l); }
+  const bumper = new THREE.Mesh(rbox(1.56, 0.14, 0.18, 0.05), paint(0x4a4552)); bumper.position.set(0, 0.36, BZ - 0.06); g.add(bumper);
+  const step = new THREE.Mesh(rbox(0.6, 0.05, 0.16, 0.02), steel); step.position.set(0, 0.3, BZ - 0.18); g.add(step);
+  { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 48; const c = cv.getContext('2d');
+    c.fillStyle = '#f3e7b5'; c.fillRect(0, 0, 128, 48); c.strokeStyle = '#2a2230'; c.lineWidth = 4; c.strokeRect(2, 2, 124, 44);
+    c.fillStyle = '#2a2230'; c.font = '700 26px "Patrick Hand", "Comic Sans MS", cursive'; c.textAlign = 'center'; c.fillText('FRM 4C0', 64, 34);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.13), paint(0xffffff, { map: t, hatch: 0 })); plate.position.set(0, 0.47, BZ - 0.155); plate.rotation.y = Math.PI; plate.userData.noInk = true; g.add(plate); }
   g.add(blobShadow(1.0, 1.9));
   return ink(g, 'mid');
 }

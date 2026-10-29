@@ -45,6 +45,13 @@
   /* hud */
   #hud { left: 14px; top: 12px; width: min(330px, 46vw); padding: 8px 14px 6px; transform: rotate(-0.4deg); }
   #hud b { font-family: 'Caveat', cursive; font-size: 28px; display: block; line-height: 1; }
+  #hud b span { font-size: 0.78em; opacity: 0.7; white-space: nowrap; }
+  /* the case board folds down to its title + the current step (a little tab on its corner) */
+  #caseTog { position: absolute; right: -2px; top: -2px; width: 30px; height: 26px; border: 2.5px solid var(--ink); border-radius: 0 10px 0 10px;
+    background: var(--gold); font: 700 18px/1 'Patrick Hand', cursive; color: var(--ink); cursor: pointer; padding: 0; box-shadow: 2px 2px 0 rgba(42,34,48,.7); }
+  #caseTog:hover { background: #f0c95e; }
+  #caseMini { display: none; font-size: 16px; color: var(--ink2); margin-top: 2px; }
+  #hud.min #case { display: none; } #hud.min #caseMini { display: block; } #hud.min { width: auto; max-width: min(330px, 46vw); padding-right: 40px; }
   #case .st { font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700; margin: 6px 0 1px; }
   #case .st.go { color: var(--accent); }
   #case .cr { font-size: 16px; line-height: 1.25; padding: 2px 6px; margin: 0 -6px; border-radius: 8px; cursor: pointer; }
@@ -216,7 +223,7 @@
 <div id="caption" class="ui fade hide"></div>
 <button id="skip" class="ui sk fade hide">skip ›</button>
 
-<div id="hud" class="ui sk fade hide"><b>The Vanishing Gallery</b><div id="case"></div></div>
+<div id="hud" class="ui sk fade hide"><button id="caseTog" title="minimize" aria-label="minimize the case board">–</button><b>The Vanishing Gallery <span>To Do List</span></b><div id="caseMini"></div><div id="case"></div></div>
 <div id="way" class="ui hide"><svg viewBox="0 0 64 40" width="54" height="34"><path d="M4 14 C 18 13, 30 15, 38 14 L 37 4 L 60 20 L 37 36 L 38 26 C 28 25, 16 27, 4 26 Z" fill="#e8604c" stroke="#2a2230" stroke-width="3.2" stroke-linejoin="round"/></svg><span></span></div>
 <button id="nbBtn" class="ui sk fade hide">notebook<i id="nbCount">0</i></button>
 <button id="bagBtn" class="ui sk fade hide" title="backpack (B)"><svg viewBox="0 0 40 40" width="30" height="30"><rect x="9" y="11" width="22" height="24" rx="7" fill="#e1b95c" stroke="#2a2230" stroke-width="2.4"/><path d="M9 19 q11 -6 22 0 v-4 q-11 -7 -22 0z" fill="#c7533e" stroke="#2a2230" stroke-width="2"/><rect x="17" y="17" width="6" height="4" rx="1" fill="#e4b84f" stroke="#2a2230" stroke-width="1.4"/><path d="M15 11 q5 -8 10 0" fill="none" stroke="#2a2230" stroke-width="2.4"/></svg><i id="bagCount" style="display:none">0</i></button>
@@ -240,6 +247,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=46"></script>
+<script type="module" src="./js/main.js?cb=52"></script>
 </body>
 </html>

@@ -18,7 +18,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
 const ART = './artworks/';
 
-export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {}) {
+export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDoor = false } = {}) {
   const g = new THREE.Group();
   g.name = 'DowntownMuseum';
   const SEG = lite ? 24 : 48;
@@ -206,6 +206,7 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
   })();
   for (let i = 0; i < 6; i++) {
     const x = -3.25 + i * 1.3;
+    if (openDoor && (i === 2 || i === 3)) continue;   // the main app keeps the doorway clear
     add(plinthGeo, STONE, x, Y0 + 0.08, COL_Z);
     add(colGeo, STONE, x, Y0 + 0.16, COL_Z);
     add(abacusGeo, TRIM, x, ENT_Y - 0.06, COL_Z);
