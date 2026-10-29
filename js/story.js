@@ -321,7 +321,7 @@ export function buildCase(scene, W) {
   { const d = mF(7.9, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.8, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
   { const d = mF(2.2, 0.6); items.push({ kind: 'clue', id: 'frames', dir: d }); }          // the easel's empty frame
   { const d = mF(0, -13.2); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
-  { const d = mF(-7.0, -1.6); const b = booth(); place(b, d, yawToFace(d, mF(-7.0, 4)));   // window toward town: you see it as you walk up
+  { const d = mF(-7.1, -2.0); const b = booth(); place(b, d, yawToFace(d, mF(-7.1, 4)));   // window toward town: you see it as you walk up
     b.updateWorldMatrix(true, true); const L = (x, y, z) => b.localToWorld(new THREE.Vector3(x, y, z));
     items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.32, 0.95) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction
   // downtown: the van outside Frame & Co., the café with Pia's bike

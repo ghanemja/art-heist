@@ -622,6 +622,7 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   // ── lamps, topiary, planters ──
   const lampGeo = lathe([[0.001, 0], [0.16, 0], [0.16, 0.08], [0.08, 0.14], [0.06, 0.3], [0.045, 0.32], [0.04, 2.0], [0.07, 2.04], [0.07, 2.08], [0.001, 2.1]], 16);
   for (const [x, z] of [[-3.9, -1.0], [3.9, -1.0], [-6.2, -2.0], [6.2, -2.0]]) {
+    if (openDoor && x === 6.2) continue;                  // the main app's guard booth stands here (museum +x is the town's -x)
     add(lampGeo, DARK, x, 0.15, z);
     add(new THREE.SphereGeometry(0.2, 14, 10), LAMP, x, 2.42, z);
     add(new THREE.CylinderGeometry(0.1, 0.13, 0.08, 16), DARK, x, 2.24, z);
