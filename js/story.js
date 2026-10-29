@@ -259,7 +259,7 @@ export function buildCase(scene, W) {
   { const d = mF(7.9, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.8, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
   { const d = mF(2.2, 0.6); items.push({ kind: 'clue', id: 'frames', dir: d }); }          // the easel's empty frame
   { const d = mF(0, -13.2); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
-  { const d = mF(-6.6, 1.2); const b = booth(); place(b, d, yawToFace(d, mF(0, 1))); items.push({ kind: 'clue', id: 'log', dir: mF(-6.0, 2.0), obj: b }); W.solid(d, 0.8); }
+  { const d = mF(-6.2, -1.2); const b = booth(); place(b, d, yawToFace(d, mF(0, 1))); items.push({ kind: 'clue', id: 'log', dir: mF(-5.7, -0.4), obj: b }); W.solid(d, 0.8); }   // on the lawn beside the steps, clear of the junction
   // downtown: the van outside Frame & Co., the café with Pia's bike
   { const d = W.townAt(W.vanSpot); const v = van(); place(v, d, W.vanYaw + Math.PI); /* turned round: the open back faces the way you walk up from the museum */ items.push({ kind: 'clue', id: 'van', dir: d, obj: v }); W.solid(d, 1.1); }
   { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d, yawToFace(d, W.townAt([W.cafeSpot[0], 0]))); W.solid(d, 0.55);
@@ -269,7 +269,7 @@ export function buildCase(scene, W) {
   { const d = W.siteAt('harbour', [2.2, 0.5]); const c = crates(); place(c, d, yawToFace(d, W.sites.harbour.dir)); items.push({ kind: 'clue', id: 'crates', dir: d, obj: c }); W.solid(d, 1.2); }
   { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); place(t, d); items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t }); }
   // people
-  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.6, 2.4), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
+  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.1, 0.45), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
   for (const p of PEOPLE) {
     const d = at[p.id];
     const m = person(LOOKS[p.id]);
