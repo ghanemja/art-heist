@@ -50,10 +50,10 @@ function pieces(g) {
   }
   return [...map.values()].sort((a, b) => b.verts.length - a.verts.length);
 }
-// split every edge longer than `max` (and between two vertices `keep` accepts) at its middle (conforming: a triangle splits into
+// split every edge longer than `max` at its middle (conforming: a triangle splits into
 // 2, 3 or 4 by how many of its edges split), interpolating every attribute; skin weights
 // come out as the two ends' blend (re-chosen where it matters, in fixColors)
-function subdivide(G, max, keep = () => true) {
+function subdivide(G, max) {
   for (let pass = 0; pass < 6; pass++) {
     const P = G.attributes.position, I = Array.from(G.index.array), mid = new Map(), add = [];
     const len = (a, b) => Math.hypot(P.getX(a) - P.getX(b), P.getY(a) - P.getY(b), P.getZ(a) - P.getZ(b));
@@ -61,8 +61,7 @@ function subdivide(G, max, keep = () => true) {
     const out = [];
     for (let t = 0; t < I.length; t += 3) {
       const [a, b, c] = [I[t], I[t + 1], I[t + 2]];
-      const cut = (p, q) => keep(p) && keep(q) && len(p, q) > max;
-      const ab = cut(a, b) ? m(a, b) : -1, bc = cut(b, c) ? m(b, c) : -1, ca = cut(c, a) ? m(c, a) : -1;
+      const ab = len(a, b) > max ? m(a, b) : -1, bc = len(b, c) > max ? m(b, c) : -1, ca = len(c, a) > max ? m(c, a) : -1;
       const n = (ab >= 0) + (bc >= 0) + (ca >= 0);
       if (n === 0) out.push(a, b, c);
       else if (n === 3) out.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
@@ -223,40 +222,6 @@ function fixColors(root) {
       for (const v of p.verts) set(v, c);
     }
   });
-  // THE CHIN, sculpted from her own face: below the lower lip the face plate is one band of
-  // long triangles straight down to its edge — flat, no chin. Give that band vertices, then
-  // shape it: a soft swell forward under the lip that turns back under at the bottom, and
-  // narrows toward the tip. (One surface, so no seam; the new vertices blend their neighbours' paint.)
-  {
-    const G = sk.geometry, P0 = G.attributes.position, n0 = P0.count, inFace = new Uint8Array(n0);
-    for (const v of face.verts) inFace[v] = 1;
-    let fz = 0; for (const v of face.verts) fz += P0.getZ(v); fz /= face.verts.length;
-    const band = (P, v, top = 3.0) => P.getX(v) > 0.15 && P.getY(v) < top && P.getY(v) > 2.6 && Math.abs(P.getZ(v) - fz) < 0.5;
-    // (split up to the mouth line: long strips from the mouth to the edge would stay straight
-    // through the swell and crease; the shaping itself starts under the lip)
-    subdivide(G, 0.045, (v) => v >= n0 || (inFace[v] && band(P0, v, 3.12)));
-    const P = G.attributes.position, n1 = P.count;
-    const ss = THREE.MathUtils.smoothstep;
-    for (let v = 0; v < n1; v++) {
-      if (v < n0 && !(inFace[v] && band(P, v))) continue;
-      const x = P.getX(v), y = P.getY(v), z = P.getZ(v) - fz;
-      const t = THREE.MathUtils.clamp((2.99 - y) / (2.99 - (2.74 + 0.95 * z * z)), 0, 1);   // 0 under the lip → 1 at the edge
-      const w = Math.max(0, 1 - (z / 0.36) ** 2);                                           // strongest at the middle
-      P.setX(v, x + w * (0.04 * Math.sin(Math.PI * t) - 0.035 * ss(t, 0.75, 1)));
-      P.setZ(v, fz + z * (1 - 0.16 * t * t));
-    }
-    G.computeVertexNormals();
-    const N = G.attributes.normal;
-    // the plate's vertices aren't welded: shade (and ink) the chin as one smooth surface by
-    // sharing one normal per position across it
-    {
-      const acc = new Map(), k = (v) => Math.round(P.getX(v) * 1e3) + ',' + Math.round(P.getY(v) * 1e3) + ',' + Math.round(P.getZ(v) * 1e3);
-      const inChin = (v) => v >= n0 || (inFace[v] && band(P, v));
-      for (let v = 0; v < n1; v++) { if (!inChin(v) && !(v < n0 && inFace[v] && P.getY(v) < 3.05)) continue; const kk = k(v), a = acc.get(kk) || acc.set(kk, new THREE.Vector3()).get(kk); a.x += N.getX(v); a.y += N.getY(v); a.z += N.getZ(v); }
-      for (let v = 0; v < n1; v++) { const a = acc.get(k(v)); if (a && (inChin(v) || (v < n0 && inFace[v] && P.getY(v) < 3.05))) { const l = a.length() || 1; N.setXYZ(v, a.x / l, a.y / l, a.z / l); } }
-      N.needsUpdate = true;
-    }
-  }
   // THE BERET. The model's own is broken past patching: its lower edge is a zigzag of
   // teeth with hair showing between them, it's notched on one side, and the model filled
   // the notch with face/hair geometry (the pale "lump"). So she gets a new one, modelled
