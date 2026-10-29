@@ -136,10 +136,10 @@ function fixColors(root) {
     const rim = new Float32Array(NA).fill(-9);
     for (const v of body.verts) if (SP.getY(v) > body.max.y - 0.35) { const k = az(SP.getX(v), SP.getZ(v)); rim[k] = Math.max(rim[k], SP.getY(v)); }
     // a CHIN: the face's bottom edge becomes a rounded U under the mouth (the mouth sits at
-    // ≈3.0; the chin's tip is at ≈2.74), and the turtleneck's front is turned down
+    // ≈3.0; the chin's tip is at ≈2.87), and the turtleneck's front is turned down
     // beneath it — the collar used to ride up over her whole lower face
     let fz = 0; for (const v of face.verts) fz += P.getZ(v); fz /= face.verts.length;
-    const chinY = (z) => 2.74 + 0.95 * (z - fz) ** 2;        // a proper chin: ~0.25 below the mouth at the centre, rising to the jaw
+    const chinY = (z) => 2.87 + 1.4 * (z - fz) ** 2;         // a chin just under the mouth (≈3.0); deeper stretches her face long
     for (const v of face.verts) {
       const y = P.getY(v); if (y > 2.99 || !edgeKeys.has(key(v))) continue;
       P.setY(v, Math.min(y, chinY(P.getZ(v))));
