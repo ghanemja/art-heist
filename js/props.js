@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PAL, paint, ink, blobShadow } from './style.js';
+import { PAL, paint, ink, blobShadow, inkUniforms } from './style.js';
 
 let _seed = 7;
 export const rnd = () => { _seed = (_seed * 16807) % 2147483647; return (_seed - 1) / 2147483646; };
@@ -87,6 +87,43 @@ function roofTiles(hex) {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
   return (_roofTex[hex] = t);
 }
+// window-box flowers: little stems, petals and a centre, swaying in a breeze. The sway is
+// in the vertex shader (world-position phase), so it survives the buildings being baked
+// and batched, and costs nothing per frame
+const _sway = {};
+function swayPaint(hex, amp) {
+  const key = hex + ':' + amp; if (_sway[key]) return _sway[key];
+  const m = paint(hex, { unique: true, hatch: 0 }), base = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    base?.(sh, r);
+    sh.uniforms.uTime = inkUniforms.uTime;
+    sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      { vec4 wp = modelMatrix * vec4(transformed, 1.0);
+        float ph = dot(wp.xyz, vec3(2.3, 1.7, 2.9));
+        float gust = 0.6 + 0.4 * sin(uTime * 0.31 + ph * 0.05);
+        float sw = (sin(uTime * 1.6 + ph) * 0.65 + sin(uTime * 2.7 + ph * 1.4) * 0.35) * gust;
+        transformed.x += sw * ${amp.toFixed(3)}; transformed.z += cos(uTime * 1.2 + ph) * ${(amp * 0.4).toFixed(3)} * gust; }`);
+  };
+  const ck = m.customProgramCacheKey; m.customProgramCacheKey = () => (ck ? ck() : '') + 'sway' + amp;
+  m.userData.noBatchMerge = true;
+  return (_sway[key] = m);
+}
+function windowFlowers(parent, x0, x1, y, z) {
+  const stem = swayPaint(0x5f8a4a, 0.012), leaf = swayPaint(0x6f9a52, 0.014), mid = swayPaint(0xf2c94c, 0.028);
+  const n = Math.max(3, Math.round((x1 - x0) / 0.085));
+  for (let k = 0; k < n; k++) {
+    const x = x0 + (x1 - x0) * (k + 0.5) / n + (rnd() - 0.5) * 0.02, hh = 0.13 + rnd() * 0.07;
+    const st = mesh(new THREE.CylinderGeometry(0.008, 0.011, hh, 5), stem, x, y + hh / 2, z); parent.add(st);
+    const lf = mesh(new THREE.SphereGeometry(0.03, 6, 4), leaf, x + (k % 2 ? 0.024 : -0.024), y + hh * 0.35, z); lf.scale.set(1, 0.4, 0.6); lf.rotation.z = k % 2 ? 0.5 : -0.5; parent.add(lf);
+    const pet = swayPaint(pick([PAL.accent, 0xf6efdf, PAL.rose, 0xe8a0c4, PAL.gold, 0x9fb4e8]), 0.03);
+    for (let p = 0; p < 5; p++) {
+      const a = p / 5 * Math.PI * 2 + k;
+      const q = mesh(new THREE.SphereGeometry(0.026, 7, 5), pet, x + Math.cos(a) * 0.03, y + hh + Math.sin(a) * 0.03, z + 0.01); q.scale.set(1, 1, 0.5); parent.add(q);
+    }
+    parent.add(mesh(new THREE.SphereGeometry(0.018, 7, 5), mid, x, y + hh, z + 0.025));
+  }
+}
+
 export function house(o = {}) {
   const w = o.w ?? 2.4, d = o.d ?? 2.0, h = o.h ?? 1.7;
   const g = new THREE.Group();
@@ -122,7 +159,7 @@ export function house(o = {}) {
     void f;
   }
   // a window: trim frame, glass with a cross of mullions, a sill, shutters, maybe a flower box
-  const win = (x, y, z, ry, ww = 0.42, wh = 0.5) => {
+  const win = (x, y, z, ry, ww = 0.42, wh = 0.5, sw = 0.16, box = true) => {
     const W = new THREE.Group(); W.position.set(x, y, z); W.rotation.y = ry; g.add(W);
     const m = (geo, mat, px, py, pz) => { const q = mesh(geo, mat, px, py, pz); W.add(q); return q; };
     m(rbox(ww + 0.1, wh + 0.1, 0.05, 0.02), trim, 0, 0, 0.01);
@@ -130,30 +167,43 @@ export function house(o = {}) {
     m(rbox(0.03, wh, 0.03, 0.01), trim, 0, 0, 0.05); m(rbox(ww, 0.03, 0.03, 0.01), trim, 0, 0.02, 0.05);
     m(rbox(ww + 0.18, 0.05, 0.12, 0.02), trim, 0, -wh / 2 - 0.06, 0.05);
     for (const sx of [-1, 1]) {
-      const sh = m(rbox(0.16, wh + 0.06, 0.03, 0.015), shut, sx * (ww / 2 + 0.14), 0, 0.03);
-      for (let k = 0; k < 4; k++) m(rbox(0.12, 0.012, 0.012, 0.004), paint(new THREE.Color(shutC).multiplyScalar(0.75).getHex(), { hatch: 0 }), sx * (ww / 2 + 0.14), -wh / 2 + 0.1 + k * (wh - 0.1) / 3.4, 0.05);
+      const sh = m(rbox(sw, wh + 0.06, 0.03, 0.015), shut, sx * (ww / 2 + sw / 2 + 0.06), 0, 0.03);
+      for (let k = 0; k < 4; k++) m(rbox(sw * 0.75, 0.012, 0.012, 0.004), paint(new THREE.Color(shutC).multiplyScalar(0.75).getHex(), { hatch: 0 }), sx * (ww / 2 + sw / 2 + 0.06), -wh / 2 + 0.1 + k * (wh - 0.1) / 3.4, 0.05);
       void sh;
     }
-    if (rnd() > 0.35) {
-      m(rbox(ww + 0.06, 0.1, 0.12, 0.03), paint(PAL.bark), 0, -wh / 2 - 0.14, 0.09);
-      for (let k = 0; k < 5; k++) m(new THREE.SphereGeometry(0.045, 8, 6), paint(pick([PAL.accent, PAL.gold, PAL.rose, 0xffffff])), -ww / 2 + 0.04 + k * (ww - 0.08) / 4, -wh / 2 - 0.07, 0.1);
+    if (box) {
+      m(rbox(ww + 0.06, 0.12, 0.14, 0.03), paint(PAL.bark), 0, -wh / 2 - 0.15, 0.16);
+      m(rbox(ww - 0.02, 0.02, 0.1, 0.01), paint(0x6a4a34, { hatch: 0 }), 0, -wh / 2 - 0.085, 0.16);   // soil
+      windowFlowers(W, -ww / 2 + 0.03, ww / 2 - 0.03, -wh / 2 - 0.085, 0.16);
     }
   };
-  const fz = d / 2 + 0.005, wy = h * 0.56;
-  win(-w * 0.28, wy, fz, 0); win(w * 0.28, wy, fz, 0);
+  // the front: lay the door and windows out to FIT the width (no window may touch the door)
+  const fz = d / 2 + 0.005, wy = h * 0.56, edge = w / 2 - 0.1, DW = 0.56, GAP = 0.08;
+  const winTotal = (ww, sw) => ww + 2 * (sw + 0.06);
+  let doorX = 0;
+  if (2 * edge >= DW + 2 * (winTotal(0.42, 0.16) + GAP)) {            // wide: a window either side
+    const cx = DW / 2 + GAP + winTotal(0.42, 0.16) / 2;
+    win(-cx, wy, fz, 0); win(cx, wy, fz, 0);
+  } else {                                                            // narrow: the door to one side, one window
+    const side = rnd() > 0.5 ? 1 : -1;
+    doorX = -side * (edge - DW / 2);
+    const room = 2 * edge - DW - GAP;                                 // what's left beside the door
+    const sw = Math.min(0.16, Math.max(0.08, room * 0.16)), ww = Math.min(0.42, room - 2 * (sw + 0.06));
+    if (ww > 0.18) win(side * (edge - room / 2), wy, fz, 0, ww, 0.5, sw);
+  }
   win(0, wy, -fz, Math.PI);
   for (const sx of [-1, 1]) win(sx * (w / 2 + 0.005), wy, 0, sx * Math.PI / 2, 0.38, 0.46);
   // the door: a frame, two raised panels, a knob, a number, a step — under a little porch roof
-  add(rbox(0.56, 0.98, 0.06, 0.02), trim, 0, 0.53, fz + 0.01);
+  add(rbox(0.56, 0.98, 0.06, 0.02), trim, doorX, 0.53, fz + 0.01);
   const doorC = pick([PAL.accent, PAL.teal, PAL.bark, PAL.roofGreen, PAL.mustard]);
-  add(rbox(0.44, 0.86, 0.05, 0.02), paint(doorC), 0, 0.5, fz + 0.03);
-  for (const y of [0.32, 0.66]) add(rbox(0.3, 0.24, 0.03, 0.02), paint(new THREE.Color(doorC).multiplyScalar(0.85).getHex()), 0, y, fz + 0.06);
-  add(new THREE.SphereGeometry(0.03, 8, 6), paint(PAL.gold, { hatch: 0 }), 0.15, 0.5, fz + 0.08);
-  add(rbox(0.8, 0.1, 0.36, 0.04), stone, 0, 0.05, fz + 0.18);
-  const porch = new THREE.Shape(); porch.moveTo(-0.42, 0); porch.lineTo(0.42, 0); porch.lineTo(0, 0.24); porch.closePath();
-  const pg = weld(new THREE.ExtrudeGeometry(porch, { depth: 0.36, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: 2 }));
-  add(pg, paint(roofC), 0, 1.06, fz);
-  for (const sx of [-1, 1]) { const br = add(rbox(0.05, 0.22, 0.05, 0.015), trim, sx * 0.36, 0.95, fz + 0.2); br.rotation.x = 0.6; }
+  add(rbox(0.44, 0.86, 0.05, 0.02), paint(doorC), doorX, 0.5, fz + 0.03);
+  for (const y of [0.32, 0.66]) add(rbox(0.3, 0.24, 0.03, 0.02), paint(new THREE.Color(doorC).multiplyScalar(0.85).getHex()), doorX, y, fz + 0.06);
+  add(new THREE.SphereGeometry(0.03, 8, 6), paint(PAL.gold, { hatch: 0 }), doorX + 0.15, 0.5, fz + 0.08);
+  add(rbox(0.72, 0.1, 0.36, 0.04), stone, doorX, 0.05, fz + 0.18);
+  const porch = new THREE.Shape(); porch.moveTo(-0.36, 0); porch.lineTo(0.36, 0); porch.lineTo(0, 0.2); porch.closePath();
+  const pg = weld(new THREE.ExtrudeGeometry(porch, { depth: 0.3, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: 2 }));
+  add(pg, paint(roofC), doorX, 1.06, fz);
+  for (const sx of [-1, 1]) { add(rbox(0.05, 0.16, 0.12, 0.015), trim, doorX + sx * 0.3, 0.99, fz + 0.06); }   // brackets flat to the wall, beside the door frame
   if (o.chimney !== false && rnd() > 0.35) {
     add(rbox(0.3, 0.75, 0.3, 0.04), paint(PAL.terracotta), w * 0.24, h + rh * 0.62, -d * 0.12);
     add(rbox(0.38, 0.08, 0.38, 0.03), stone, w * 0.24, h + rh * 0.62 + 0.4, -d * 0.12);

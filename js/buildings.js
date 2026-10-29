@@ -1347,3 +1347,95 @@ export function batchPlaced(groups, weight = 'mid') {
   for (const m of g.children) { m.geometry.computeBoundingSphere(); m.geometry.computeBoundingBox(); }
   return ink(g, weight);
 }
+
+// ── The Library (Janelle's bookshelf project): the building IS a bookcase. A brick
+// reading-room behind a giant timber bookcase front, its shelves stacked with house-sized
+// books (spines, gilt bands, title labels, one leaning, a bookend), the door set into the
+// bottom shelf under an arched fanlight, an open book on the roof for a sign ──
+export function bookLibrary() {
+  const K = kit(), R = rng(4471);
+  const W = 3.4, D = 2.2, H = 2.75, FZ = 1.0;                 // body; its front face at z = FZ
+  const brick = paint(0xb8664a), wood = paint(0x8a5a3a), woodD = paint(0x6e452c), trim = paint(0xfffaf0), dk = DARK();
+  // the reading room: brick body, stone plinth, a cornice, a slate hipped roof
+  K.box(W + 0.12, 0.18, D + 0.12, paint(0xd8cab0), 0, 0.09, FZ - D / 2, 0.04);
+  K.box(W, H, D, brick, 0, H / 2 + 0.1, FZ - D / 2, 0.06);
+  const cor = K.sub(0, H + 0.05, FZ - D + 0.02, Math.PI); cor.put(prism(CORNICE, W), trim, 0, 0, 0);
+  for (const sd of [-1, 1]) {
+    const S = K.sub(sd * W / 2, 0.1, FZ - D / 2, sd * Math.PI / 2);
+    for (const x of [-0.5, 0.5]) windowAt(S, { x, y: 0.75, w: 0.4, h: 1.2, arch: true, frame: trim, glass: upperGlass(2), cols: 2, rows: 3, hood: 'key' });
+    S.put(prism(CORNICE, D), trim, 0, H - 0.05, 0);
+  }
+  K.put(hipRoof(W + 0.1, D + 0.1, 0.75, 1), paint(PAL.roofSlate), 0, H + 0.28, FZ - D / 2);
+  // the bookcase front: sides, plinth, two shelves, a crowned top with the name board
+  const CW = W + 0.3, CD = 0.5, CZ = FZ + CD / 2 - 0.05, TOP = H + 0.35, SH = [0.22, 1.5];
+  for (const s of [-1, 1]) K.box(0.16, TOP, CD, wood, s * (CW / 2 - 0.08), TOP / 2, CZ, 0.04);
+  K.box(CW, 0.22, CD + 0.06, woodD, 0, 0.11, CZ + 0.03, 0.04);
+  K.box(CW - 0.1, 0.1, CD, wood, 0, SH[1] - 0.05, CZ, 0.03);
+  K.box(CW - 0.2, 0.06, 0.04, woodD, 0, SH[1] - 0.12, CZ + CD / 2, 0.015);   // shelf lip
+  K.box(CW + 0.16, 0.42, CD + 0.12, wood, 0, TOP + 0.05, CZ + 0.02, 0.05);
+  K.put(prism(CORNICE.map(([a, b]) => [a * 0.8, b * 0.8]), CW + 0.3), woodD, 0, TOP + 0.26, CZ + CD / 2 + 0.04);
+  K.flat(CW * 0.7, 0.3, signMat('THE LIBRARY', { gold: true, bg: '#5a3826', font: '700 $px ' + SCRIPT, w: 768, h: 112 }), 0, TOP + 0.05, CZ + CD / 2 + 0.085);
+  K.box(CW - 0.32, TOP - SH[1] - 0.25, 0.04, paint(0x4a2e22), 0, (TOP + SH[1]) / 2 - 0.1, FZ + 0.01, 0.01);   // shadowed back of the case
+  K.box(CW - 0.32, SH[1] - SH[0] - 0.12, 0.04, paint(0x4a2e22), 0, (SH[0] + SH[1]) / 2 - 0.05, FZ + 0.01, 0.01);
+  // a giant book: rounded spine, two gilt bands, a cream title label
+  const COLS = [0xc4553e, 0x3f5872, 0x5f8a5a, 0xe2b04a, 0x8f6aa8, 0xd97f6a, 0x2f6f6a, 0x9a3b4a, 0x4f7fb0];
+  const book = (x, y, bw, bh, lean = 0) => {
+    const c = COLS[Math.floor(R() * COLS.length)], B = K.sub(x, y, CZ + 0.02);
+    B.g.rotation.z = lean;
+    B.box(bw, bh, CD - 0.12, paint(c), 0, bh / 2, 0, Math.min(0.05, bw * 0.22));
+    const band = paint(PAL.gold, { hatch: 0 }), bz = (CD - 0.12) / 2 + 0.005;
+    for (const t of [0.1, 0.9]) B.box(bw + 0.01, 0.035, 0.03, band, 0, bh * t, bz - 0.01, 0.01);
+    B.box(bw * 0.62, bh * 0.28, 0.02, paint(0xf6eedb), 0, bh * 0.55, bz, 0.008);
+    B.box(bw * 0.4, 0.02, 0.012, dk, 0, bh * 0.58, bz + 0.012, 0.004);
+    B.box(bw * 0.3, 0.02, 0.012, dk, 0, bh * 0.5, bz + 0.012, 0.004);
+    return bw;
+  };
+  const fill = (x0, x1, y, hMax, leanEnd = 0) => {
+    let x = x0;
+    while (x < x1 - 0.12) {
+      const bw = Math.min(x1 - x, 0.16 + R() * 0.12), bh = hMax * (0.72 + R() * 0.28);
+      if (x1 - x - bw < 0.12) { book(x + bw / 2, y, bw, bh); break; }
+      book(x + bw / 2, y, bw, bh); x += bw + 0.012;
+    }
+    if (leanEnd) {                                              // one book leaning on the last, and a bookend
+      book(x1 + leanEnd * 0.06, y, 0.17, hMax * 0.9, -leanEnd * 0.32);
+    }
+  };
+  const inner = CW / 2 - 0.18;
+  // top shelf: a full run of books, a couple leaning, a brass bookend
+  fill(-inner, inner - 0.55, SH[1], TOP - SH[1] - 0.4, 1);
+  K.box(0.06, 0.4, 0.3, paint(PAL.gold, { hatch: 0 }), inner - 0.06, SH[1] + 0.2, CZ, 0.02);
+  K.box(0.24, 0.05, 0.3, paint(PAL.gold, { hatch: 0 }), inner - 0.15, SH[1] + 0.025, CZ, 0.015);
+  // bottom shelf: books either side of the door
+  const DW = 0.92;
+  fill(-inner, -DW / 2 - 0.12, SH[0], SH[1] - SH[0] - 0.2);
+  fill(DW / 2 + 0.12, inner, SH[0], SH[1] - SH[0] - 0.2);
+  // the door: a framed doorway with an arched fanlight, double panelled doors, brass knobs
+  const DZ = FZ + 0.03;
+  for (const s of [-1, 1]) K.box(0.1, 1.15, 0.12, trim, s * (DW / 2 + 0.02), 0.2 + 0.575, DZ + 0.04, 0.02);
+  K.box(DW + 0.14, 0.1, 0.14, trim, 0, 1.36, DZ + 0.04, 0.02);
+  const fan = new THREE.Shape(); fan.moveTo(DW / 2 - 0.02, 0); fan.absarc(0, 0, DW / 2 - 0.02, 0, Math.PI, false); fan.lineTo(DW / 2 - 0.02, 0);
+  K.put(extrude(fan, 0.04, 0.01), paint(0xf2d48a, { hatch: 0 }), 0, 1.0, DZ);
+  for (let k = 1; k < 4; k++) { const a = k / 4 * Math.PI; K.box(0.025, DW / 2 - 0.06, 0.02, trim, Math.cos(a) * (DW / 4 - 0.01), 1.0 + Math.sin(a) * (DW / 4 - 0.01), DZ + 0.06, 0.006, [0, 0, a - Math.PI / 2]); }
+  const arcG = new THREE.TorusGeometry(DW / 2, 0.05, 6, 20, Math.PI); K.put(arcG, trim, 0, 1.0, DZ + 0.05);
+  K.box(DW - 0.04, 0.05, 0.06, trim, 0, 1.0, DZ + 0.03, 0.01);
+  for (const s of [-1, 1]) {
+    K.box(DW / 2 - 0.04, 0.78, 0.06, paint(0x3f5872), s * (DW / 4 - 0.01), 0.6, DZ + 0.02, 0.02);
+    for (const y of [0.42, 0.78]) K.box(DW / 2 - 0.16, 0.26, 0.03, paint(0x34496a), s * (DW / 4 - 0.01), y, DZ + 0.06, 0.015);
+    K.put(new THREE.SphereGeometry(0.03, 8, 6), paint(PAL.gold, { hatch: 0 }), s * 0.06, 0.6, DZ + 0.08);
+  }
+  K.box(DW + 0.4, 0.08, 0.36, paint(0xd8cab0), 0, 0.26, CZ + CD / 2 + 0.12, 0.03);    // the step
+  // on the roof: a giant open book, pages fanned, a ribbon marker
+  const OB = K.sub(0, H + 0.85, FZ - D / 2 + 0.05);
+  for (const s of [-1, 1]) {
+    const pg = shape([[0, 0], [s * 0.62, 0.1], [s * 0.66, 0.16], [s * 0.04, 0.08]]);
+    const cover = OB.put(extrude(pg, 0.9, 0.02), paint(0x9a3b4a), 0, 0, -0.45);
+    const leaf = new THREE.Shape(); leaf.moveTo(0, 0.06); leaf.quadraticCurveTo(s * 0.3, 0.3, s * 0.6, 0.2); leaf.lineTo(s * 0.6, 0.13); leaf.quadraticCurveTo(s * 0.3, 0.2, 0, 0.0);
+    OB.put(extrude(leaf, 0.8, 0.015), paint(0xfaf3e2), 0, 0.02, -0.4);
+    cover.userData._gpForce = true;
+  }
+  OB.box(0.04, 0.3, 0.02, paint(PAL.accent, { hatch: 0 }), 0.05, -0.08, 0.44, 0.005);
+  OB.g.rotation.x = -0.35;
+  lampPost(K, -2.15, 1.45, 1.5); lampPost(K, 2.15, 1.45, 1.5);
+  return K.g;
+}
