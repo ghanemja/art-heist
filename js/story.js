@@ -321,7 +321,7 @@ export function buildCase(scene, W) {
   { const d = mF(7.9, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.8, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
   { const d = mF(2.2, 0.6); items.push({ kind: 'clue', id: 'frames', dir: d }); }          // the easel's empty frame
   { const d = mF(0, -13.2); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
-  { const d = mF(-6.5, -1.4); const b = booth(); place(b, d, yawToFace(d, mF(-6.5, 4)));   // window toward town: you see it as you walk up
+  { const d = mF(-7.0, -1.6); const b = booth(); place(b, d, yawToFace(d, mF(-7.0, 4)));   // window toward town: you see it as you walk up
     b.updateWorldMatrix(true, true); const L = (x, y, z) => b.localToWorld(new THREE.Vector3(x, y, z));
     items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.32, 0.95) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction
   // downtown: the van outside Frame & Co., the café with Pia's bike
@@ -340,11 +340,8 @@ export function buildCase(scene, W) {
   { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); place(t, d); items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t }); }
   // people
   const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.1, 0.45), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: null };
-  { // Rex stands beside his van, level with the cab, on whichever side is off the road — in plain view
-    vanObj.updateWorldMatrix(true, true);
-    const sides = [-1, 1].map(sx => vanObj.localToWorld(new THREE.Vector3(sx * 1.35, 0, 0.9)).normalize());
-    at.rex = sides.find(d => !onRoad(d, 0.2)) || sides.sort((a, b) => (nearestRoad(b)?.dist ?? 0) - (nearestRoad(a)?.dist ?? 0))[0];
-  }
+  // Rex waits on the street corner by his van, on the pavement in plain view
+  at.rex = W.townAt([W.vanSpot[0] - 1.3, W.vanSpot[1] + 0.5]);
   for (const p of PEOPLE) {
     const d = at[p.id];
     const m = person(LOOKS[p.id]);
