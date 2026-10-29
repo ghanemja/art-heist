@@ -150,7 +150,7 @@ function fixColors(root) {
       const x = SP.getX(v), y = SP.getY(v), z = SP.getZ(v);
       const front = THREE.MathUtils.smoothstep(x, cx + 0.05, cx + 0.3);        // 0 at the back of the neck → 1 at the front
       if (!front) continue;
-      const T = Math.min(top, chinY(z) - 0.06), lo = T - 0.12;                  // the collar's new top: just under the chin
+      const T = Math.min(top, chinY(z) - 0.13), lo = T - 0.16;                  // the collar's new top: under the chin, so the chin shows
       if (y <= lo || T >= top) continue;
       const ny = lo + (y - lo) * (T - lo) / (top - lo);
       SP.setY(v, y + (ny - y) * front);
@@ -176,21 +176,25 @@ function fixColors(root) {
   }
   // a catchlight for each eye, placed on the head bone per instance (see makeHuman)
   root.userData.eyes = headPieces.filter(isEye).map(p => new THREE.Vector3(p.max.x + 0.02, p.min.y + (p.max.y - p.min.y) * 0.68, (p.min.z + p.max.z) / 2 + 0.04));
-  // EYES: each is one small dark oval — all pupil. Trace a white, a hazel iris and a pupil
-  // onto its surface (rays from the front, as for the chin line), each a hair in front of the
-  // last; the oval's own dark rim is left showing as the lash line
+  // EYES: each is one small dark oval — all pupil. Trace a white over the whole of it, then a
+  // hazel iris and a dark brown pupil (rays from the front, as for the chin line), each a
+  // hair in front of the last
   {
     const fm = new THREE.Mesh(sk.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), rc = new THREE.Raycaster();
     root.userData.eyeLayers = [];
     for (const p of headPieces.filter(isEye)) {
       const inP = new Set(p.verts), cy = (p.min.y + p.max.y) / 2, cz = (p.min.z + p.max.z) / 2, hy = (p.max.y - p.min.y) / 2, hz = (p.max.z - p.min.z) / 2;
-      const surf = (y, z) => {
-        rc.set(new THREE.Vector3(2, y, z), new THREE.Vector3(-1, 0, 0));
-        const h = rc.intersectObject(fm, false).find(h => inP.has(h.face.a));
-        return h ? h.point.x : p.max.x - 0.015;
+      const surf = (y, z) => {                   // off the oval's edge: the surface just inside it
+        for (let k = 1; k > 0.5; k -= 0.05) {
+          const yy = cy + (y - cy) * k, zz = cz + (z - cz) * k;
+          rc.set(new THREE.Vector3(2, yy, zz), new THREE.Vector3(-1, 0, 0));
+          const h = rc.intersectObject(fm, false).find(h => inP.has(h.face.a));
+          if (h) return h.point.x;
+        }
+        return p.max.x;
       };
       const r = Math.min(hy, hz);
-      for (const [ry, rz, oy, lift, color] of [[hy * 0.84, hz * 0.84, 0, 0.004, 0xf4eee4], [r * 0.66, r * 0.66, -hy * 0.08, 0.008, 0x8a5a2e], [r * 0.3, r * 0.3, -hy * 0.08, 0.012, 0x221a1c]]) {
+      for (const [ry, rz, oy, lift, color] of [[hy * 1.1, hz * 1.1, 0, 0.004, 0xf4eee4], [r * 0.7, r * 0.7, -hy * 0.06, 0.008, 0x8a5a2e], [r * 0.32, r * 0.32, -hy * 0.06, 0.012, 0x3b2418]]) {
         const g = new THREE.RingGeometry(0.0001, 1, 24, 4), P = g.attributes.position;
         for (let i = 0; i < P.count; i++) {        // ring (u, v) → face (−z, y): the disc faces forward (+X)
           const u = P.getX(i), v = P.getY(i), y = cy + oy + v * ry, z = cz - u * rz;
@@ -200,18 +204,6 @@ function fixColors(root) {
         root.userData.eyeLayers.push({ geo: g, color });
       }
     }
-  }
-  // a chin line: a soft curve under the mouth, traced onto the face's surface (found by
-  // casting rays at the face from the front), drawn in ink on the head bone (see makeHuman)
-  {
-    const fm = new THREE.Mesh(sk.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), rc = new THREE.Raycaster(), pts = [];
-    for (let k = -6; k <= 6; k++) {
-      const z = k / 6 * 0.1, y = 2.85 + 2.6 * z * z;            // a short, rounded U under the lower lip
-      rc.set(new THREE.Vector3(2, y, z), new THREE.Vector3(-1, 0, 0));
-      const h = rc.intersectObject(fm, false).find(h => face.verts.includes(h.face.a));
-      if (h) pts.push(h.point.clone().add(new THREE.Vector3(0.012, 0, 0)));
-    }
-    if (pts.length > 4) root.userData.chinLine = pts;
   }
   paintVerts(sk, (set) => {
     for (const p of skP) {
@@ -550,17 +542,6 @@ export function makeHuman(glb, look = {}) {
       const sk = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16).scale(0.46, 0.56, 0.7).translate(-0.22, 3.45, 0).applyMatrix4(H.m),
         paint(glb.scene.userData.hairCol ?? 0xc2a889, { soft: true, hatch: 0.3 }));
       sk.userData.part = 'skull'; sk.userData.noInk = true; H.bone.add(sk);
-      // JAW: the face plate stops flat at the collar. A rounded jaw under it, narrowing to a
-      // chin, inked where it meets the collar (its top half sits behind the face)
-      const jg = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).scale(0.3, 0.36, 0.34).translate(0.13, 3.04, 0);
-      const jp = jg.attributes.position;
-      for (let i = 0; i < jp.count; i++) {                         // narrow toward the bottom: a chin, not a bowl
-        const t = THREE.MathUtils.clamp((3.04 - jp.getY(i)) / 0.36, 0, 1);
-        jp.setZ(i, jp.getZ(i) * (1 - 0.45 * t * t)); jp.setX(i, jp.getX(i) + 0.16 * t);   // …and the chin forward, over the collar
-      }
-      jg.computeVertexNormals(); jg.applyMatrix4(H.m);
-      const jaw = new THREE.Mesh(jg, paint(CRITIC_SKIN)); jaw.userData.part = 'jaw'; H.bone.add(jaw);
-      ink(jaw, 'mid'); jaw.userData.noInk = true;                   // a firmer line than the rest of her: it has to read from play distance
     }
     // NECKLINE: a soft rolled edge round the turtleneck's top, so the collar reads as a collar
     const col = glb.scene.userData.collar, N = toBone('spine2') || toBone('neck');
@@ -569,25 +550,6 @@ export function makeHuman(glb, look = {}) {
       tube.applyMatrix4(N.m);
       const knitRoll = paint(new THREE.Color(col.color).multiplyScalar(0.92).getHex()); const roll = new THREE.Mesh(tube, knitRoll);
       roll.userData.part = 'collar'; N.bone.add(roll);
-    }
-  }
-  // the chin line, riding the head bone, in the same ink as her mouth
-  const chin = glb.scene.userData.chinLine;
-  if (chin) {
-    let skinM = null; rig.traverse(o => { if (o.isSkinnedMesh && o.userData.part === 'skin') skinM = o; });
-    const hi = skinM?.skeleton.bones.findIndex(b => b.name.replace(/\./g, '') === 'head');
-    if (skinM && hi >= 0) {
-      const toBone = skinM.skeleton.boneInverses[hi].clone().multiply(skinM.bindMatrix);
-      const curve = new THREE.CatmullRomCurve3(chin);
-      const g = new THREE.TubeGeometry(curve, 24, 0.008, 5);
-      // taper the stroke to fine ends, like a pen line
-      const P = g.attributes.position, c = new THREE.Vector3();
-      for (let i = 0; i < P.count; i++) { const t = Math.floor(i / 6) / 24; curve.getPointAt(Math.min(1, t), c); const w = 0.35 + 0.65 * Math.sin(Math.PI * t);
-        P.setXYZ(i, c.x + (P.getX(i) - c.x) * w, c.y + (P.getY(i) - c.y) * w, c.z + (P.getZ(i) - c.z) * w); }
-      g.applyMatrix4(toBone);
-      const line = new THREE.Mesh(g, paint(0xa8705a, { hatch: 0 }));     // a shade of her skin, softer than the mouth
-      line.userData.noInk = true;
-      skinM.skeleton.bones[hi].add(line);
     }
   }
   // the eyes' catchlights: little white dots, riding the head bone
