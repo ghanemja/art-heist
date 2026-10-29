@@ -8,7 +8,7 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js';
+import { buildMuseum } from '../museum.js?v=2';
 import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);

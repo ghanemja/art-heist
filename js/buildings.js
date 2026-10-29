@@ -749,7 +749,7 @@ export const MAIN_STREET = {
       { kind: 'books', name: 'Dog-Eared Books', w: 2.0, wall: 0x93abc0, front: 0x3f5872, trim: 0xf6eedb, roof: 'mansard', up: 'bay', blade: 'book', sign: { gold: true, bg: '#2f3f55' }, ends: [-1],
         extras: (K, w) => { trolley(K, -w * 0.22, 0.75); } },
       { kind: 'bakery', name: 'Rise & Shine Bakery', w: 1.75, wall: 0xf3d9a0, front: 0xdc9e9a, trim: 0xfffaf0, roof: 'gable', roofCol: PAL.roofRed, awning: [0xdc9e9a, 0xfffaf0], blade: 'croissant', door: -1, flowers: PAL.terracotta, sign: { bg: '#fff4e0', fg: '#b85a5a' },
-        extras: (K, w) => { aBoard(K, w * 0.3, 1.0, 'warm loaves', 0x6b4a34); } },
+        extras: (K, w) => { aBoard(K, w * 0.3, 0.55, 'warm loaves', 0x6b4a34); } },      // by the window: Pia stands out front of here
       { kind: 'cafe', name: 'Bean There Café', w: 1.9, wall: 0xf1e4c8, front: 0x4f8a7e, trim: 0xfffaf0, roof: 'dutch', awning: [0x4f8a7e, 0xf6eedb], blade: 'cup', door: -1, flowers: 0x4f8a7e, ends: [1], sign: { gold: true, bg: '#2f5a52' },
         extras: (K, w) => { aBoard(K, w * 0.38, 1.12, 'flat white 2.5', 0x2a2230); planter(K, -w / 2 + 0.2, 0.3, 0x4f8a7e, 0.85); } },
     ] },
@@ -794,10 +794,17 @@ export function buildShop(spec) {
 // ── pavement props ──────────────────────────────────────────────────────────
 function trolley(K, x, z) {
   const s = K.sub(x, 0.07, z, 0.2);
-  s.box(0.62, 0.32, 0.3, paint(PAL.bark), 0, 0.42, 0, 0.03);
-  for (let k = 0; k < 7; k++) s.box(0.06, 0.16 + (k % 3) * 0.03, 0.2, paint([PAL.accent, PAL.gold, PAL.teal, PAL.lilac, 0xf6eedb][k % 5]), -0.25 + k * 0.083, 0.65, 0, 0.01, [0, 0, (k % 2) * 0.12]);
-  for (const sx of [-0.24, 0.24]) s.put(new THREE.TorusGeometry(0.08, 0.02, 6, 14), DARK(), sx, 0.09, 0.16);
-  s.box(0.03, 0.4, 0.03, DARK(), 0.33, 0.62, -0.12, 0.01, [0, 0, -0.3]);
+  // the box rests on its axles; four wheels on the ground, each with a hub
+  s.box(0.62, 0.32, 0.3, paint(PAL.bark), 0, 0.34, 0, 0.03);
+  for (let k = 0; k < 7; k++) s.box(0.06, 0.16 + (k % 3) * 0.03, 0.2, paint([PAL.accent, PAL.gold, PAL.teal, PAL.lilac, 0xf6eedb][k % 5]), -0.25 + k * 0.083, 0.57, 0, 0.01, [0, 0, (k % 2) * 0.12]);
+  for (const sx of [-0.22, 0.22]) {
+    s.put(new THREE.CylinderGeometry(0.018, 0.018, 0.36, 8).rotateX(Math.PI / 2), DARK(), sx, 0.1, 0);
+    for (const sz of [-0.165, 0.165]) {
+      s.put(new THREE.TorusGeometry(0.08, 0.02, 6, 14), DARK(), sx, 0.1, sz);
+      s.put(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 10).rotateX(Math.PI / 2), paint(PAL.gold), sx, 0.1, sz);
+    }
+  }
+  s.box(0.03, 0.4, 0.03, DARK(), 0.33, 0.54, -0.12, 0.01, [0, 0, -0.3]);
 }
 function flowerStand(K, x, z) {
   const s = K.sub(x, 0.07, z, 0);

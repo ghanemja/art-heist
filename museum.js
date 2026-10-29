@@ -600,7 +600,8 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART } = {})
     ornateFrame(1.3, 1.0, easel).position.set(0, 1.15, 0.06);
     // backing board, bare — the canvas has been cut clean out
     add(new THREE.PlaneGeometry(0.98, 0.7), S(0x5a4632, { roughness: 1 }), 0, 1.15, 0.05, easel);
-    add(rbox(0.36, 0.16, 0.02, 0.01), S(0xfff6e6), 0, 0.42, 0.14, easel);   // the little wall-card
+    // the little wall-card: stood on the ledge, leaning back on the frame's foot
+    add(rbox(0.36, 0.16, 0.02, 0.01), S(0xfff6e6), 0.3, 0.73, 0.1, easel).rotation.x = -0.18;
     // two more of the stolen paintings' frames, carried out and leaned behind it — all empty
     for (const [x, z, ry, fw, fh, style] of [[3.05, 0.0, -0.75, 1.0, 0.78, 'walnut'], [2.7, -0.62, -0.45, 0.72, 0.95, 'fluted']]) {
       const lean = new THREE.Group(); lean.position.set(x, PZ, z); lean.rotation.set(0, ry, 0); g.add(lean);

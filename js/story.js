@@ -211,7 +211,7 @@ export function buildCase(scene, W) {
   { const d = W.siteAt('harbour', [2.2, 0.5]); const c = crates(); place(c, d, yawToFace(d, W.sites.harbour.dir)); items.push({ kind: 'clue', id: 'crates', dir: d, obj: c }); W.solid(d, 1.2); }
   { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); place(t, d); items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t }); }
   // people
-  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.6, 2.4), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.15]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
+  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.6, 2.4), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
   for (const p of PEOPLE) {
     const d = at[p.id];
     const m = person(LOOKS[p.id]);
