@@ -87,11 +87,13 @@ function ruts() {
 }
 function van() {
   const g = new THREE.Group(), white = paint(0xf4f1ea), dark = paint(PAL.ink, { hatch: 0 });
-  g.add(new THREE.Mesh(rbox(1.5, 1.45, 3.2, 0.25, 3), white).translateY(1.05));
-  { // the bonnet: a side profile (sloping down from the windscreen, a rounded nose) extruded across the van, bevelled
-    const pr = new THREE.Shape(); pr.moveTo(1.5, 0.36); pr.lineTo(2.3, 0.36); pr.quadraticCurveTo(2.42, 0.36, 2.42, 0.48);
-    pr.lineTo(2.42, 0.8); pr.quadraticCurveTo(2.41, 0.92, 2.25, 0.95); pr.lineTo(1.62, 1.04); pr.lineTo(1.5, 1.04); pr.closePath();
-    const bg = new THREE.ExtrudeGeometry(pr, { depth: 1.3, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.06, bevelSegments: 4, curveSegments: 10 });
+  { // ONE shell: a side profile — flat roof, a raked windscreen, the bonnet, a rounded nose —
+    // extruded across the van and bevelled, so the cab and bonnet are the body (no seam)
+    const pr = new THREE.Shape(), q = (cx, cy, x, y) => pr.quadraticCurveTo(cx, cy, x, y);
+    pr.moveTo(-1.3, 0.43); pr.lineTo(2.12, 0.43); q(2.34, 0.43, 2.34, 0.56); pr.lineTo(2.34, 0.72); q(2.33, 0.85, 2.14, 0.88);
+    pr.lineTo(1.78, 0.94); q(1.66, 0.96, 1.63, 1.06); pr.lineTo(1.42, 1.56); q(1.36, 1.68, 1.2, 1.68);
+    pr.lineTo(-1.3, 1.68); q(-1.5, 1.68, -1.5, 1.5); pr.lineTo(-1.5, 0.6); q(-1.5, 0.43, -1.3, 0.43);
+    const bg = new THREE.ExtrudeGeometry(pr, { depth: 1.3, bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.1, bevelSegments: 5, curveSegments: 12 });
     bg.translate(0, 0, -0.65); bg.rotateY(-Math.PI / 2);
     const bw = mergeVertices(bg.deleteAttribute('uv').deleteAttribute('normal'), 1e-4); bw.computeVertexNormals();
     g.add(new THREE.Mesh(bw, white)); }
@@ -99,33 +101,35 @@ function van() {
   // round headlamps either side of a slatted grille, a bumper, mirrors, a plate ──
   { const glass = paint(0x9fc4cc, { hatch: 0 }), rim = paint(0x4a4552, { hatch: 0 }), steel = paint(0xb9bcc4, { hatch: 0 }), lampM = paint(0xfff1c8, { emissive: 0x6a5a30, hatch: 0 });
     const at = (geo, mat, x, y, z, rx = 0, ry = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.rotation.set(rx, ry, 0); g.add(o); return o; };
-    at(rbox(1.34, 0.64, 0.03, 0.08), rim, 0, 1.3, 1.6);
-    at(rbox(1.22, 0.54, 0.03, 0.07), glass, 0, 1.3, 1.615);
-    for (const x of [-0.3, 0.25]) at(rbox(0.42, 0.025, 0.02, 0.008), rim, x, 1.08, 1.635, 0, 0).rotation.z = 0.35;
+    const rake = Math.atan2(1.63 - 1.42, 1.56 - 1.06), nz = Math.cos(rake), ny = Math.sin(rake);   // the screen leans back
+    const onScreen = (o, t, out) => { o.position.set(o.position.x, 1.31 + ny * (0.1 + out), 1.525 + nz * (0.1 + out) + t); o.rotation.x = -rake; return o; };
+    onScreen(at(rbox(1.3, 0.56, 0.02, 0.08), rim, 0, 0, 0), 0, 0.0);
+    onScreen(at(rbox(1.18, 0.46, 0.02, 0.07), glass, 0, 0, 0), 0, 0.012);
+    for (const x of [-0.3, 0.25]) { const w = onScreen(at(rbox(0.42, 0.025, 0.02, 0.008), rim, x, 0, 0), 0, 0.025); w.position.y -= 0.17 * nz; w.position.z += 0.17 * ny; w.rotation.z = 0.35; }
     for (const s of [-1, 1]) {
-      at(rbox(0.03, 0.46, 0.5, 0.06), rim, s * 0.752, 1.3, 1.25);
-      at(rbox(0.03, 0.4, 0.44, 0.05), glass, s * 0.762, 1.3, 1.25);
-      at(new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18).rotateX(Math.PI / 2), steel, s * 0.48, 0.72, 2.49);
-      at(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 18).rotateX(Math.PI / 2), lampM, s * 0.48, 0.72, 2.51);
+      at(rbox(0.03, 0.42, 0.5, 0.06), rim, s * 0.752, 1.32, 1.12);
+      at(rbox(0.03, 0.36, 0.44, 0.05), glass, s * 0.762, 1.32, 1.12);
+      at(new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18).rotateX(Math.PI / 2), steel, s * 0.48, 0.66, 2.43);
+      at(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 18).rotateX(Math.PI / 2), lampM, s * 0.48, 0.66, 2.45);
       at(rbox(0.05, 0.05, 0.22, 0.015), rim, s * 0.8, 1.2, 1.52);                    // mirror arm
       at(rbox(0.06, 0.2, 0.13, 0.03), rim, s * 0.86, 1.24, 1.44);                    // mirror
-      at(rbox(0.08, 0.06, 0.03, 0.02), paint(0xe8a040, { emissive: 0x5a3010, hatch: 0 }), s * 0.62, 0.55, 2.5);   // indicator
+      at(rbox(0.08, 0.06, 0.03, 0.02), paint(0xe8a040, { emissive: 0x5a3010, hatch: 0 }), s * 0.66, 0.52, 2.44);   // indicator
     }
-    at(rbox(0.58, 0.24, 0.03, 0.05), rim, 0, 0.72, 2.495);
-    for (const y of [0.67, 0.74, 0.81]) at(rbox(0.5, 0.025, 0.02, 0.008), steel, 0, y - 0.02, 2.515);
-    at(rbox(1.5, 0.14, 0.2, 0.05), paint(0x4a4552), 0, 0.42, 2.53);
+    at(rbox(0.58, 0.24, 0.03, 0.05), rim, 0, 0.66, 2.435);
+    for (const y of [0.67, 0.74, 0.81]) at(rbox(0.5, 0.025, 0.02, 0.008), steel, 0, y - 0.08, 2.455);
+    at(rbox(1.5, 0.14, 0.2, 0.05), paint(0x4a4552), 0, 0.4, 2.45);
     { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 48; const c = cv.getContext('2d');
       c.fillStyle = '#f6f2e6'; c.fillRect(0, 0, 128, 48); c.strokeStyle = '#2a2230'; c.lineWidth = 4; c.strokeRect(2, 2, 124, 44);
       c.fillStyle = '#2a2230'; c.font = '700 26px "Patrick Hand", "Comic Sans MS", cursive'; c.textAlign = 'center'; c.fillText('FRM 4C0', 64, 34);
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-      const pl = at(new THREE.PlaneGeometry(0.3, 0.11), paint(0xffffff, { map: t, hatch: 0 }), 0, 0.43, 2.635); pl.userData.noInk = true; } }
+      const pl = at(new THREE.PlaneGeometry(0.3, 0.11), paint(0xffffff, { map: t, hatch: 0 }), 0, 0.41, 2.555); pl.userData.noInk = true; } }
   // FRAME & CO. painted on the side
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 96;
   const c = cv.getContext('2d'); c.fillStyle = '#f4f1ea'; c.fillRect(0, 0, 256, 96);
   c.fillStyle = '#2a2230'; c.font = '700 40px "Patrick Hand", "Comic Sans MS", cursive'; c.textAlign = 'center'; c.fillText('FRAME & CO.', 128, 60);
   c.strokeStyle = '#2a2230'; c.lineWidth = 4; c.strokeRect(14, 14, 228, 68);
   const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace;
-  for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.8), paint(0xffffff, { map: tx, hatch: 0 })); p.position.set(s * 0.77, 1.15, 0); p.rotation.y = s * Math.PI / 2; p.userData.noInk = true; g.add(p); }
+  for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.73), paint(0xffffff, { map: tx, hatch: 0 })); p.position.set(s * 0.77, 1.12, -0.2); p.rotation.y = s * Math.PI / 2; p.userData.noInk = true; g.add(p); }
   const tyre = lathe([[0.15, -0.1], [0.3, -0.1], [0.33, 0], [0.3, 0.1], [0.15, 0.1]], 16).rotateZ(Math.PI / 2);
   for (const [x, z] of [[-0.72, 1.2], [0.72, 1.2], [-0.72, -1.1], [0.72, -1.1], [-0.52, -1.1], [0.52, -1.1]]) g.add(new THREE.Mesh(tyre, dark).translateX(x).translateY(0.32).translateZ(z));
   // ── the back: two rear doors (the right one swung open on its hinges), the dark load
