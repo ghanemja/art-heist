@@ -221,7 +221,16 @@ function booth() {
   g.add(new THREE.Mesh(rbox(1.3, 2.0, 1.3, 0.15), paint(PAL.dusty)).translateY(1.0));
   g.add(new THREE.Mesh(rbox(1.5, 0.18, 1.5, 0.08), paint(PAL.cream)).translateY(2.09));
   const w = new THREE.Mesh(rbox(0.9, 0.6, 0.06, 0.03), paint(0x9fc4cc, { hatch: 0 })); w.position.set(0, 1.35, 0.65); g.add(w);
-  g.add(new THREE.Mesh(rbox(0.6, 0.06, 0.3, 0.02), paint(0xf4f1ea)).translateY(1.0).translateZ(0.82));   // the logbook on the sill
+  g.add(new THREE.Mesh(rbox(1.0, 0.06, 0.3, 0.02), paint(PAL.cream)).translateY(1.0).translateZ(0.8));     // the sill
+  { // the guard's logbook, lying open on the sill: a red cover, two cream pages with ruled lines, a pen across it
+    const B = new THREE.Group(); B.position.set(0.05, 1.04, 0.82); B.rotation.y = -0.18; g.add(B);
+    B.add(new THREE.Mesh(rbox(0.5, 0.025, 0.3, 0.01), paint(0x9a3b4a)));
+    for (const sx of [-1, 1]) {
+      const pg = new THREE.Mesh(rbox(0.23, 0.02, 0.27, 0.008), paint(0xfaf3e2)); pg.position.set(sx * 0.118, 0.02, 0); pg.rotation.z = -sx * 0.08; B.add(pg);
+      for (let k = 0; k < 4; k++) { const ln = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.004, 0.008), paint(0x8a8392, { hatch: 0 })); ln.position.set(sx * 0.12, 0.033 + (sx > 0 ? -0.004 : -0.004), -0.08 + k * 0.05); ln.rotation.z = -sx * 0.08; ln.userData.noInk = true; B.add(ln); }
+    }
+    const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 8), paint(0x3f5872)); pen.rotation.set(0, 0.6, Math.PI / 2); pen.position.set(0.1, 0.05, 0.02); B.add(pen);
+  }
   g.add(blobShadow(0.9));
   return ink(g, 'mid');
 }
@@ -259,7 +268,9 @@ export function buildCase(scene, W) {
   { const d = mF(7.9, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.8, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
   { const d = mF(2.2, 0.6); items.push({ kind: 'clue', id: 'frames', dir: d }); }          // the easel's empty frame
   { const d = mF(0, -13.2); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
-  { const d = mF(-6.2, -1.2); const b = booth(); place(b, d, yawToFace(d, mF(0, 1))); items.push({ kind: 'clue', id: 'log', dir: mF(-5.7, -0.4), obj: b }); W.solid(d, 0.8); }   // on the lawn beside the steps, clear of the junction
+  { const d = mF(-6.2, -1.2); const b = booth(); place(b, d, yawToFace(d, mF(0, 1)) + Math.PI);   // window out, toward the road you come along
+    b.updateWorldMatrix(true, true); const L = (x, y, z) => b.localToWorld(new THREE.Vector3(x, y, z));
+    items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.42, 0.86) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction
   // downtown: the van outside Frame & Co., the café with Pia's bike
   { const d = W.townAt(W.vanSpot); const v = van(); place(v, d, W.vanYaw + Math.PI); /* turned round: the open back faces the way you walk up from the museum */ items.push({ kind: 'clue', id: 'van', dir: d, obj: v }); W.solid(d, 1.1); }
   { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d, yawToFace(d, W.townAt([W.cafeSpot[0], 0]))); W.solid(d, 0.55);
@@ -281,7 +292,8 @@ export function buildCase(scene, W) {
   for (const it of items) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTex(it.kind), transparent: true, depthWrite: false }));
     s.scale.setScalar(0.7);
-    s.position.copy(it.dir).multiplyScalar(groundAt(it.dir) + (it.kind === 'person' ? 1.75 : 1.6));
+    if (it.glintAt) s.position.copy(it.glintAt);
+    else s.position.copy(it.dir).multiplyScalar(groundAt(it.dir) + (it.kind === 'person' ? 1.75 : 1.6));
     scene.add(s);
     it.glint = s;
   }

@@ -10,6 +10,7 @@ import { R, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurfa
 import { CAPE, cargoRocket, launchConsole, paintingCrate } from './buildings.js';
 import { buildCar } from './player.js';
 import { createPhone } from './phone.js';
+import { createGuide } from './route.js';
 import { buildWalkers, tickWalkers, walkerHome, WALKERS } from './crowd.js';
 import { createBumps } from './bump.js';
 import { CLUES, PEOPLE, SUSPECTS, PLACES, judge, buildCase, sketchProp } from './story.js';
@@ -405,10 +406,12 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
 
   // ── the waypoint: a sketched pin over your lead, or an arrow at the edge ──
+  const guide = createGuide({ scene, player });                  // driving: corner map + arrows on the road
   const way = $('way'), _wp = new THREE.Vector3(), _pc = new THREE.Vector3();
   let wayKey = '';
-  function updateWaypoint() {
+  function updateWaypoint(dt = 0, time = 0) {
     const t = G.state === 'play' && !G.ui ? currentTarget() : null;
+    guide.update(dt, time, t);
     const dist = t ? arc(player.st.dir, t.dir) : 0;
     if (!t || dist < t.near) { show(way, false); return; }
     _wp.copy(t.dir).multiplyScalar(radiusAt(t.dir) + t.h);
@@ -485,7 +488,13 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       m.visible = false; m.userData.noInk = true; scene.add(m);
       cape.puffs.push({ m, t: 1 + i / 16, seed: i * 1.7 });
     }
-    cape.police = buildCar({ body: 0xf3eee4, police: true }); cape.police.visible = false; cape.police.userData.noGround = true; scene.add(cape.police);
+    // the police: a convoy of three, each a level frame with the car inside it, so its wheels
+    // can be seated on the ground under them (the site isn't flat) — like your parked car
+    cape.police = [[1.6, 5.2, Math.PI, 0], [3.9, 6.1, Math.PI + 0.45, 0.6], [-0.9, 6.8, Math.PI - 0.35, 1.2]].map(([x, z, ry, delay]) => {
+      const frame = new THREE.Group(), body = buildCar({ body: 0xf3eee4, police: true });
+      frame.add(body); frame.visible = false; frame.userData.noGround = true; scene.add(frame);
+      return { frame, body, x, z, ry, delay, lights: body.userData.lights };
+    });
   }
   // move a story thing (and its collider and glint) to a spot at the cape
   function relocate(it, x, z, faceX, faceZ) {
@@ -593,14 +602,21 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       P.m.visible = true;
     }
     // police lights, and the car rolling up the road
-    if (cape.police.visible) {
-      const [red, blue] = cape.police.userData.lights, f = Math.sin(t * 9) > 0;
-      red.emissiveIntensity = f ? 2.2 : 0.2; blue.emissiveIntensity = f ? 0.2 : 2.2;
-      if (cape.policeT >= 0 && cape.policeT < 1) {
-        cape.policeT = Math.min(1, cape.policeT + dt / 2.5);
-        const e = 1 - (1 - cape.policeT) ** 3, [px, , pz] = CAPE.police;
-        capeAttach(cape.police, px, pz + 9 * (1 - e), Math.PI);
-      }
+    if (cape.policeT >= 0) {
+      cape.policeT += dt;
+      cape.police.forEach((P, i) => {
+        const k = THREE.MathUtils.clamp((cape.policeT - P.delay) / 2.5, 0, 1);
+        if (k <= 0) return;
+        P.frame.visible = true;
+        const [red, blue] = P.lights, f = Math.sin(t * 9 + i * 1.3) > 0;
+        red.emissiveIntensity = f ? 2.2 : 0.2; blue.emissiveIntensity = f ? 0.2 : 2.2;
+        if (P.done) return;
+        const e = 1 - (1 - k) ** 3;
+        capeAttach(P.frame, P.x, P.z + 9 * (1 - e), P.ry);
+        P.frame.position.setLength(standAt(P.frame.position.clone().normalize()));    // on the ground…
+        player.fitToGround(P.body, P.frame);                                           // …all four wheels down
+        if (k >= 1) P.done = true;
+      });
     }
     // crate lids pop off (the epilogue)
     if (cape.lidT >= 0) {
@@ -631,7 +647,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (rex.fleeing) rex.fleeing.phase = rex.fleeing.phase === 'top' ? 'top' : rex.fleeing.phase;
     rex.dir.copy(GANTRY_FOOT());                                   // shout up at him from the foot of the gantry
     phone.push('Editor', 'You stopped a ROCKET. Front page. Tomorrow. Yours.');
-    cape.police.visible = true; cape.policeT = 0;
+    cape.policeT = 0;
     updateGoal();
     setTimeout(startEpilogue, 4200);
   }
@@ -746,7 +762,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       gl.material.opacity = 0.82 + 0.18 * Math.max(pop, 0.5 + 0.5 * Math.sin(t * 0.9 + seed * 7));
     }
     scan();
-    updateWaypoint();
+    updateWaypoint(dt, t);
     return false;
   }
   const afterRender = () => phone.afterRender(renderer, placeName());
