@@ -105,20 +105,20 @@ function van() {
     for (const s of [-1, 1]) {
       at(rbox(0.03, 0.46, 0.5, 0.06), rim, s * 0.752, 1.3, 1.25);
       at(rbox(0.03, 0.4, 0.44, 0.05), glass, s * 0.762, 1.3, 1.25);
-      at(new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18).rotateX(Math.PI / 2), steel, s * 0.48, 0.74, 2.38);
-      at(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 18).rotateX(Math.PI / 2), lampM, s * 0.48, 0.74, 2.4);
+      at(new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18).rotateX(Math.PI / 2), steel, s * 0.48, 0.72, 2.49);
+      at(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 18).rotateX(Math.PI / 2), lampM, s * 0.48, 0.72, 2.51);
       at(rbox(0.05, 0.05, 0.22, 0.015), rim, s * 0.8, 1.2, 1.52);                    // mirror arm
       at(rbox(0.06, 0.2, 0.13, 0.03), rim, s * 0.86, 1.24, 1.44);                    // mirror
-      at(rbox(0.08, 0.06, 0.03, 0.02), paint(0xe8a040, { emissive: 0x5a3010, hatch: 0 }), s * 0.62, 0.56, 2.39);   // indicator
+      at(rbox(0.08, 0.06, 0.03, 0.02), paint(0xe8a040, { emissive: 0x5a3010, hatch: 0 }), s * 0.62, 0.55, 2.5);   // indicator
     }
-    at(rbox(0.58, 0.24, 0.03, 0.05), rim, 0, 0.74, 2.385);
-    for (const y of [0.67, 0.74, 0.81]) at(rbox(0.5, 0.025, 0.02, 0.008), steel, 0, y, 2.405);
-    at(rbox(1.5, 0.14, 0.2, 0.05), paint(0x4a4552), 0, 0.42, 2.42);
+    at(rbox(0.58, 0.24, 0.03, 0.05), rim, 0, 0.72, 2.495);
+    for (const y of [0.67, 0.74, 0.81]) at(rbox(0.5, 0.025, 0.02, 0.008), steel, 0, y - 0.02, 2.515);
+    at(rbox(1.5, 0.14, 0.2, 0.05), paint(0x4a4552), 0, 0.42, 2.53);
     { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 48; const c = cv.getContext('2d');
       c.fillStyle = '#f6f2e6'; c.fillRect(0, 0, 128, 48); c.strokeStyle = '#2a2230'; c.lineWidth = 4; c.strokeRect(2, 2, 124, 44);
       c.fillStyle = '#2a2230'; c.font = '700 26px "Patrick Hand", "Comic Sans MS", cursive'; c.textAlign = 'center'; c.fillText('FRM 4C0', 64, 34);
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-      const pl = at(new THREE.PlaneGeometry(0.3, 0.11), paint(0xffffff, { map: t, hatch: 0 }), 0, 0.43, 2.525); pl.userData.noInk = true; } }
+      const pl = at(new THREE.PlaneGeometry(0.3, 0.11), paint(0xffffff, { map: t, hatch: 0 }), 0, 0.43, 2.635); pl.userData.noInk = true; } }
   // FRAME & CO. painted on the side
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 96;
   const c = cv.getContext('2d'); c.fillStyle = '#f4f1ea'; c.fillRect(0, 0, 256, 96);
