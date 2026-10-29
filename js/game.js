@@ -356,6 +356,13 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     $('nbCount').textContent = G.found.size;
     renderCase();
   }
+  // the case board's tab: fold it down to its title + the current step, and remember it
+  {
+    let min = false; try { min = localStorage.getItem('caseMin') === '1'; } catch {}
+    const apply = () => { $('hud').classList.toggle('min', min); const b = $('caseTog'); b.textContent = min ? '+' : '–'; b.title = min ? 'expand' : 'minimize'; };
+    $('caseTog').onclick = (e) => { e.stopPropagation(); min = !min; try { localStorage.setItem('caseMin', min ? '1' : '0'); } catch {} apply(); };
+    apply();
+  }
   function renderCase() {
     const el = $('case'), auto = currentTarget();
     const row = (key, html, done = false) => {
@@ -390,6 +397,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (G.act !== 3 && player.st.mode === 'walk') h += row('car', `<i>›</i> your car — <kbd>E</kbd> to drive`);
     if (G.act !== 3) h += `<p class="soft">click a line to follow it · <kbd>P</kbd> phone map</p>`;
     el.innerHTML = h;
+    // folded: just the step you're on
+    const tmp = document.createElement('div'); tmp.innerHTML = h; const st = [...tmp.querySelectorAll('.st')].find(x => !x.closest('.done')) || tmp.querySelector('.st');
+    $('caseMini').textContent = st ? st.textContent.replace(/\s+/g, ' ').trim() : '';
     el.querySelectorAll('.cr').forEach(r => r.onclick = () => { G.track = r.dataset.k; renderCase(); });
   }
 
@@ -714,7 +724,18 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       return true;
     }
     // glints bob gently so you notice them without being told
-    for (const it of items) if (it.glint?.visible) it.glint.material.rotation = Math.sin(t * 2 + it.dir.x * 9) * 0.25;
+    // …and every few seconds each one gently pops (swells a little and settles back) with a
+    // slow shimmer — staggered so they never pulse together: noticeable, never alarming
+    for (const it of items) {
+      const gl = it.glint; if (!gl?.visible) continue;
+      if (gl.userData.base == null) gl.userData.base = gl.scale.x;
+      const seed = (it.dir.x * 9.7 + it.dir.z * 4.3) % 1, cyc = (t / 3.4 + seed) % 1;
+      const u = cyc < 0.22 ? cyc / 0.22 : 1;                 // the pop: the first ~0.75s of each cycle
+      const pop = u < 1 ? Math.sin(Math.PI * u) * (1 - 0.35 * u) : 0;
+      gl.scale.setScalar(gl.userData.base * (0.92 + 0.36 * pop + 0.04 * Math.sin(t * 1.3 + seed * 6)));
+      gl.material.rotation = Math.sin(t * 1.4 + seed * 9) * 0.18 + pop * 0.35;
+      gl.material.opacity = 0.82 + 0.18 * Math.max(pop, 0.5 + 0.5 * Math.sin(t * 0.9 + seed * 7));
+    }
     scan();
     updateWaypoint();
     return false;

@@ -184,7 +184,12 @@ export function buildTown(scene) {
     else if (rr < 0.45) b = townBlock({ w: room * 0.9, d: room * 0.9, h: 6 + rnd() * 4 });
     else if (rr < 0.8) b = townBlock({ w: room * 0.9, d: room * 0.85, h: 3.1 + rnd() * 1.7 });
     else b = house({ w: room * 0.75, d: room * 0.6, h: 1.7 });
-    add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5)) + (rnd() > 0.5 ? Math.PI : 0), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
+    // every block faces a street on purpose: the rows behind Main Street turn their backs to
+    // the backs of its shops (fronts outward), the next row faces back across the street at
+    // them, and so on — fronts face fronts across each street, backs face backs
+    const n = j > 0 ? j : -1 - j, away = Math.sign(y) || 1;
+    const faceY = n % 2 ? away : -away;
+    add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5 * faceY)), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
     if (r >= 0.12) solid(d, room * 0.5);
   }
   // street lamps at junctions, trees along the boulevard verge
@@ -311,8 +316,10 @@ function park() {
   const g = new THREE.Group();
   const lawn = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.55, 0.12, 24), paint(PAL.grass));
   lawn.position.y = 0.06; g.add(lawn);
-  const t = tree({ s: 1.0 }); t.position.set(-0.4, 0.1, 0.2); g.add(t);
-  const b = bench(); b.position.set(0.5, 0.1, -0.5); b.rotation.y = 0.6; g.add(b);
+  // seen from the street (the park's front, +z): the tree on the left, the bench to its right,
+  // facing the street
+  const t = tree({ s: 1.0 }); t.position.set(-0.55, 0.1, -0.25); g.add(t);
+  const b = bench(); b.position.set(0.55, 0.1, 0.2); b.rotation.y = 0; g.add(b);
   return ink(g, 'fine');
 }
 
