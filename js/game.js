@@ -161,7 +161,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       const dj = arc(here, jeepDir);
       if (dj < 2.6 && (!nearest || dj < best)) { best = dj; nearest = { kind: 'jeep' }; }
       if (G.act === 3 && cape.console && arc(here, cape.consoleDir) < 1.9) nearest = { kind: 'console' };
-      for (const lm of town.landmarks) { const d = arc(here, lm.dir); if (d < 3.6 && d < best) { best = d; nearest = { kind: 'project', lm }; } }
+      for (const lm of town.landmarks) { if (lm.decor) continue; const d = arc(here, lm.dir); if (d < 3.6 && d < best) { best = d; nearest = { kind: 'project', lm }; } }
     } else nearest = { kind: 'exit' };
     const pr = $('prompt');
     if (!nearest) { show(pr, false); return; }
@@ -314,8 +314,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       const go = $('nbGo');
       if (go && !go.disabled) go.onclick = () => {
         const v = judge(G.pickSus, [...G.pickClues]);
-        $('nbV').innerHTML = `<div class="verdict sk">${v.text}</div>`;
-        if (v.ok) { G.solved = true; G.track = null; updateGoal(); }
+        $('nbV').innerHTML = `<div class="verdict sk">${v.text}</div>` +
+          (v.ok ? `<button class="sk next" id="nbOn">great work — now head to Cape Far Side →</button>` : '');
+        if (v.ok) { G.solved = true; G.track = null; updateGoal(); $('nbOn').onclick = closeUI; $('nbOn').scrollIntoView({ block: 'nearest' }); }
       };
     }
   }
@@ -373,7 +374,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (G.act >= 4) {
       h = `<div class="st go">Case closed ✓</div><p>All 45 paintings are going home. Rex is going somewhere else.</p>` +
         `<div class="st">Janelle's projects</div><p>The buildings around town are her real work — walk up and press <kbd>E</kbd>.</p>` +
-        town.landmarks.map(lm => row('lm:' + lm.key, `<i>›</i> ${lm.name} <span class="ct">${lm.tag}</span>`)).join('');
+        town.landmarks.filter(lm => !lm.decor).map(lm => row('lm:' + lm.key, `<i>›</i> ${lm.name} <span class="ct">${lm.tag}</span>`)).join('');
     } else if (G.act === 3) {
       h = `<div class="st go">5 · ABORT the launch!</div>` + row('console', `<i>›</i> the launch console — run!`) +
         `<p>Rex is up the gantry. The console's by the road — press <kbd>E</kbd> at it.</p>`;
@@ -506,7 +507,15 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     phone.push('Editor', 'Vivi\'s called it in — police are forty minutes out. Rex\'s van just tore out of town. There\'s a cargo launch from CAPE FAR SIDE at nine. The coast road goes all the way round. GO.');
     setTimeout(() => phone.push('Vivi', 'Take your car. And please — bring them home.'), 4000);
     setTimeout(() => phone.push('Mum', 'why is there a ROCKET on the local news'), 14000);
+    G.track = 'place:cape';
     updateGoal();
+    // say it plainly, in the middle of the screen: where to go next, and how
+    $('card').innerHTML = `<div class="ic">${face('vivi')}</div><h3>Now head to Cape Far Side</h3>
+      <p>“Great work. Rex has the paintings — his van just tore out of town. There's a cargo launch from <b>Cape Far Side</b> at nine.”</p>
+      <p class="note">Take your car (press <kbd>E</kbd> by it) and follow the arrow — the coast road goes all the way round the planet.</p>
+      <div class="row"><button class="sk next" id="cardOk">let's go →</button></div>`;
+    show($('card')); G.ui = 'card'; player.st.enabled = false;
+    $('cardOk').onclick = closeUI;
   }
   // Rex bolts up the gantry; the countdown starts; the rocket rumbles
   function startCountdown() {

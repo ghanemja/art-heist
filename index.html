@@ -207,6 +207,8 @@
   #endcard kbd, #card kbd { font-family: inherit; border: 1.5px solid var(--ink); border-radius: 5px; padding: 0 5px; background: var(--gold); }
   #card .tag { font-size: 15px; color: var(--ink2); margin: -4px 0 8px; text-transform: uppercase; letter-spacing: .08em; }
   #card .row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; clear: both; }
+  button.sk.next { background: var(--gold); font-size: 21px; padding: 9px 20px; margin-top: 10px; animation: nudge 1.6s ease-in-out infinite; }
+  @keyframes nudge { 0%, 100% { transform: rotate(-0.6deg); } 50% { transform: translateX(4px) rotate(-0.6deg); } }
   #card a.btn { font-size: 20px; color: var(--ink); text-decoration: none; padding: 8px 18px; background: var(--gold); }
   @media (max-width: 640px) { #hint { display: none; } #nbBtn { top: auto; bottom: 16px; } #bagBtn { top: auto; bottom: 16px; right: 150px; } }
 </style>
@@ -249,6 +251,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=55"></script>
+<script type="module" src="./js/main.js?cb=57"></script>
 </body>
 </html>

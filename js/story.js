@@ -3,6 +3,7 @@
 // and your notebook records what you SAW. People tell you what THEY saw. When
 // you think you know, you name someone and back it with two things you found.
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe, bench, rnd } from './props.js';
@@ -87,7 +88,13 @@ function ruts() {
 function van() {
   const g = new THREE.Group(), white = paint(0xf4f1ea), dark = paint(PAL.ink, { hatch: 0 });
   g.add(new THREE.Mesh(rbox(1.5, 1.45, 3.2, 0.25, 3), white).translateY(1.05));
-  g.add(new THREE.Mesh(rbox(1.44, 0.6, 0.86, 0.22, 3), white).translateY(0.66).translateZ(1.96));
+  { // the bonnet: a side profile (sloping down from the windscreen, a rounded nose) extruded across the van, bevelled
+    const pr = new THREE.Shape(); pr.moveTo(1.5, 0.36); pr.lineTo(2.3, 0.36); pr.quadraticCurveTo(2.42, 0.36, 2.42, 0.48);
+    pr.lineTo(2.42, 0.8); pr.quadraticCurveTo(2.41, 0.92, 2.25, 0.95); pr.lineTo(1.62, 1.04); pr.lineTo(1.5, 1.04); pr.closePath();
+    const bg = new THREE.ExtrudeGeometry(pr, { depth: 1.3, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.06, bevelSegments: 4, curveSegments: 10 });
+    bg.translate(0, 0, -0.65); bg.rotateY(-Math.PI / 2);
+    const bw = mergeVertices(bg.deleteAttribute('uv').deleteAttribute('normal'), 1e-4); bw.computeVertexNormals();
+    g.add(new THREE.Mesh(bw, white)); }
   // ── the front: a windscreen set flush in a dark surround, wipers, cab side windows,
   // round headlamps either side of a slatted grille, a bumper, mirrors, a plate ──
   { const glass = paint(0x9fc4cc, { hatch: 0 }), rim = paint(0x4a4552, { hatch: 0 }), steel = paint(0xb9bcc4, { hatch: 0 }), lampM = paint(0xfff1c8, { emissive: 0x6a5a30, hatch: 0 });
@@ -250,7 +257,7 @@ export function buildCase(scene, W) {
   { const d = mF(0, -13.2); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
   { const d = mF(-6.6, 1.2); const b = booth(); place(b, d, yawToFace(d, mF(0, 1))); items.push({ kind: 'clue', id: 'log', dir: mF(-6.0, 2.0), obj: b }); W.solid(d, 0.8); }
   // downtown: the van outside Frame & Co., the café with Pia's bike
-  { const d = W.townAt(W.vanSpot); const v = van(); place(v, d, W.vanYaw); items.push({ kind: 'clue', id: 'van', dir: d, obj: v }); W.solid(d, 1.1); }
+  { const d = W.townAt(W.vanSpot); const v = van(); place(v, d, W.vanYaw + Math.PI); /* turned round: the open back faces the way you walk up from the museum */ items.push({ kind: 'clue', id: 'van', dir: d, obj: v }); W.solid(d, 1.1); }
   { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d, yawToFace(d, W.townAt([W.cafeSpot[0], 0]))); W.solid(d, 0.55);
     const bd = W.townAt([W.cafeSpot[0] + 1.05, W.cafeSpot[1] - 0.45]); const b = bikeProp(); place(b, bd, yawToFace(bd, W.townAt([W.cafeSpot[0] + 1.05, 0])) + Math.PI / 2);
     items.push({ kind: 'clue', id: 'bike', dir: bd, obj: b }); }
