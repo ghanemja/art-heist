@@ -231,16 +231,22 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   // a conversation is framed like one: both of you, side-on, at eye level
   const conv = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false, side: 1 };
   const _cv = new THREE.Vector3();
+  // where the talk camera sits: off to one side of the pair, swung round by `sw` radians
+  const _rc = new THREE.Raycaster(); _rc.camera = camera;
+  function convoSpot(mid, up, ab, dist, sg, sw) {
+    const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(sg);
+    const off = side.multiplyScalar(2.5 + dist * 0.6).addScaledVector(ab, -0.45).applyAxisAngle(up, sw * sg);
+    return mid.clone().add(off).addScaledVector(up, 1.05);
+  }
   function convoCam(cam, root) {
     const it = items.find(i => i.id === G.talkWho?.id); if (!it) return;
     const a = root.position, b = it.obj.position;
     const mid = a.clone().add(b).multiplyScalar(0.5), up = mid.clone().normalize();
     const ab = b.clone().sub(a).projectOnPlane(up); const dist = ab.length(); ab.normalize();
-    const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(conv.side);
-    const want = mid.clone().addScaledVector(side, 2.5 + dist * 0.6).addScaledVector(up, 1.05).addScaledVector(ab, -0.45);
+    const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing || 0);
     const look = mid.clone().addScaledVector(up, 0.72);
     const now = performance.now() / 1000, dt = conv.init ? Math.min(0.1, now - conv.t) : 0; conv.t = now;
-    if (!conv.init) { conv.pos.copy(cam.position); conv.look.copy(look); conv.init = true; }
+    if (!conv.init) { conv.pos.copy(conv.cut ? want : cam.position); conv.look.copy(look); conv.init = true; }
     conv.pos.lerp(want, 1 - Math.exp(-3.5 * dt)); conv.look.lerp(look, 1 - Math.exp(-6 * dt));
     cam.position.copy(conv.pos); cam.up.copy(up); cam.lookAt(conv.look);
   }
@@ -250,9 +256,30 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     st.heading = d.sub(st.dir.clone().multiplyScalar(st.dir.dot(d))).normalize();
     const mid = player.root.position.clone().add(it.obj.position).multiplyScalar(0.5), up = mid.clone().normalize();
     const ab = it.obj.position.clone().sub(player.root.position).projectOnPlane(up).normalize();
-    const blocked = (sg) => { const p = mid.clone().addScaledVector(new THREE.Vector3().crossVectors(up, ab).normalize(), sg * 2.2).normalize();
-      return town.colliders.some(c => c.r >= 0.5 && arc(p, c.dir) < c.r + 0.5); };
-    conv.side = blocked(1) && !blocked(-1) ? -1 : 1;
+    // try each side and a few swings round the pair; take the first view nothing stands in
+    const dist = it.obj.position.clone().sub(player.root.position).projectOnPlane(up).length(), look = mid.clone().addScaledVector(up, 0.72);
+    const skip = new Set([player.root, it.obj]);
+    // the whole shot must be clear, not just its centre: both of you head to foot, and the
+    // edges of the frame either side and above — nothing may stand between them and the camera
+    const pa = player.root.position, pb = it.obj.position;
+    const at = (p, h) => p.clone().addScaledVector(up, h);
+    const targets = [look, at(pa, 1.1), at(pb, 1.1), at(pa, 0.2), at(pb, 0.2), look.clone().addScaledVector(ab, 1.7), look.clone().addScaledVector(ab, -1.7), at(mid, 1.6), at(mid, 0.05)];
+    const blocked = (from, to) => {
+      const dv = to.clone().sub(from), L = dv.length();
+      _rc.set(from, dv.normalize()); _rc.far = Math.max(0.01, L - 0.15);
+      return _rc.intersectObjects(scene.children, true).some(h => { const o = h.object; if (!o.visible || o.userData.isInk || o.isSprite || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return false;
+        for (let q = o; q; q = q.parent) if (skip.has(q)) return false; return true; });
+    };
+    const clear = (p) => !targets.some(t => blocked(p, t));
+    const sides = it.id === 'otto' ? [-1, 1] : [1, -1];                  // Otto: from the road side, away from the easels
+    conv.side = sides[0]; conv.swing = 0;
+    outer: for (const sw of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]) for (const sg of sides) {
+      if (clear(convoSpot(mid, up, ab, dist, sg, sw))) { conv.side = sg; conv.swing = sw; break outer; }
+    }
+    // if gliding there would pass through something (an easel, a wall), cut straight to it
+    { const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing), dv = want.clone().sub(camera.position), L = dv.length();
+      _rc.set(camera.position, dv.normalize()); _rc.far = L;
+      conv.cut = _rc.intersectObjects(scene.children, true).some(h => h.object.visible && !h.object.userData.isInk && !h.object.isSprite && h.object.name !== 'planet' && h.object.name !== 'sea'); }
     conv.init = false;
     player.st.camHook = convoCam;
   }

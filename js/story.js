@@ -167,20 +167,42 @@ function van() {
   g.add(blobShadow(1.0, 1.9));
   return ink(g, 'mid');
 }
-function bikeProp() {
-  const g = new THREE.Group(), frameM = paint(PAL.teal), dark = paint(PAL.ink, { hatch: 0 });
-  const wheel = new THREE.TorusGeometry(0.34, 0.04, 8, 24);
-  for (const z of [-0.55, 0.55]) g.add(new THREE.Mesh(wheel, dark).translateY(0.36).translateZ(z).rotateY(Math.PI / 2));
-  const bar = (a, b) => { const v = new THREE.Vector3().subVectors(b, a); const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, v.length(), 6), frameM); m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.normalize()); g.add(m); };
+function bikeProp({ against = false } = {}) {
+  // Pia's bike: spoked wheels whose tyres touch the ground (origin = the ground), a diamond
+  // frame, saddle, bars with grips, a chainring and pedals, a kickstand it leans on — and
+  // splashes of old paint on the frame (the clue)
+  const g = new THREE.Group(), frameM = paint(PAL.teal), dark = paint(PAL.ink, { hatch: 0 }), steel = paint(0xb9bcc4, { hatch: 0 }), seatM = paint(0x6b4a34);
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
-  bar(V(0, 0.36, -0.55), V(0, 0.8, -0.1)); bar(V(0, 0.8, -0.1), V(0, 0.82, 0.4)); bar(V(0, 0.36, 0.55), V(0, 0.95, 0.42));
-  bar(V(0, 0.36, -0.55), V(0, 0.45, 0.1)); bar(V(0, 0.45, 0.1), V(0, 0.82, 0.4));
-  g.add(new THREE.Mesh(rbox(0.5, 0.05, 0.05, 0.02), dark).translateY(0.98).translateZ(0.45));
+  const bar = (a, b, r = 0.026, mat = frameM) => { const v = new THREE.Vector3().subVectors(b, a); const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, v.length(), 8), mat); m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.normalize()); g.add(m); return m; };
+  const WR = 0.33, WY = WR + 0.035;                                  // tyre outer radius 0.335 + a hair: sits on the ground
+  const RA = V(0, WY, -0.56), FA = V(0, WY, 0.56), BB = V(0, 0.34, -0.02), SC = V(0, 0.8, -0.16), HT = V(0, 0.84, 0.4), HB = V(0, 0.66, 0.45);
+  for (const A of [RA, FA]) {
+    const ty = new THREE.Mesh(new THREE.TorusGeometry(WR - 0.03, 0.032, 10, 32), dark); ty.position.copy(A); ty.rotation.y = Math.PI / 2; g.add(ty);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(WR - 0.07, 0.011, 6, 32), steel); rim.position.copy(A); rim.rotation.y = Math.PI / 2; g.add(rim);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.08, 10).rotateZ(Math.PI / 2), steel); hub.position.copy(A); g.add(hub);
+    for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; const sp = bar(A, A.clone().add(V(0, Math.sin(a) * (WR - 0.075), Math.cos(a) * (WR - 0.075))), 0.004, steel); sp.userData.noInk = true; }
+  }
+  bar(BB, SC); bar(SC, HT); bar(BB, HB, 0.03); bar(HT, HB, 0.032);          // seat, top, down and head tubes
+  bar(RA, BB, 0.018); bar(RA, SC, 0.018);                                  // chain stays, seat stays
+  bar(HB, FA, 0.02);                                                        // the fork
+  bar(SC, V(0, 0.94, -0.19), 0.016, steel);                                 // seat post…
+  { const sd = new THREE.Mesh(rbox(0.12, 0.05, 0.24, 0.025), seatM); sd.position.set(0, 0.96, -0.2); g.add(sd); }   // …and saddle
+  bar(HT, V(0, 0.98, 0.37), 0.018, steel);                                  // stem
+  { // the bars (turned along the frame when it's leaning on a wall)
+    const turn = against ? 1.15 : 0, at = (x) => V(Math.cos(turn) * x, 0.98, 0.37 + 0.02 + Math.sin(turn) * x);
+    bar(at(-0.24), at(0.24), 0.015, steel); for (const sx of [-1, 1]) bar(at(sx * 0.16), at(sx * 0.26), 0.022, dark); }
+  // drivetrain: chainring, crank arms, pedals
+  { const cr = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.012, 6, 20), steel); cr.position.copy(BB).add(V(0.05, 0, 0)); cr.rotation.y = Math.PI / 2; g.add(cr);
+    bar(BB.clone().add(V(0.07, 0, 0)), BB.clone().add(V(0.07, -0.13, 0.08)), 0.012, steel); bar(BB.clone().add(V(-0.07, 0, 0)), BB.clone().add(V(-0.07, 0.13, -0.08)), 0.012, steel);
+    for (const [x, y, z] of [[0.11, -0.13, 0.08], [-0.11, 0.13, -0.08]]) { const p = new THREE.Mesh(rbox(0.08, 0.02, 0.06, 0.008), dark); p.position.copy(BB).add(V(x, y, z)); g.add(p); }
+    bar(RA.clone().add(V(0.05, 0, 0)), BB.clone().add(V(0.05, 0.08, 0)), 0.006, dark).userData.noInk = true; bar(RA.clone().add(V(0.05, 0, 0)), BB.clone().add(V(0.05, -0.08, 0)), 0.006, dark).userData.noInk = true; }
+  if (!against) bar(BB.clone().add(V(0.03, 0, -0.08)), V(0.2, 0.0, -0.24), 0.012, steel);  // the kickstand, down to the ground on the lean side
   // splashes of old paint
-  for (const [c, y, z] of [[PAL.accent, 0.7, 0.1], [PAL.mustard, 0.6, -0.3], [PAL.dusty, 0.9, 0.3]])
-    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), paint(c)).translateY(y).translateZ(z).translateX(0.03));
-  g.rotation.z = 0.12;
-  return ink(g, 'fine');
+  for (const [c, y, z] of [[PAL.accent, 0.72, 0.12], [PAL.mustard, 0.55, -0.1], [PAL.dusty, 0.82, 0.25]])
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), paint(c)).translateY(y).translateZ(z).translateX(0.025));
+  g.rotation.z = against ? -0.16 : -0.1;                                   // leaning toward +x: on its stand, or on the wall (rolls about the tyres' contact line)
+  const out = new THREE.Group(); out.add(g);
+  return ink(out, 'fine');
 }
 function crates() {
   const g = new THREE.Group(), wood = paint(0xc9a06a);
@@ -304,9 +326,14 @@ export function buildCase(scene, W) {
     items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.32, 0.95) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction
   // downtown: the van outside Frame & Co., the café with Pia's bike
   let vanObj = null;
-  { const d = W.townAt(W.vanSpot); const v = van(); vanObj = v; place(v, d, W.vanYaw);   /* along the kerb, nose east: the open back faces you as you come from the museum */ v.updateWorldMatrix(true, true); items.push({ kind: 'clue', id: 'van', dir: d, obj: v, glintAt: v.localToWorld(new THREE.Vector3(0, 2.3, -1.3)) }); W.solid(d, 1.1); }   // sparkle above the roof over the open back, not inside the van
+  { const d = W.townAt(W.vanSpot); const v = van(); vanObj = v; place(v, d, W.vanYaw + Math.PI);   /* turned round: the open back faces the way you walk up */ v.updateWorldMatrix(true, true); items.push({ kind: 'clue', id: 'van', dir: d, obj: v, glintAt: v.localToWorld(new THREE.Vector3(0, 2.3, -1.3)) }); W.solid(d, 1.1); }   // sparkle above the roof over the open back, not inside the van
   { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d, yawToFace(d, W.townAt([W.cafeSpot[0], 0]))); W.solid(d, 0.55);
-    const bd = W.townAt([W.cafeSpot[0] + 1.05, W.cafeSpot[1] - 0.45]); const b = bikeProp(); place(b, bd, yawToFace(bd, W.townAt([W.cafeSpot[0] + 1.05, 0])) + Math.PI / 2);
+    // leaning on the café's end wall, at the corner, along the side of the building
+    const cafeShop = W.shops.find(sp => sp.kind === 'cafe'), [cx] = W.toTown(cafeShop.dir), wallX = cx + cafeShop.w / 2, sY = Math.sign(W.cafeSpot[1]);
+    const bx = wallX + 0.24, by = W.cafeSpot[1] + sY * 1.25;
+    const bd = W.townAt([bx, by]); const b = bikeProp({ against: true }); place(b, bd, yawToFace(bd, W.townAt([bx, by + 5])));
+    b.updateWorldMatrix(true, true);                                           // its lean side (+x) must face the wall
+    if ((W.toTown(b.localToWorld(new THREE.Vector3(1, 0, 0)).normalize())[0] - bx) * (wallX - bx) < 0) b.rotateY(Math.PI);
     items.push({ kind: 'clue', id: 'bike', dir: bd, obj: b }); }
   // the harbour crates and the station ticket
   { const d = W.siteAt('harbour', [2.2, 0.5]); const c = crates(); place(c, d, yawToFace(d, W.sites.harbour.dir)); items.push({ kind: 'clue', id: 'crates', dir: d, obj: c }); W.solid(d, 1.2); }
