@@ -207,3 +207,4 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 - 🟡 **The Library landmark was unreadable** (2026-10-29). Rebuilt: the building is a giant bookcase (house-sized books with gilt bands and labels, one leaning, a bookend), a door in the bottom shelf, "THE LIBRARY" name board, an open book on the roof
 - 🟡 **Museum: remove the two pillars in front of the door** (2026-10-29). Removed the two pillars in front of the door (main app only; the classic game keeps all six)
 - 🟡 **Case board title: "The Vanishing Gallery To Do List"** (2026-10-29). "To Do List" added after the title, a touch smaller and lighter, on the same line. Verified in a headless render; not yet deployed.
+- 🟡 **Case board minimize tab sat outside the card** (2026-10-29). It hung over the corner; it is now a small rounded button inside the card's top-right, the title padded clear of it. Verified open and minimized in a headless render; not yet deployed.
