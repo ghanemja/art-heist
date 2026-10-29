@@ -4,7 +4,7 @@
 // you think you know, you name someone and back it with two things you found.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt } from './world.js';
+import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt, onRoad, nearestRoad } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe, bench, rnd } from './props.js';
 import { person, LOOKS } from './human.js';
@@ -131,7 +131,13 @@ function van() {
   const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace;
   for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.73), paint(0xffffff, { map: tx, hatch: 0 })); p.position.set(s * 0.77, 1.12, -0.2); p.rotation.y = s * Math.PI / 2; p.userData.noInk = true; g.add(p); }
   const tyre = lathe([[0.15, -0.1], [0.3, -0.1], [0.33, 0], [0.3, 0.1], [0.15, 0.1]], 16).rotateZ(Math.PI / 2);
-  for (const [x, z] of [[-0.72, 1.2], [0.72, 1.2], [-0.72, -1.1], [0.72, -1.1], [-0.52, -1.1], [0.52, -1.1]]) g.add(new THREE.Mesh(tyre, dark).translateX(x).translateY(0.32).translateZ(z));
+  const hubM = paint(0xb9bcc4, { hatch: 0 }), capM = paint(0x6f6a78, { hatch: 0 });
+  const hub = new THREE.CylinderGeometry(0.17, 0.17, 0.205, 18).rotateZ(Math.PI / 2), cap = new THREE.CylinderGeometry(0.07, 0.07, 0.23, 12).rotateZ(Math.PI / 2);
+  for (const [x, z] of [[-0.72, 1.2], [0.72, 1.2], [-0.72, -1.1], [0.72, -1.1], [-0.52, -1.1], [0.52, -1.1]]) {
+    g.add(new THREE.Mesh(tyre, dark).translateX(x).translateY(0.365).translateZ(z));
+    g.add(new THREE.Mesh(hub, hubM).translateX(x).translateY(0.365).translateZ(z));           // a steel wheel fills the tyre (no see-through hole)
+    g.add(new THREE.Mesh(cap, capM).translateX(x).translateY(0.365).translateZ(z));
+  }
   // ── the back: two rear doors (the right one swung open on its hinges), the dark load
   // space with packing foam and the museum's grey tape inside, tail lights, a bumper with a
   // step, a number plate
@@ -217,13 +223,38 @@ export function sketchProp(id) {
 }
 
 function booth() {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(rbox(1.3, 2.0, 1.3, 0.15), paint(PAL.dusty)).translateY(1.0));
-  g.add(new THREE.Mesh(rbox(1.5, 0.18, 1.5, 0.08), paint(PAL.cream)).translateY(2.09));
-  const w = new THREE.Mesh(rbox(0.9, 0.6, 0.06, 0.03), paint(0x9fc4cc, { hatch: 0 })); w.position.set(0, 1.35, 0.65); g.add(w);
-  g.add(new THREE.Mesh(rbox(1.0, 0.06, 0.3, 0.02), paint(PAL.cream)).translateY(1.0).translateZ(0.8));     // the sill
+  // the guard's booth: a little hut on a sunken concrete plinth (so its foot stays flush on a
+  // slope), corner posts, a framed window with a sliding pane, a SECURITY board, a side door,
+  // a roof with an overhang and a beacon; the logbook lies open on the sill
+  const g = new THREE.Group(), wall = paint(PAL.dusty), trim = paint(PAL.cream), dk = paint(0x3f5872), glass = paint(0x9fc4cc, { hatch: 0 });
+  const m = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
+  m(rbox(1.5, 0.42, 1.5, 0.06), paint(0xc9c2b4), 0, 0.03, 0);                    // plinth: 0.18 of it below the ground
+  m(rbox(1.3, 1.85, 1.3, 0.12), wall, 0, 1.15, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) m(rbox(0.14, 1.85, 0.14, 0.04), trim, sx * 0.62, 1.15, sz * 0.62);
+  m(rbox(1.36, 0.1, 1.36, 0.03), trim, 0, 0.3, 0);                                // skirting
+  // the window, the sliding pane half open
+  m(rbox(1.0, 0.72, 0.08, 0.04), trim, 0, 1.42, 0.64);
+  m(rbox(0.88, 0.6, 0.04, 0.02), paint(0x3a3340, { hatch: 0 }), 0, 1.42, 0.65);   // the dark inside
+  m(rbox(0.46, 0.58, 0.03, 0.02), glass, 0.2, 1.42, 0.69);
+  m(rbox(0.04, 0.6, 0.05, 0.015), trim, -0.02, 1.42, 0.7);
+  // SECURITY board over the window
+  { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64; const c = cv.getContext('2d');
+    c.fillStyle = '#2a2230'; c.fillRect(0, 0, 256, 64); c.fillStyle = '#f2d27a'; c.font = '700 40px "Patrick Hand", "Comic Sans MS", cursive'; c.textAlign = 'center'; c.fillText('SECURITY', 128, 46);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+    m(rbox(0.82, 0.2, 0.05, 0.02), paint(0x2a2230, { hatch: 0 }), 0, 1.92, 0.65);
+    const sg = m(new THREE.PlaneGeometry(0.76, 0.17), paint(0xffffff, { map: t, hatch: 0 }), 0, 1.92, 0.68); sg.userData.noInk = true; }
+  // a side door with a knob and a little step
+  m(rbox(0.06, 1.35, 0.62, 0.03), dk, 0.66, 0.98, -0.05);
+  m(new THREE.SphereGeometry(0.035, 8, 6), paint(PAL.gold, { hatch: 0 }), 0.7, 0.95, 0.16);
+  m(rbox(0.3, 0.06, 0.7, 0.02), paint(0xc9c2b4), 0.82, 0.22, -0.05);
+  // roof: an overhanging slab, a cap, a beacon
+  m(rbox(1.62, 0.14, 1.62, 0.06), trim, 0, 2.15, 0);
+  m(rbox(1.3, 0.1, 1.3, 0.04), paint(0x3f5872), 0, 2.27, 0);
+  m(new THREE.CylinderGeometry(0.1, 0.12, 0.08, 14), paint(0x2a2230, { hatch: 0 }), 0, 2.36, 0);
+  m(new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), paint(0xe8604c, { emissive: 0x5a1410, hatch: 0 }), 0, 2.4, 0);
+  m(rbox(1.08, 0.06, 0.3, 0.02), trim, 0, 1.03, 0.78);                            // the sill
   { // the guard's logbook, lying open on the sill: a red cover, two cream pages with ruled lines, a pen across it
-    const B = new THREE.Group(); B.position.set(0.05, 1.04, 0.82); B.rotation.y = -0.18; g.add(B);
+    const B = new THREE.Group(); B.position.set(0.05, 1.07, 0.8); B.rotation.y = -0.18; g.add(B);
     B.add(new THREE.Mesh(rbox(0.5, 0.025, 0.3, 0.01), paint(0x9a3b4a)));
     for (const sx of [-1, 1]) {
       const pg = new THREE.Mesh(rbox(0.23, 0.02, 0.27, 0.008), paint(0xfaf3e2)); pg.position.set(sx * 0.118, 0.02, 0); pg.rotation.z = -sx * 0.08; B.add(pg);
@@ -268,11 +299,12 @@ export function buildCase(scene, W) {
   { const d = mF(7.9, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.8, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
   { const d = mF(2.2, 0.6); items.push({ kind: 'clue', id: 'frames', dir: d }); }          // the easel's empty frame
   { const d = mF(0, -13.2); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
-  { const d = mF(-6.2, -1.2); const b = booth(); place(b, d, yawToFace(d, mF(0, 1)) + Math.PI);   // window out, toward the road you come along
+  { const d = mF(-6.5, -1.4); const b = booth(); place(b, d, yawToFace(d, mF(-6.5, 4)));   // window toward town: you see it as you walk up
     b.updateWorldMatrix(true, true); const L = (x, y, z) => b.localToWorld(new THREE.Vector3(x, y, z));
-    items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.42, 0.86) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction
+    items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.32, 0.95) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction
   // downtown: the van outside Frame & Co., the café with Pia's bike
-  { const d = W.townAt(W.vanSpot); const v = van(); place(v, d, W.vanYaw + Math.PI); /* turned round: the open back faces the way you walk up from the museum */ items.push({ kind: 'clue', id: 'van', dir: d, obj: v }); W.solid(d, 1.1); }
+  let vanObj = null;
+  { const d = W.townAt(W.vanSpot); const v = van(); vanObj = v; place(v, d, W.vanYaw);   /* along the kerb, nose east: the open back faces you as you come from the museum */ v.updateWorldMatrix(true, true); items.push({ kind: 'clue', id: 'van', dir: d, obj: v, glintAt: v.localToWorld(new THREE.Vector3(0, 2.3, -1.3)) }); W.solid(d, 1.1); }   // sparkle above the roof over the open back, not inside the van
   { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d, yawToFace(d, W.townAt([W.cafeSpot[0], 0]))); W.solid(d, 0.55);
     const bd = W.townAt([W.cafeSpot[0] + 1.05, W.cafeSpot[1] - 0.45]); const b = bikeProp(); place(b, bd, yawToFace(bd, W.townAt([W.cafeSpot[0] + 1.05, 0])) + Math.PI / 2);
     items.push({ kind: 'clue', id: 'bike', dir: bd, obj: b }); }
@@ -280,7 +312,12 @@ export function buildCase(scene, W) {
   { const d = W.siteAt('harbour', [2.2, 0.5]); const c = crates(); place(c, d, yawToFace(d, W.sites.harbour.dir)); items.push({ kind: 'clue', id: 'crates', dir: d, obj: c }); W.solid(d, 1.2); }
   { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); place(t, d); items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t }); }
   // people
-  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.1, 0.45), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: W.townAt([W.vanSpot[0] + 1.6, W.vanSpot[1] + 1.6]) };
+  const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.1, 0.45), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: null };
+  { // Rex stands beside his van, level with the cab, on whichever side is off the road — in plain view
+    vanObj.updateWorldMatrix(true, true);
+    const sides = [-1, 1].map(sx => vanObj.localToWorld(new THREE.Vector3(sx * 1.35, 0, 0.9)).normalize());
+    at.rex = sides.find(d => !onRoad(d, 0.2)) || sides.sort((a, b) => (nearestRoad(b)?.dist ?? 0) - (nearestRoad(a)?.dist ?? 0))[0];
+  }
   for (const p of PEOPLE) {
     const d = at[p.id];
     const m = person(LOOKS[p.id]);

@@ -504,7 +504,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     it.obj.position.copy(d).multiplyScalar(standAt(d));
     alignToSurface(it.obj, d, yawToFace(d, capeDir(faceX, faceZ)));
     it.homePos = it.obj.position.clone(); it.homeQ = it.obj.quaternion.clone();
-    if (it.glint) it.glint.position.copy(d).multiplyScalar(standAt(d) + (it.kind === 'person' ? 1.75 : 1.6));
+    if (it.glint) it.glint.position.copy(d).multiplyScalar(standAt(d) + (it.kind === 'person' ? 1.75 : it.id === 'van' ? 2.3 : 1.6));
   }
   function startGetaway() {
     G.act = 2; G.track = null;

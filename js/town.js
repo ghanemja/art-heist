@@ -155,6 +155,13 @@ export function buildTown(scene) {
   };
   for (const t of MAIN_STREET.north) terrace(t, 1);
   for (const t of MAIN_STREET.south) terrace(t, -1);
+  // Frame & Co.'s van: parked along the kerb outside the shop (two wheels up on it), nose east,
+  // so its open back faces you as you come along Main Street from the museum
+  { const fr = out.shops.find(sp => sp.kind === 'frames'), [fx, fy] = fr ? toTown(fr.dir) : [4, -SHOP_Y];
+    const t = [...MAIN_STREET.north, ...MAIN_STREET.south].find(t => fx >= t.x[0] - 0.1 && fx <= t.x[1] + 0.1) ?? { x: [fx - 3, fx + 3] };
+    const vx = Math.min(Math.max(fx, t.x[0] + 1.75), t.x[1] - 2.55), vy = Math.sign(fy || -1) * 0.78;
+    out.vanSpot = [vx, vy];
+    out.vanYaw = yawToFace(fC(vx, vy), fC(vx + 5, vy)); }
   add(batchPlaced(out.shops.map(sp => sp.root)));      // the shops stay as frames for their floors
   // Main Street's lamps stand at the kerb; bunting is strung across the street
   for (const t of [...MAIN_STREET.north, ...MAIN_STREET.south]) {
@@ -162,14 +169,13 @@ export function buildTown(scene) {
     for (let k = 0; k < n; k++) {
       const x = t.x[0] + (t.x[1] - t.x[0]) * (k + 0.5) / n, y = s * (SHOP_Y - 1.2);
       if (out.cafeSpot && Math.abs(x - out.cafeSpot[0]) < 1.2 && Math.sign(out.cafeSpot[1]) === s) continue;
+      if (Math.abs(x - out.vanSpot[0] - 0.4) < 2.6 && Math.sign(out.vanSpot[1]) === s) continue;   // the van parks here
       add(settle(lamp(), fC(x, y), 0.2, 0.02));
       solid(fC(x, y), 0.15);
     }
   }
   for (const x of [-4.4, 4.4, -7.2, 7.2, 1.6, -1.6]) add(bunting(fC, x, SHOP_Y));
   // the story's shopfronts: the café (tables out front) and Frame & Co. (the van)
-  out.vanSpot = [2 * P - 0.55, -(0.5) * P];
-  out.vanYaw = yawToFace(fC(...out.vanSpot), fC(out.vanSpot[0], out.vanSpot[1] + 5));
   // downtown behind Main Street: one building per block, towers in the middle
   for (let i = -K; i < K; i++) for (let j = -K; j < K; j++) {
     const x = (i + 0.5) * P, y = (j + 0.5) * P;
