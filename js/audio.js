@@ -238,6 +238,24 @@ export const audio = {
     const o = AC.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(120, t + 0.1);
     o.connect(g); g.connect(sfxBus); o.start(t); o.stop(t + 0.16);
   },
+  // the police arriving: a low two-tone 'woo-woop' (a warm swell between ~170 and ~300 Hz,
+  // under a lowpass — a siren's shape without the shrill), n times
+  siren(n = 4) {
+    if (!AC) return;
+    for (let k = 0; k < n; k++) {
+      const t = AC.currentTime + k * 0.9, g = AC.createGain(), lp = AC.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 0.7;
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.11 * (0.6 + 0.4 * k / n), t + 0.08);
+      g.gain.setValueAtTime(0.11 * (0.6 + 0.4 * k / n), t + 0.62); g.gain.linearRampToValueAtTime(0.0001, t + 0.82);
+      lp.connect(g); g.connect(sfxBus);
+      for (const det of [0, 6]) {
+        const o = AC.createOscillator(); o.type = 'triangle'; o.detune.value = det;
+        o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(300, t + 0.38);
+        o.frequency.exponentialRampToValueAtTime(175, t + 0.8);
+        o.connect(lp); o.start(t); o.stop(t + 0.85);
+      }
+    }
+  },
   get muted() { return muted; },
   get out() { return master; },          // dev: tap the mix (recording, analysis)
   setMuted(m) {

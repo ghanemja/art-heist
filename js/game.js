@@ -259,7 +259,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     }
   }
   function closeUI() {
-    if (!G.ui) return;
+    if (!G.ui || G.ui === 'police') return;                 // the police shot plays out on its own
     if (player.st.camHook === convoCam) { player.st.camHook = null; player.st.camInit = false; }
     show($({ card: 'card', talk: 'talk', nb: 'nb', proj: 'card' }[G.ui]), false);
     const was = G.ui;
@@ -828,8 +828,32 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     }
     cape.policeT = 0;
     updateGoal();
-    setTimeout(startEpilogue, 4200);
+    // …and you SEE them come: a letterboxed shot from beside the pad, looking down the road
+    // they arrive by, that follows the convoy in as it pulls up (they used to arrive off in a
+    // corner of whatever the camera happened to face). Sirens, low.
+    setTimeout(() => {
+      if (G.act !== 4 || G.state !== 'play') return;
+      G.ui = 'police'; player.st.enabled = false;
+      for (const k of ['card', 'talk', 'nb', 'prompt', 'way']) show($(k), false);
+      phone.closeAll();
+      document.body.classList.add('cine');
+      audio.siren(5);
+      const t0 = performance.now() / 1000, pos = new THREE.Vector3(), look = new THREE.Vector3();
+      player.st.camHook = policeCam = (cam) => {
+        const k = Math.min(1, (performance.now() / 1000 - t0) / 5.5), e = k * k * (3 - 2 * k);
+        // the lead car's spot along its run in (what the shot keeps in frame)
+        const P = cape.police[0], pk = THREE.MathUtils.clamp((cape.policeT - P.delay) / 2.5, 0, 1);
+        const pe = Math.min(1 - (1 - pk) ** 3, P.stopE ?? 1), carZ = P.z + 9 * (1 - pe);
+        const want = CL(-3.6 + 1.0 * e, 4.4 - 0.9 * e, 1.6 + 1.0 * e);                 // up by the pad, easing down
+        const at = CL(1.6, 0.2, carZ * 0.6 + 6.6 * 0.4);
+        if (!pos.lengthSq()) { pos.copy(want); look.copy(at); }
+        pos.lerp(want, 0.08); look.lerp(at, 0.12);
+        cam.position.copy(pos); cam.up.copy(cape.up); cam.lookAt(look);
+      };
+      setTimeout(startEpilogue, 5600);
+    }, 1400);
   }
+  let policeCam = null;
 
   // ── the epilogue: three letterboxed shots, then the papers ──
   const ARTS = ['art_cows_in_storm.jpg', 'art_IMG_5262.jpg', 'art_IMG_7152.jpg'];
@@ -839,6 +863,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     { dur: 4.4, cap: 'Back on the walls by morning.', at: ML, from: [0, 3.2, 17], to: [0, 4.2, 11.5], look: [0, 3, -5] },
   ];
   function startEpilogue() {
+    if (G.state === 'epilogue') return;
+    if (player.st.camHook === policeCam) player.st.camHook = null;
     G.state = 'epilogue'; G.ui = null; G.epiT = 0; G.epiShot = -1;
     phone.closeAll();
     for (const k of ['card', 'talk', 'nb', 'prompt', 'way', 'timer']) show($(k), false);
