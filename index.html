@@ -237,6 +237,9 @@
     #handset .homebtn { bottom: 5px; } #handset .ear { top: 8px; }
     #bag, #nb, #card, #endcard { max-height: 88dvh; overflow: auto; } #talk { bottom: 8px; padding: 10px 16px; } #talk p { font-size: 18px; } }
   #bag { max-height: 86vh; max-height: 86dvh; overflow: auto; }
+  /* narrow touch screens: a smaller driving map, the prompt above it, the countdown below the board + toasts */
+  @media (max-width: 640px) { body.touch #minimapBox { width: 124px; right: 10px; bottom: 74px; } body.touch #minimap { width: 110px; height: 110px; }
+    body.touch #prompt { bottom: 220px; } #timer { top: 160px; } }
   @media (max-width: 640px) { #hint { display: none; } #nbBtn { top: auto; bottom: 16px; } #bagBtn { top: auto; bottom: 16px; right: 150px; } }
 </style>
 </head>
@@ -279,6 +282,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=80"></script>
+<script type="module" src="./js/main.js?cb=81"></script>
 </body>
 </html>
