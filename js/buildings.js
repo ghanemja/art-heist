@@ -1544,15 +1544,60 @@ function boardMat(title, body, { bg = '#f6eedb', fg = INK, accent = '#e8604c', w
     for (const ln of wrapText(c, body, w - 70)) { c.fillText(ln, 35, y); y += h * 0.09; }
   }) });
 }
+// ── the cosy bits every shop interior shares ──
+const WINDOW_GLOW = paint(0xfff0cc, { hatch: 0, emissive: 0xe8c890 });
+const BEAM = paint(0x7a5236);
+// a soft pool of lamplight on the floor (additive: it warms whatever it falls on)
+const poolMat = (col = 0xffc980, op = 0.22) => new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false });
+const POOL = poolMat(0xffc980, 0.13), POOL_DIM = poolMat(0xffb060, 0.09);
+function lightPool(K, x, z, r = 0.9, mat = POOL) {
+  const m = K.put(new THREE.CircleGeometry(r, 28), mat, x, SH.FY + 0.035, z, [-Math.PI / 2, 0, 0]); m.userData.noInk = true;
+  const m2 = K.put(new THREE.CircleGeometry(r * 0.55, 24), mat, x, SH.FY + 0.04, z, [-Math.PI / 2, 0, 0]); m2.userData.noInk = true;
+}
+// a pendant lamp hanging from a beam: cord, a shade, a glowing bulb and its pool on the floor
+function pendant(K, x, z, { shade = paint(0xe1b95c), y = 2.2, glow = 0xffd98a, pool = true } = {}) {
+  K.box(0.02, SH.H - 0.14 - y, 0.02, DARK(), x, (SH.H - 0.14 + y) / 2, z, 0.005);
+  K.put(lathe([[0.04, 0.22], [0.06, 0.2], [0.2, 0.02], [0.24, 0], [0.22, -0.02], [0.05, 0.16]], 18), shade, x, y - 0.2, z);
+  K.put(new THREE.SphereGeometry(0.075, 12, 8), paint(0xfff6dc, { hatch: 0, emissive: glow }), x, y - 0.2, z).userData.noInk = true;
+  if (pool) lightPool(K, x, z, 1.0);
+}
+// a rug: an oval (or a runner) with a border, painted
+function rug(K, x, z, w, d, { a = '#a94848', b = '#e1b95c', c = '#f6eedb', oval = true, ry = 0 } = {}) {
+  const mat = paint(0xffffff, { hatch: 0, map: canvasTex(256, 192, (g, W, H) => {
+    g.fillStyle = a; if (oval) { g.beginPath(); g.ellipse(W / 2, H / 2, W / 2 - 2, H / 2 - 2, 0, 0, 7); g.fill(); } else g.fillRect(0, 0, W, H);
+    g.strokeStyle = b; g.lineWidth = 10; if (oval) { g.beginPath(); g.ellipse(W / 2, H / 2, W / 2 - 18, H / 2 - 18, 0, 0, 7); g.stroke(); } else g.strokeRect(14, 14, W - 28, H - 28);
+    g.fillStyle = c; for (let i = 0; i < 7; i++) { g.beginPath(); g.arc(W / 2 + (i - 3) * 26, H / 2, 7, 0, 7); g.fill(); }
+    g.strokeStyle = c; g.lineWidth = 3; if (oval) { g.beginPath(); g.ellipse(W / 2, H / 2, W / 2 - 34, H / 2 - 34, 0, 0, 7); g.stroke(); }
+  }) });
+  // (an oval rug: the canvas corners are floor-coloured paint, so cut the plane to the ellipse)
+  const geo = oval ? new THREE.CircleGeometry(0.5, 40) : new THREE.PlaneGeometry(1, 1);
+  if (oval) { const uv = geo.attributes.uv, P = geo.attributes.position; for (let i = 0; i < uv.count; i++) uv.setXY(i, P.getX(i) + 0.5, P.getY(i) + 0.5); }
+  const m = K.put(geo, mat, x, SH.FY + 0.025, z, [-Math.PI / 2, 0, ry]); m.scale.set(w, d, 1); m.userData.noInk = true;
+  return m;
+}
+// a potted plant: a terracotta pot and a leafy clump
+function plant(K, x, z, s = 1, leaf = paint(0x6f9a5a)) {
+  K.put(lathe([[0.001, 0], [0.16 * s, 0], [0.2 * s, 0.3 * s], [0.22 * s, 0.32 * s], [0.001, 0.32 * s]], 14), paint(0xc4703e), x, SH.FY, z);
+  for (let k = 0; k < 5; k++) { const a = k * 1.3; K.put(new THREE.SphereGeometry(0.16 * s, 10, 8), leaf, x + Math.cos(a) * 0.1 * s, SH.FY + (0.45 + (k % 2) * 0.15) * s, z + Math.sin(a) * 0.1 * s).scale.set(1, 1.3, 1); }
+}
+// a wall shelf on the back wall (y up the wall), its brackets underneath; returns the shelf top y
+function wallShelf(K, x, y, w, mat = paint(0x8a6448), z = -SH.D / 2 + SH.T + 0.17) {
+  K.box(w, 0.05, 0.32, mat, x, y, z, 0.015);
+  for (const s of [-1, 1]) K.box(0.04, 0.2, 0.22, mat, x + s * (w / 2 - 0.12), y - 0.12, z - 0.04, 0.01);
+  return y + 0.025;
+}
+
 // the shell every shop shares; returns where the walls are (for the walker's colliders)
 function shopShell(B, U, { wall, trim, floor, stone = paint(0xd8cab0), glass = upperGlass(1), name, sign = {}, sideWin = true }) {
   const { W, D, H, LOW, DOOR, DOORH, FY, T } = SH, lowH = LOW - FY, upH = H - LOW;
   B.box(W + 0.36, FY, D + 0.36, stone, 0, FY / 2, 0, 0.04);                       // plinth
   B.box(W - 2 * T, 0.02, D - 2 * T, floor, 0, FY + 0.01, 0, 0.005);                 // the shop floor
-  B.box(W, lowH, T, wall, 0, FY + lowH / 2, -D / 2 + T / 2); U.box(W, upH, T, wall, 0, LOW + upH / 2, -D / 2 + T / 2);
+  // the back and side walls stand full height whatever happens (inside, a room camera looks in
+  // from the shopfront, which lifts away with the roof — see shopinterior.js)
+  B.box(W, lowH, T, wall, 0, FY + lowH / 2, -D / 2 + T / 2); B.box(W, upH, T, wall, 0, LOW + upH / 2, -D / 2 + T / 2);
   for (const s of [-1, 1]) {
     B.box(T, lowH, D, wall, s * (W / 2 - T / 2), FY + lowH / 2, 0);
-    U.box(T, upH, D, wall, s * (W / 2 - T / 2), LOW + upH / 2, 0);
+    B.box(T, upH, D, wall, s * (W / 2 - T / 2), LOW + upH / 2, 0);
   }
   // the waist rail: a trim band where the cutaway stops, so the low walls read as finished
   B.box(W + 0.06, 0.07, T + 0.06, trim, 0, LOW, -D / 2 + T / 2, 0.02);
@@ -1574,9 +1619,17 @@ function shopShell(B, U, { wall, trim, floor, stone = paint(0xd8cab0), glass = u
   }
   U.box(DOOR + 0.28, 0.12, T + 0.1, trim, 0, DOORH + 0.06, fz, 0.03);
   if (sideWin) for (const s of [-1, 1]) {
-    U.box(0.08, 0.9, 1.3, trim, s * (W / 2 + 0.01), 1.85, -0.4, 0.03);
-    U.flat(1.15, 0.76, glass, s * (W / 2 + 0.055), 1.85, -0.4, [0, s * Math.PI / 2, 0]);
+    B.box(0.08, 0.9, 1.3, trim, s * (W / 2 + 0.01), 1.85, -0.4, 0.03);
+    B.flat(1.15, 0.76, glass, s * (W / 2 + 0.055), 1.85, -0.4, [0, s * Math.PI / 2, 0]);
+    // …and from inside: a deep sill, a frame and a warm daylit pane
+    const ix = s * (W / 2 - T - 0.005);
+    B.box(0.1, 0.92, 1.32, trim, ix, 1.85, -0.4, 0.03);
+    B.flat(1.12, 0.74, WINDOW_GLOW, ix - s * 0.056, 1.85, -0.4, [0, -s * Math.PI / 2, 0]);
+    B.box(0.22, 0.05, 1.36, trim, ix - s * 0.08, 1.4, -0.4, 0.015);
+    B.box(0.03, 0.74, 0.04, trim, ix - s * 0.06, 1.85, -0.4, 0.01);
   }
+  // ceiling beams: the room has a top when the roof lifts off
+  for (const z of [-1.45, 0, 1.45]) B.box(W - 2 * T, 0.14, 0.16, BEAM, 0, H - 0.07, z, 0.03);
   U.box(W + 0.24, 0.16, D + 0.24, trim, 0, H + 0.08, 0, 0.05);                      // cornice
   if (name) {                                                                       // the fascia sign
     U.box(W * 0.78, 0.52, 0.08, trim, 0, H - 0.3, D / 2 + 0.05, 0.03);
@@ -1643,7 +1696,23 @@ function shopBehaviors(B, U) {                 // The Proving Ground: a test han
     [0.8, 0.45, 0.62, 0.25, 0.9, 0.35].forEach((v, i) => { c.fillStyle = i % 2 ? '#76b900' : '#b8f05a'; c.fillRect(20 + i * 38, h - 16 - v * 100, 26, v * 100); });
   }) }), 0, fy + 1.55, 0.06);
   infoStand(B, 1.55, 0.75, -0.5, boardMat('Behavior Search', 'Every one of NVIDIA’s 2,166 SimReady objects got the same pokes: pushed low, pushed high, tilted, dropped. Search them by how they move.', { accent: '#5a8c00' }));
-  walls.push(...[[-1.2, -1.25, 0.45], [0, -1.25, 0.45], [1.2, -1.25, 0.45], [-1.6, 0.6, 0.25], [1.55, 0.75, 0.3]]);                          // the furniture is solid
+  // ── the lab feel: hazard tape round the bench, a pegboard of test rigs, a server rack, cage lamps ──
+  rug(B, 0, -1.2, 3.9, 1.35, { a: '#2a2f36', b: '#e1b95c', c: '#2a2f36', oval: false });
+  { const pz = -SH.D / 2 + SH.T + 0.02, peg = paint(0xc8b48a);
+    B.box(3.6, 1.0, 0.04, peg, 0, 2.05, pz + 0.02, 0.01);
+    const R2 = rng(91);
+    for (let i = 0; i < 9; i++) { const x = -1.5 + i * 0.37; B.box(0.04, 0.04, 0.08, dk, x, 2.4, pz + 0.06, 0.005);
+      if (i % 3 === 0) B.put(new THREE.TorusGeometry(0.1, 0.02, 6, 16), steel, x, 2.22, pz + 0.07);
+      else if (i % 3 === 1) B.box(0.06, 0.34, 0.03, paint([0xe8604c, 0x76b900, 0xe1b95c][i % 3]), x, 2.18, pz + 0.07, 0.01);
+      else B.put(new THREE.SphereGeometry(0.07 + R2() * 0.03, 10, 8), paint([0x7fb3a8, 0xdc9e9a, 0xb7a3c6][i % 3]), x, 2.24, pz + 0.1); }
+    B.flat(1.1, 0.26, signMat('TEST RIGS', { bg: '#2a2f36', fg: '#b8f05a', font: '700 $px ' + HAND, border: false, w: 256, h: 60 }), 0, 1.68, pz + 0.05); }
+  { const rk = B.sub(2.35, 0, -0.25, -Math.PI / 2);
+    rk.box(0.7, 1.9, 0.5, dark, 0, SH.FY + 0.95, 0, 0.03);
+    for (let k = 0; k < 6; k++) rk.box(0.62, 0.22, 0.04, paint(0x22272e), 0, SH.FY + 0.3 + k * 0.27, 0.25, 0.01);
+    for (let k = 0; k < 4; k++) rk.put(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 6), paint(0x22272e), 0.36, SH.FY + 1.7 - k * 0.12, 0.05 - k * 0.06, [Math.PI / 2, 0, 0]); }
+  for (const [x, z] of [[-1.1, 0.1], [1.0, -0.9]]) pendant(B, x, z, { shade: green, y: 2.3, glow: 0xe8ffc8 });
+  plant(B, -2.35, -1.85, 0.9, paint(0x5a8c00));
+  walls.push(...[[-1.2, -1.25, 0.45], [0, -1.25, 0.45], [1.2, -1.25, 0.45], [-1.6, 0.6, 0.25], [1.55, 0.75, 0.3], [2.35, -0.25, 0.4]]);                          // the furniture is solid
   return walls;
 }
 function shopQR(B, U) {                        // The Map Room: a QR facade and a compass on the roof
@@ -1692,7 +1761,23 @@ function shopQR(B, U) {                        // The Map Room: a QR facade and 
   gl.put(new THREE.SphereGeometry(0.3, 20, 14), paint(0x8fc3c9), 0, fy + 1.15, 0);
   gl.put(new THREE.TorusGeometry(0.34, 0.02, 6, 24), paint(0xe4b84f), 0, fy + 1.15, 0, [0, 0, 0.4]);
   infoStand(B, 1.7, 1.0, -0.6, boardMat('QR Compass', 'America’s biggest companies on a 3D map, each a little model. Tap one and it breaks into pixels that land on its QR code.', { accent: '#2f4a6b' }));
-  walls.push(...[[-1.05, -0.75, 0.62], [0, -0.75, 0.62], [1.05, -0.75, 0.62], [-2.0, 0.9, 0.3], [1.7, 1.0, 0.3]]);                          // the furniture is solid
+  // ── the explorer's den: a wall map, map rolls in a bin, a compass-rose rug, lantern light ──
+  { const pz = -SH.D / 2 + SH.T + 0.02;
+    B.box(3.9, 1.12, 0.06, paint(0x6e452c), 0, 2.1, pz + 0.02, 0.02);
+    B.flat(3.75, 1.0, paint(0xffffff, { hatch: 0, map: canvasTex(512, 136, (c, w, h, r) => {
+      c.fillStyle = '#efe2c2'; c.fillRect(0, 0, w, h); const cols = ['#7fb3a8', '#e1b95c', '#dc9e9a', '#b7a3c6', '#a8b994', '#93abc0', '#d58b63'];
+      cols.forEach((col, i) => { c.fillStyle = col; c.beginPath(); const cx = 40 + i * 68, cy = 60 + (i % 2) * 18; for (let k = 0; k <= 10; k++) { const a = k / 10 * 7, rr = 26 + r() * 14; c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.7); } c.fill(); });
+      c.strokeStyle = '#2f4a6b'; c.globalAlpha = 0.35; c.lineWidth = 1; for (let x = 0; x < w; x += 32) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); } c.globalAlpha = 1;
+      c.fillStyle = '#2f4a6b'; c.font = '700 18px ' + HAND; c.fillText('the seven regions', 10, 128);
+    }) }), 0, 2.1, pz + 0.06); }
+  { const bin = B.sub(2.35, 0, -1.75, 0);
+    bin.put(lathe([[0.001, 0], [0.24, 0], [0.26, 0.55], [0.001, 0.55]], 14), paint(0x8a6448), 0, SH.FY, 0);
+    const R2 = rng(13);
+    for (let k = 0; k < 6; k++) bin.put(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 10), paint([0xefe2c2, 0xe1d3b0, 0xf6eedb][k % 3]), (R2() - 0.5) * 0.25, SH.FY + 0.6, (R2() - 0.5) * 0.25, [(R2() - 0.5) * 0.4, 0, (R2() - 0.5) * 0.4]); }
+  rug(B, 0, 1.35, 2.3, 1.2, { a: '#2f4a6b', b: '#e1b95c', c: '#d8573f' });
+  for (const [x, z] of [[-1.0, -0.75], [1.0, -0.75]]) pendant(B, x, z, { shade: paint(0xc9a14a), y: 2.25 });
+  plant(B, -2.35, -1.85, 1.0);
+  walls.push(...[[-1.05, -0.75, 0.62], [0, -0.75, 0.62], [1.05, -0.75, 0.62], [-2.0, 0.9, 0.3], [1.7, 1.0, 0.3], [2.35, -1.75, 0.3], [-2.35, -1.85, 0.25]]);                          // the furniture is solid
   return walls;
 }
 function shopYarn(B, U) {                      // Pattern Haberdashery: a giant yarn ball on the roof
@@ -1727,8 +1812,56 @@ function shopYarn(B, U) {                      // Pattern Haberdashery: a giant 
   mq.put(new THREE.TorusGeometry(0.17, 0.06, 8, 18), sc, 0, fy + 1.45, 0, [Math.PI / 2, 0, 0]);
   mq.box(0.12, 0.55, 0.04, paint(0xc4607e), 0.1, fy + 1.15, 0.2, 0.02, [0.1, 0, 0.1]);
   infoStand(B, -1.6, 0.6, 0.5, boardMat('YarnFlow', 'Pick a pattern — a scarf, a coaster, an amigurumi ball — and watch it get made row by row, stitch by stitch, in 3D.', { accent: '#8a4f6e' }));
-  B.put(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 10), paint(0xe4b84f), SH.DOOR / 2 + 0.45, fy + 0.8, SH.D / 2 - 0.45, [0.15, 0, -0.12]);
-  walls.push(...[[-1.9, -1.4, 0.45], [-0.8, -1.55, 0.45], [1.9, -1.4, 0.45], [0.7, -1.35, 0.3], [-1.6, 0.6, 0.3]]);                          // the furniture is solid
+  B.put(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 10), paint(0xe4b84f), -SH.W / 2 + 0.42, fy + 0.8, -0.75, [0, 0, -0.16]);   // the giant hook, leant on the side wall (by the door it filled the room camera's foreground)
+  // ── the cosy bit: a wall of yarn cubbies, granny-square bunting, a reading chair under a lamp ──
+  const wood = paint(0xa77a52), woodD = paint(0x7a5236);
+  { // cubbies across the back wall above the baskets: 7 × 3 pigeonholes, every one stuffed with yarn
+    const z = -SH.D / 2 + SH.T + 0.18, x0 = -2.4, cw = 0.68, y0 = 1.2, ch = 0.42;
+    B.box(cw * 7 + 0.08, 0.06, 0.36, woodD, 0, y0 - 0.03, z, 0.015);
+    for (let r = 1; r <= 3; r++) B.box(cw * 7 + 0.08, 0.04, 0.36, wood, 0, y0 + r * ch - 0.02, z, 0.01);
+    for (let c = 0; c <= 7; c++) B.box(0.04, ch * 3, 0.36, wood, x0 + c * cw, y0 + ch * 1.5, z, 0.01);
+    const R2 = rng(57);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 7; c++) {
+      const n = 1 + Math.floor(R2() * 2.4);
+      for (let k = 0; k < n; k++) B.put(new THREE.SphereGeometry(0.12 + R2() * 0.03, 12, 9), paint(yc[Math.floor(R2() * yc.length)]), x0 + c * cw + 0.22 + k * 0.2 - (n - 1) * 0.05, y0 + r * ch + 0.14, z + (R2() - 0.5) * 0.08);
+    }
+  }
+  { // granny-square bunting, beam to beam across the room, sagging
+    const gsq = (i) => paint(0xffffff, { hatch: 0, side: THREE.DoubleSide, map: canvasTex(48, 48, (c, w, h) => {
+      const cols = ['#e8604c', '#e1b95c', '#7fb3a8', '#b7a3c6', '#dc9e9a', '#f6eedb'];
+      for (let k = 0; k < 4; k++) { c.fillStyle = cols[(i + k) % cols.length]; c.fillRect(k * 6, k * 6, w - k * 12, h - k * 12); }
+      c.strokeStyle = '#2a2230'; c.lineWidth = 2; c.strokeRect(1, 1, w - 2, h - 2);
+    }) });
+    for (const [z0, z1, x] of [[-1.45, 1.45, -1.3], [-1.45, 1.45, 1.3]]) {
+      for (let k = 0; k <= 12; k++) {
+        const t = k / 12, z = z0 + (z1 - z0) * t, y = SH.H - 0.2 - 0.45 * Math.sin(Math.PI * t);
+        if (k > 0 && k < 12 && k % 2 === 0) B.flat(0.18, 0.18, gsq(k + (x > 0 ? 3 : 0)), x, y - 0.12, z, [0, Math.PI / 2, Math.PI / 4]);
+        if (k < 12) { const t2 = (k + 1) / 12, y2 = SH.H - 0.2 - 0.45 * Math.sin(Math.PI * t2), zz = z0 + (z1 - z0) * t2; B.put(new THREE.CylinderGeometry(0.008, 0.008, Math.hypot(zz - z, y2 - y), 4), paint(0xc4607e), x, (y + y2) / 2, (z + zz) / 2, [Math.atan2(zz - z, y2 - y), 0, 0]); }
+      }
+    }
+  }
+  { // the reading chair: a squashy armchair with a granny-square throw, a side table and a lamp
+    const ch = B.sub(1.95, 0, 0.75, -0.9), fyy = SH.FY, velvet = paint(0x6f8f7a);
+    ch.box(0.8, 0.32, 0.72, velvet, 0, fyy + 0.3, 0, 0.1);
+    ch.box(0.8, 0.62, 0.18, velvet, 0, fyy + 0.68, -0.3, 0.09);
+    for (const s2 of [-1, 1]) ch.box(0.16, 0.44, 0.72, velvet, s2 * 0.38, fyy + 0.48, 0, 0.07);
+    for (const [x, z] of [[-0.32, -0.28], [0.32, -0.28], [-0.32, 0.28], [0.32, 0.28]]) ch.box(0.06, 0.14, 0.06, woodD, x, fyy + 0.07, z, 0.015);
+    ch.box(0.62, 0.05, 0.72, paint(0xffffff, { hatch: 0, map: canvasTex(64, 64, (c, w, h) => { const cols = ['#e8604c', '#e1b95c', '#7fb3a8', '#c4607e']; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { c.fillStyle = cols[(i + j) % 4]; c.fillRect(i * 16, j * 16, 16, 16); c.fillStyle = '#f6eedb'; c.fillRect(i * 16 + 5, j * 16 + 5, 6, 6); } }) }), 0, fyy + 0.6, 0.02, 0.02, [0, 0, 0.12]);
+    const tb = B.sub(2.3, 0, -0.3, 0);
+    tb.put(lathe([[0.001, 0], [0.18, 0], [0.05, 0.05], [0.04, 0.55], [0.24, 0.57], [0.24, 0.6], [0.001, 0.6]], 16), woodD, 0, SH.FY, 0);
+    tb.put(lathe([[0.001, 0], [0.09, 0], [0.03, 0.05], [0.025, 0.4], [0.001, 0.4]], 12), paint(0xe1b95c), 0, SH.FY + 0.6, 0);
+    tb.put(lathe([[0.06, 0.38], [0.2, 0.18], [0.22, 0.16], [0.08, 0.36]], 18), paint(0xdc9e9a, { side: THREE.DoubleSide }), 0, SH.FY + 0.6, 0);
+    tb.put(new THREE.SphereGeometry(0.06, 10, 8), paint(0xfff6dc, { hatch: 0, emissive: 0xffd98a }), 0, SH.FY + 0.88, 0).userData.noInk = true;
+    tb.put(new THREE.CylinderGeometry(0.05, 0.045, 0.1, 12), paint(0xf6eedb), 0.13, SH.FY + 0.65, 0.08);          // a mug of tea
+    lightPool(B, 2.1, 0.3, 0.85);
+  }
+  rug(B, 0.1, 0.35, 2.7, 1.9, { a: '#c4607e', b: '#e1b95c', c: '#f6eedb' });
+  pendant(B, -1.1, 0.0, { shade: paint(0x7fb3a8) });
+  pendant(B, 0.6, -0.9, { shade: paint(0xe1b95c), y: 2.35 });
+  plant(B, -2.35, 1.85, 1.1);
+  B.put(new THREE.CylinderGeometry(0.22, 0.22, 0.1, 18), paint(0xdc9e9a), -1.05, SH.FY + 0.05, 1.5);       // the cat's cushion
+  walls.push(...[[-1.9, -1.4, 0.45], [-0.8, -1.55, 0.45], [1.9, -1.4, 0.45], [0.7, -1.35, 0.3], [-1.6, 0.6, 0.3],
+    [1.95, 0.75, 0.42], [2.3, -0.3, 0.25], [-2.35, 1.85, 0.25]]);                          // the furniture is solid
   return walls;
 }
 function shopDeck(B, U) {                      // Picture Palace: a little art-deco cinema
@@ -1776,6 +1909,24 @@ function shopDeck(B, U) {                      // Picture Palace: a little art-d
   pc.box(0.56, 0.4, 0.42, paint(0xbfd8e0, { opacity: 0.55 }), 0, fy + 0.9, 0, 0.02);
   for (let k = 0; k < 6; k++) pc.put(new THREE.SphereGeometry(0.07, 8, 6), cream, -0.15 + (k % 3) * 0.15, fy + 0.78 + Math.floor(k / 3) * 0.08, -0.05 + (k % 2) * 0.1);
   infoStand(B, 2.0, 1.45, -0.6, boardMat('DeckGPT', 'Builds a presentation with you, step by step: what you are sharing, the story, the visuals — then the deck.', { accent: '#a94848' }));
+  // ── a proper picture house: velvet curtains, a red aisle runner, glowing sconces, a projector ──
+  const velvet = paint(0x8a2f3a);
+  for (const s2 of [-1, 1]) for (let k = 0; k < 4; k++) B.put(new THREE.CylinderGeometry(0.11, 0.13, 2.5, 10), velvet, s2 * (1.85 + k * 0.17), fy + 1.25, -1.9 + (k % 2) * 0.05);
+  B.box(4.4, 0.32, 0.16, velvet, 0, fy + 2.55, -1.88, 0.05);
+  for (let x = -2.1; x <= 2.11; x += 0.3) B.put(new THREE.SphereGeometry(0.045, 8, 6), gold, x, fy + 2.36, -1.8);
+  rug(B, 0, 0.3, 0.75, 3.6, { a: '#8a2f3a', b: '#e4b84f', c: '#8a2f3a', oval: false });
+  for (const s2 of [-1, 1]) for (const z of [-0.6, 1.0]) {
+    const x = s2 * (SH.W / 2 - SH.T - 0.06);
+    B.put(new THREE.CylinderGeometry(0.14, 0.1, 0.3, 14, 1, false, 0, Math.PI), gold, x, 1.95, z, [0, s2 > 0 ? -Math.PI / 2 : Math.PI / 2, 0]);
+    B.put(new THREE.SphereGeometry(0.07, 10, 8), paint(0xfff6dc, { hatch: 0, emissive: 0xffc070 }), x - s2 * 0.06, 2.1, z).userData.noInk = true;
+    lightPool(B, x - s2 * 0.55, z, 0.6, POOL_DIM);
+  }
+  { const pj = B.sub(-1.7, 0.12, 1.45, 0.3);                                         // the projector, slung from the front beam off to one side (in the middle it hid the screen)
+    pj.box(0.06, 0.25, 0.06, dk, 0, SH.H - 0.27, 0, 0.01);
+    pj.box(0.46, 0.3, 0.55, paint(0x3a3340), 0, SH.H - 0.55, 0, 0.05);
+    for (const s2 of [-1, 1]) pj.put(new THREE.CylinderGeometry(0.17, 0.17, 0.05, 18), dk, s2 * 0.13, SH.H - 0.27, 0.1, [0, 0, Math.PI / 2]);
+    pj.put(new THREE.CylinderGeometry(0.08, 0.1, 0.16, 14), dk, 0, SH.H - 0.55, -0.34, [Math.PI / 2, 0, 0]);
+    pj.put(new THREE.CircleGeometry(0.07, 14), paint(0xfff6dc, { hatch: 0, emissive: 0xfff0c0 }), 0, SH.H - 0.55, -0.425, [Math.PI, 0, 0]).userData.noInk = true; }
   walls.push(...[[-1.85, -0.45, 0.38], [-0.95, -0.45, 0.38], [0.95, -0.45, 0.38], [1.85, -0.45, 0.38], [-1.85, 0.55, 0.38], [-0.95, 0.55, 0.38], [0.95, 0.55, 0.38], [1.85, 0.55, 0.38], [-2.0, 1.55, 0.35], [2.0, 1.45, 0.3]]);                          // the furniture is solid
   return walls;
 }
@@ -1830,7 +1981,20 @@ function shopSplat(B, U) {                     // Paint & Supplies: paint pours 
   }) }), 0, fy + 1.12, 0.06);
   for (const [x, z, i] of [[-0.6, 0.4, 0], [0.4, -0.6, 2], [-1.6, 1.0, 3]]) B.flat(0.6, 0.6, SPLF[i], x, fy + 0.025, z, [-Math.PI / 2, 0, 0]);
   infoStand(B, -1.6, 0.4, 0.5, boardMat('Splatform', 'Components, painted: every button, card and input made of a real medium. One attribute paints your whole site.', { accent: '#e8604c' }));
-  walls.push(...[[-2.0, -1.9, 0.3], [-1.0, -1.9, 0.3], [1.0, -1.9, 0.3], [2.0, -1.9, 0.3], [1.6, 0.3, 0.35], [-1.6, 0.4, 0.3]]);                          // the furniture is solid
+  // ── a working studio: a pegboard of brushes, swatch fans, a paint-spattered drop cloth, a stepladder ──
+  { const pz = -SH.D / 2 + SH.T + 0.02;
+    B.box(1.1, 1.1, 0.04, paint(0xc8b48a), 0, 2.0, pz + 0.02, 0.01);
+    for (let k = 0; k < 7; k++) { const x = -0.42 + k * 0.14; B.box(0.035, 0.42, 0.03, paint(0xd58b63), x, 2.15, pz + 0.07, 0.01); B.box(0.05, 0.1, 0.04, paint(pots[k % pots.length]), x, 1.9, pz + 0.07, 0.01); }
+    for (const s2 of [-1, 1]) for (let k = 0; k < 5; k++) {        // swatch fans pinned either side
+      const fan = B.sub(s2 * 1.6, 1.95, pz + 0.06, 0); fan.g.rotation.z = (k - 2) * 0.28 * s2;
+      fan.box(0.12, 0.62, 0.01, paint(pots[(k + (s2 > 0 ? 4 : 0)) % pots.length]), 0, 0.28, k * 0.004, 0.005); } }
+  rug(B, 0, 0.6, 3.0, 2.0, { a: '#e9e0cc', b: '#d8cab0', c: '#e8604c', oval: false, ry: 0.06 });
+  { const ld = B.sub(2.3, 0, 1.55, -0.5), al = paint(0xb8bec6);
+    for (const s2 of [-1, 1]) ld.box(0.05, 1.5, 0.05, al, s2 * 0.22, SH.FY + 0.72, 0.12, 0.01, [0.16, 0, 0]);
+    for (const s2 of [-1, 1]) ld.box(0.05, 1.45, 0.05, al, s2 * 0.22, SH.FY + 0.7, -0.22, 0.01, [-0.16, 0, 0]);
+    for (let k = 0; k < 4; k++) ld.box(0.46, 0.04, 0.1, al, 0, SH.FY + 0.3 + k * 0.33, 0.12 - k * 0.02, 0.01); }
+  for (const [x, z] of [[-1.0, -0.2], [1.0, 0.9]]) pendant(B, x, z, { shade: paint(0xf6f0e4), y: 2.3 });
+  walls.push(...[[-2.0, -1.9, 0.3], [-1.0, -1.9, 0.3], [1.0, -1.9, 0.3], [2.0, -1.9, 0.3], [1.6, 0.3, 0.35], [-1.6, 0.4, 0.3], [2.3, 1.55, 0.3]]);                          // the furniture is solid
   return walls;
 }
 function shopEyes(B, U) {                      // Optics & Menagerie: the roof is a great watching eye
@@ -1894,7 +2058,27 @@ function shopEyes(B, U) {                      // Optics & Menagerie: the roof i
   ln.put(new THREE.TorusGeometry(0.42, 0.06, 8, 28), brass, 0, fy + 1.45, 0);
   ln.put(new THREE.CircleGeometry(0.4, 28), paint(0xbfd8e0, { opacity: 0.45, hatch: 0 }), 0, fy + 1.45, 0).userData.noInk = true;
   infoStand(B, -1.75, 0.8, 0.55, boardMat('Borrowed Eyes', 'Photograph 14 hidden animals and borrow their eyes: see in ultraviolet, feel heat, hear in echoes, own the night.', { bg: '#1f2d3d', fg: '#f6eedb', accent: '#f2d27a' }));
-  walls.push(...[[-1.7, -1.4, 0.35], [-0.55, -1.6, 0.35], [0.6, -1.6, 0.35], [1.75, -1.4, 0.35], [1.9, 0.9, 0.25], [-1.75, 0.8, 0.3]]);                          // the furniture is solid
+  // ── a naturalist's night room: a star chart, shelves of brass instruments and specimen jars, lantern glow ──
+  { const pz = -SH.D / 2 + SH.T + 0.02;
+    B.box(2.0, 1.0, 0.04, brass, 0, 2.15, pz + 0.02, 0.01);
+    B.flat(1.9, 0.9, paint(0xffffff, { hatch: 0, emissive: 0x0a1020, map: canvasTex(256, 128, (c, w, h, r) => {
+      c.fillStyle = '#16202e'; c.fillRect(0, 0, w, h); c.fillStyle = '#f2d27a';
+      for (let i = 0; i < 70; i++) { c.globalAlpha = 0.4 + r() * 0.6; c.beginPath(); c.arc(r() * w, r() * h, 0.6 + r() * 1.6, 0, 7); c.fill(); }
+      c.globalAlpha = 0.7; c.strokeStyle = '#f2d27a'; c.lineWidth = 1; c.beginPath(); [[40, 30], [70, 50], [100, 40], [130, 70], [160, 60]].forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke();
+      c.globalAlpha = 1; c.font = '700 14px ' + HAND; c.fillText('what the owl sees', 150, 118);
+    }) }), 0, 2.15, pz + 0.05);
+    for (const s2 of [-1, 1]) {
+      const y = wallShelf(B, s2 * 1.85, 2.0, 1.1, paint(0x5b4a3c));
+      B.put(new THREE.CylinderGeometry(0.1, 0.1, 0.24, 12), paint(0xbfd8e0, { opacity: 0.55 }), s2 * 1.55, y + 0.12, pz + 0.17);
+      B.put(new THREE.SphereGeometry(0.06, 10, 8), paint(0x6f9a5a), s2 * 1.55, y + 0.1, pz + 0.17);
+      B.put(new THREE.SphereGeometry(0.13, 14, 10), brass, s2 * 1.95, y + 0.14, pz + 0.17);
+      B.put(new THREE.TorusGeometry(0.17, 0.015, 6, 20), brass, s2 * 1.95, y + 0.14, pz + 0.17, [0.5, 0.3, 0]);
+      B.put(new THREE.CylinderGeometry(0.035, 0.05, 0.36, 10), brass, s2 * 2.25, y + 0.06, pz + 0.17, [0, 0, Math.PI / 2 - 0.2]);
+    } }
+  rug(B, 0, 0.35, 2.8, 1.8, { a: '#1f2d3d', b: '#c9a14a', c: '#f2d27a' });
+  for (const [x, z] of [[-1.0, -0.1], [1.0, -0.1]]) pendant(B, x, z, { shade: paint(0x2a3a4e), y: 2.25, glow: 0xffe08a });
+  plant(B, 2.35, -0.2, 1.0, paint(0x4f7a5a));
+  walls.push(...[[-1.7, -1.4, 0.35], [-0.55, -1.6, 0.35], [0.6, -1.6, 0.35], [1.75, -1.4, 0.35], [1.9, 0.9, 0.25], [-1.75, 0.8, 0.3], [2.35, -0.2, 0.25]]);                          // the furniture is solid
   return walls;
 }
 const SHOPS = { behaviors: shopBehaviors, qr: shopQR, yarn: shopYarn, deckgpt: shopDeck, splat: shopSplat, eyes: shopEyes };

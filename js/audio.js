@@ -185,7 +185,46 @@ function pump() {
 }
 
 // ── public ──
+// ── a room's own air, for the walk-in shops: low and soft (no tones up high) ──
+//   cosy – a fire's low crackle   hum – a lab's mains hum   reel – a projector's whirr
+//   night – a slow low hush       studio – plain room tone
+let room = null;
+function roomTone(kind) {
+  const out = AC.createGain(); out.gain.value = 0; out.connect(ambBus);
+  const src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = kind === 'night' ? 220 : 340; lp.Q.value = 0.7;
+  const g = AC.createGain(); g.gain.value = kind === 'cosy' ? 0.5 : 0.35;
+  src.connect(lp); lp.connect(g); g.connect(out); src.start();
+  const nodes = [src];
+  if (kind === 'cosy') {                          // the crackle: the noise flickers through a slow random gate
+    const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.type = 'square'; lfo.frequency.value = 7.3; lg.gain.value = 0.25;
+    lfo.connect(lg); lg.connect(g.gain); lfo.start(); nodes.push(lfo);
+  }
+  if (kind === 'hum' || kind === 'reel') {        // a low tone under it: the mains, or the projector's motor
+    const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = kind === 'hum' ? 55 : 72;
+    const og = AC.createGain(); og.gain.value = 0.05; o.connect(og); og.connect(out); o.start(); nodes.push(o);
+    if (kind === 'reel') {                        // …and the film's flutter, a slow tremble on the noise
+      const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.frequency.value = 18; lg.gain.value = 0.15;
+      lfo.connect(lg); lg.connect(g.gain); lfo.start(); nodes.push(lfo);
+    }
+  }
+  if (kind === 'night') {                         // the hush rises and falls like breathing
+    const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.frequency.value = 0.12; lg.gain.value = 0.2;
+    lfo.connect(lg); lg.connect(g.gain); lfo.start(); nodes.push(lfo);
+  }
+  out.gain.setTargetAtTime(0.09, AC.currentTime, 0.6);
+  return { out, nodes };
+}
+
 export const audio = {
+  // step into (kind) or out of (null) a shop: its air fades in, the score steps back a little
+  setRoom(kind) {
+    if (!AC || (room && room.kind === kind) || (!room && !kind)) return;
+    const t = AC.currentTime;
+    if (room) { const r = room; r.out.gain.setTargetAtTime(0, t, 0.4); setTimeout(() => { for (const n of r.nodes) try { n.stop(); } catch { /* done */ } r.out.disconnect(); }, 2500); }
+    room = kind ? { kind, ...roomTone(kind) } : null;
+    if (scene) musicBus.gain.setTargetAtTime(SCENES[scene].vol * (kind ? 0.55 : 1), t, 0.8);
+  },
   // call from a click/keypress: makes (or wakes) the context
   start() {
     try { if (!AC) build(); if (AC.state === 'suspended') AC.resume(); } catch { AC = null; }
