@@ -112,6 +112,12 @@ export function buildTown(scene) {
     deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: z => z.key === key, clear: 1.8 });
     return buildRoad(scene, sm, { half: 0.85, dashed: false });
   };
+  // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
+  // everything built after (blocks, lamps, the verge trees and bushes) see them —
+  // laid later, a spur ran straight over the verge planting it crossed
+  for (const p of PLAN.projects) spur(llv(p.at), 4.6, 'lm:' + p.key);
+  for (const [k, s] of Object.entries(PLAN.sites))
+    if (k !== 'airport') spur(llv(s.at), s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
 
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
@@ -182,7 +188,7 @@ export function buildTown(scene) {
     const rr = Math.hypot(x, y) / CAP;
     const r = rnd();
     let b;
-    if (r < 0.12) { b = park(); }
+    if (r < 0.12) { b = park(P / 2 - ROAD_MAJOR - 0.15); }   // clear of the road on every side
     else if (rr < 0.45) b = townBlock({ w: room * 0.9, d: room * 0.9, h: 6 + rnd() * 4 });
     else if (rr < 0.8) b = townBlock({ w: room * 0.9, d: room * 0.85, h: 3.1 + rnd() * 1.7 });
     else b = house({ w: room * 0.92, d: room * 0.76, h: 1.7 });
@@ -216,8 +222,10 @@ export function buildTown(scene) {
     const side = new THREE.Vector3().crossVectors(p, q.clone().sub(p)).normalize();
     for (const s of [-1, 1]) {
       const d = p.clone().multiplyScalar(R).addScaledVector(side, s * 2.3).normalize();
-      if (zoneHit(d, 0.8) || onRoad(d, 0.7) || isWater(d) || inShops(...toTown(d), 0.6)) continue;
-      add(settle(rnd() > 0.35 ? tree() : bush(0.55), d, 0.5, 0.05, rnd() * 6));
+      // a tree's crown reaches ~1.1 from its trunk: keep it from hanging over any carriageway
+      const isTree = rnd() > 0.35;
+      if (zoneHit(d, 0.8) || onRoad(d, isTree ? 1.15 : 0.7) || isWater(d) || inShops(...toTown(d), 0.6)) continue;
+      add(settle(isTree ? tree() : bush(0.55), d, 0.5, 0.05, rnd() * 6));
       solid(d, 0.35);
     }
   }
@@ -229,12 +237,10 @@ export function buildTown(scene) {
     add(g);
     solid(d, 2.1);
     out.landmarks.push({ ...p, dir: d, root: g });
-    spur(d, 4.6, 'lm:' + p.key);
   }
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const d = llv(s.at);
     out.sites[k] = { ...s, dir: d, frame: frame(d, TOWN_C) };
-    if (k !== 'airport') spur(d, s.stop ?? s.r + 0.6, 'site:' + k);      // Cape Far Side: the long road round the planet
     if (k === 'launchpad') {
       const g = add(placeOnPlanet(capeFarSide(), d, yawToFace(d, TOWN_C), { weight: 'mid' }));
       addFloor(g, g.userData.floor);
@@ -313,15 +319,16 @@ function bunting(fC, x, Y) {
   return g;
 }
 
-// a small park: lawn, a tree, a bench
-function park() {
-  const g = new THREE.Group();
-  const lawn = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.55, 0.12, 24), paint(PAL.grass));
+// a small park: lawn, a tree, a bench, all of it inside r (the block's clear radius:
+// a 1.55 lawn and a full-size tree spilled half a unit onto the streets round a 4.4 block)
+function park(r = 1.1) {
+  const g = new THREE.Group(), k = r / 1.1;
+  const lawn = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.12, 24), paint(PAL.grass));
   lawn.position.y = 0.06; g.add(lawn);
   // seen from the street (the park's front, +z): the tree on the left, the bench to its right,
   // facing the street
-  const t = tree({ s: 1.0 }); t.position.set(-0.55, 0.1, -0.25); g.add(t);
-  const b = bench(); b.position.set(0.55, 0.1, 0.2); b.rotation.y = 0; g.add(b);
+  const t = tree({ s: 0.85 * k }); t.position.set(-0.3 * k, 0.1, -0.15 * k); g.add(t);
+  const b = bench(); b.position.set(0.35 * k, 0.1, 0.35 * k); b.rotation.y = 0; g.add(b);
   return ink(g, 'fine');
 }
 
