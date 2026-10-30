@@ -14,6 +14,9 @@ function audio() {
   if (AC.state === 'suspended') AC.resume();
   return AC;
 }
+// iOS Safari only lets audio start inside a tap: open (and resume) it on the first one
+function unlock() { const ac = audio(); if (ac && ac.state === 'running') for (const ev of ['pointerdown', 'keydown']) removeEventListener(ev, unlock); }
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, unlock);
 function wail(pitch = 300, dur = 1.25, vol = 0.18) {
   const ac = audio(); if (!ac) return;
   const t = ac.currentTime, out = ac.createGain();

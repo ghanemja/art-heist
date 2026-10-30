@@ -443,7 +443,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   // the case board's tab: fold it down to its title + the current step, and remember it
   {
-    let min = false; try { min = localStorage.getItem('caseMin') === '1'; } catch {}
+    // folded by default on a phone (it covers a third of a portrait screen); a choice sticks
+    let min = matchMedia('(pointer: coarse)').matches && (innerWidth < 700 || innerHeight < 500); try { const v = localStorage.getItem('caseMin'); if (v) min = v === '1'; } catch {}
     const apply = () => { $('hud').classList.toggle('min', min); const b = $('caseTog'); b.textContent = min ? '+' : '–'; b.title = min ? 'expand' : 'minimize'; };
     $('caseTog').onclick = (e) => { e.stopPropagation(); min = !min; try { localStorage.setItem('caseMin', min ? '1' : '0'); } catch {} apply(); };
     apply();
