@@ -155,7 +155,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (player.st.mode === 'walk') {
       for (const it of items) {
         if (it.knocked) continue;                    // can't chat to someone mid-air
-        const lim = it.kind === 'person' ? 2.4 : 2.1;
+        const lim = it.reach ?? (it.kind === 'person' ? 2.4 : 2.1);
         const d = arc(here, it.dir);
         if (d < lim && d < best) { best = d; nearest = it; }
       }
@@ -228,24 +228,28 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     updateGoal();
   }
   // ── someone talks ──
-  // a conversation is framed like one: both of you, side-on, at eye level
+  // a conversation is framed over the critic's shoulder: the camera stands behind her and a
+  // little to one side, at eye level, so the one talking faces you and she's at the frame's edge
   const conv = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false, side: 1 };
   const _cv = new THREE.Vector3();
-  // where the talk camera sits: off to one side of the pair, swung round by `sw` radians
+  // where the talk camera sits: behind her shoulder on side `sg`, swung round her by `sw` radians
   const _rc = new THREE.Raycaster(); _rc.camera = camera;
-  // (k < 1 pulls the camera in toward the pair, when nothing further out has a clear view)
+  // (k < 1 pulls the camera in toward her, when nothing further out has a clear view)
   function convoSpot(mid, up, ab, dist, sg, sw, k = 1) {
+    const a = mid.clone().addScaledVector(ab, -dist / 2);
     const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(sg);
-    const off = side.multiplyScalar(2.5 + dist * 0.6).addScaledVector(ab, -0.45).applyAxisAngle(up, sw * sg).multiplyScalar(k);
-    return mid.clone().add(off).addScaledVector(up, 0.72 + 0.33 * k);
+    const off = ab.clone().multiplyScalar(-1.7).addScaledVector(side, 0.75).applyAxisAngle(up, sw * sg).multiplyScalar(k);
+    return a.add(off).addScaledVector(up, 1.0 + 0.12 * k);
   }
+  // look at the speaker's face, a touch toward her so both read
+  const convoLook = (mid, up, ab, dist) => mid.clone().addScaledVector(ab, dist * 0.28).addScaledVector(up, 0.9);
   function convoCam(cam, root) {
     const it = items.find(i => i.id === G.talkWho?.id); if (!it) return;
     const a = root.position, b = it.obj.position;
     const mid = a.clone().add(b).multiplyScalar(0.5), up = mid.clone().normalize();
     const ab = b.clone().sub(a).projectOnPlane(up); const dist = ab.length(); ab.normalize();
     const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing || 0, conv.k ?? 1);
-    const look = mid.clone().addScaledVector(up, 0.72);
+    const look = convoLook(mid, up, ab, dist);
     const now = performance.now() / 1000, dt = conv.init ? Math.min(0.1, now - conv.t) : 0; conv.t = now;
     if (!conv.init) { conv.pos.copy(conv.cut ? want : cam.position); conv.look.copy(look); conv.init = true; }
     conv.pos.lerp(want, 1 - Math.exp(-3.5 * dt)); conv.look.lerp(look, 1 - Math.exp(-6 * dt));
@@ -258,7 +262,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const mid = player.root.position.clone().add(it.obj.position).multiplyScalar(0.5), up = mid.clone().normalize();
     const ab = it.obj.position.clone().sub(player.root.position).projectOnPlane(up).normalize();
     // try each side and a few swings round the pair; take the first view nothing stands in
-    const dist = it.obj.position.clone().sub(player.root.position).projectOnPlane(up).length(), look = mid.clone().addScaledVector(up, 0.72);
+    const dist = it.obj.position.clone().sub(player.root.position).projectOnPlane(up).length(), look = convoLook(mid, up, ab, dist);
     const skip = new Set([player.root, it.obj]);
     // the whole shot must be clear, not just its centre: both of you head to foot, and the
     // edges of the frame either side and above — nothing may stand between them and the camera
@@ -321,7 +325,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const sides = it.id === 'otto' ? [-1, 1] : [1, -1];                  // Otto: from the road side, away from the easels
     conv.side = sides[0]; conv.swing = 0; conv.k = 1;
     let best = 1e9;
-    outer: for (const sw of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]) for (const sg of sides) {
+    // (never swung so far round that it looks at her face instead of theirs)
+    outer: for (const sw of [0, 0.25, -0.25, 0.5, -0.5, 0.8, -0.8, 1.1]) for (const sg of sides) {
       const c = cost(convoSpot(mid, up, ab, dist, sg, sw), best);
       if (c < best) { best = c; conv.side = sg; conv.swing = sw; }
       if (!c) break outer;
@@ -583,13 +588,18 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   // move a story thing (and its collider and glint) to a spot at the cape
   function relocate(it, x, z, faceX, faceZ) {
-    const old = it.dir.clone(), d = capeDir(x, z);
+    const old = (it.at ?? it.dir).clone(), d = capeDir(x, z);
     for (const c of town.colliders) if (arc(c.dir, old) < 0.05) c.dir.copy(d);
     it.dir.copy(d);
     it.obj.position.copy(d).multiplyScalar(standAt(d));
     alignToSurface(it.obj, d, yawToFace(d, capeDir(faceX, faceZ)));
     it.homePos = it.obj.position.clone(); it.homeQ = it.obj.quaternion.clone();
-    if (it.glint) it.glint.position.copy(d).multiplyScalar(standAt(d) + (it.kind === 'person' ? 1.75 : it.id === 'van' ? 2.3 : 1.6));
+    if (it.glint) it.glint.position.copy(d).multiplyScalar(standAt(d) + (it.kind === 'person' ? 1.75 : 1.6));
+    if (it.at) {                                   // the van: looked at from behind its back doors
+      it.at.copy(d); it.obj.updateWorldMatrix(true, false);
+      it.dir.copy(it.obj.localToWorld(new THREE.Vector3(0, 0, -2.2))).normalize();
+      if (it.glint) it.glint.position.copy(it.obj.localToWorld(new THREE.Vector3(0, 1.15, -1.8)));
+    }
   }
   function startGetaway() {
     G.act = 2; G.track = null;

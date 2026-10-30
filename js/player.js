@@ -480,7 +480,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // the blocked-view pull-in eases (the check works in 10% steps: snapping to them popped)
     const f0 = reach(want);
     if (st.reachS == null || !st.camInit) st.reachS = f0;
-    st.reachS += (f0 - st.reachS) * (1 - Math.exp(-(f0 < st.reachS ? 6 : 2.5) * dt));
+    st.reachS += (f0 - st.reachS) * (1 - Math.exp(-(f0 < st.reachS ? 8 : 4) * dt));
     const f = st.reachS;
     if (f < 0.999) {
       const keep = Math.max(f, st.mode === 'jeep' ? 0.6 : 0.4);
@@ -489,12 +489,14 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // look a little ahead of where you're going — the lead itself on a slow spring, so a
     // quick turn doesn't whip the view round
     if (!st.leadV) st.leadV = new THREE.Vector3();
-    st.leadV.lerp(st.heading.clone().multiplyScalar((st.mode === 'jeep' ? 1.6 : 0.9) * lead), 1 - Math.exp(-2.5 * dt));
+    st.leadV.lerp(st.heading.clone().multiplyScalar(1.6 * lead), 1 - Math.exp(-4 * dt));
     const look = head.clone().add(st.leadV);
     if (!st.camInit) { st.camPos.copy(want); st.camLook.copy(look); st.camInit = true; }
     const pullIn = want.distanceTo(head) < st.camPos.distanceTo(head) - 0.3;
-    st.camPos.lerp(want, 1 - Math.exp(-(pullIn ? 6 : 4) * dt));
-    st.camLook.lerp(look, 1 - Math.exp(-5 * dt));
+    // while you drag the view it answers your hand straight away; otherwise it trails softly
+    const dragging = st.dragT < 0.25;
+    st.camPos.lerp(want, 1 - Math.exp(-(dragging ? 14 : pullIn ? 10 : 5) * dt));
+    st.camLook.lerp(look, 1 - Math.exp(-(dragging ? 14 : 8) * dt));
     // keep the eye above ground
     const cr = st.camPos.length(), cg = groundAt(st.camPos.clone().normalize()) + 0.8;
     if (cr < cg) st.camPos.setLength(cg);

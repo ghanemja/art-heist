@@ -1242,11 +1242,19 @@ export function launchConsole() {
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
   const draw = (text, col = '#7fe0a8') => { const c = cv.getContext('2d'); c.fillStyle = '#1c2430'; c.fillRect(0, 0, 256, 128); c.font = `700 64px ${SCRIPT}`; c.fillStyle = col; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 128, 66); tex.needsUpdate = true; };
   draw('ARMED', '#f2d27a');
+  // the desk it all stands on: a cabinet from the ground, a sloped control top, the screen
+  // on a neck at the back, and the big button in a raised guard collar under its flip cover
+  const steel = paint(0x8a929c), dark = paint(0x3a3340);
+  K.box(0.86, 0.78, 0.56, steel, 0, 0.39, -0.04, 0.04);                       // cabinet
+  K.box(0.8, 0.05, 0.5, paint(0x5e6670), 0, 0.03, -0.04, 0.02);                // plinth
+  K.box(0.92, 0.06, 0.66, dark, 0, 0.85, -0.02, 0.025, [0.12, 0, 0]);          // sloped control top
+  K.box(0.12, 0.2, 0.08, dark, 0, 0.96, -0.24, 0.02);                          // the screen's neck
   K.box(0.7, 0.42, 0.08, paint(0x3a3340), 0, 1.15, -0.2, 0.03, [-0.35, 0, 0]);
   K.flat(0.62, 0.34, paint(0xffffff, { map: tex, hatch: 0 }), 0, 1.16, -0.155, [-0.35, 0, 0]);
-  K.put(lathe([[0.001, 0], [0.13, 0], [0.13, 0.06], [0.001, 0.06]], 20), paint(0x3a3340), 0.32, 0.91, 0.12);
+  K.put(lathe([[0.001, 0], [0.13, 0], [0.13, 0.06], [0.001, 0.06]], 20), dark, 0.32, 0.9, 0.12);
   const btn = K.put(lathe([[0.001, 0], [0.09, 0], [0.11, 0.05], [0.08, 0.1], [0.001, 0.11]], 20), paint(0xe2483a, { emissive: 0x7a1710 }), 0.32, 0.96, 0.12);
-  const cover = K.box(0.26, 0.02, 0.26, paint(0xe4b84f, { opacity: 0.7 }), 0.32, 1.1, 0.12, 0.01);
+  K.put(new THREE.CylinderGeometry(0.125, 0.13, 0.12, 20, 1, true), dark, 0.32, 1.03, 0.12);   // guard collar
+  const cover = K.box(0.27, 0.02, 0.27, paint(0xe4b84f, { opacity: 0.7 }), 0.32, 1.1, 0.12, 0.01);
   ink(g, 'mid');
   g.userData = { draw, btn, cover };
   return g;
