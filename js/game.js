@@ -238,7 +238,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   function convoSpot(mid, up, ab, dist, sg, sw, k = 1) {
     const a = mid.clone().addScaledVector(ab, -dist / 2);
     const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(sg);
-    const off = ab.clone().multiplyScalar(-1.7).addScaledVector(side, 0.75).applyAxisAngle(up, sw * sg).multiplyScalar(k);
+    const off = ab.clone().multiplyScalar(-1.7).addScaledVector(side, 0.95).applyAxisAngle(up, sw * sg).multiplyScalar(k);
     return a.add(off).addScaledVector(up, 1.0 + 0.12 * k);
   }
   // look at the speaker's face, a touch toward her so both read
