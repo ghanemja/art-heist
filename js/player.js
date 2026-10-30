@@ -5,7 +5,7 @@
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R, radiusAt, groundAt, standAt, isWater, arc, nearestRoad, slerpDir } from './world.js';
+import { R, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
 import { loadHuman, makeHuman, pose, sit, LOOKS } from './human.js';
@@ -383,6 +383,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // move along the great circle
     const step = st.speed * dt;
     if (step) {
+      const was = st.dir.clone();
       const nd = st.dir.clone().multiplyScalar(R).addScaledVector(st.heading, step).normalize();
       if (!isWater(nd, 0.1)) {
         st.dir.copy(nd);
@@ -409,10 +410,28 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         st.dir.multiplyScalar(R).add(push).normalize();
         st.speed *= 0.5;
       }
+      // a riser taller than a step (a forecourt edge on a slope, a plinth) stops her
+      // feet like a wall: she slides along it, and never stands with a shoe inside it
+      if (st.mode === 'walk' && st.grT != null) {
+        const f = footing(st.dir, st.grT);
+        if (f.wall) {
+          const mv = st.dir.clone().sub(was).multiplyScalar(R), into = mv.dot(f.wall);
+          if (into > 0) {
+            mv.addScaledVector(f.wall, -into);
+            const slid = was.clone().multiplyScalar(R).add(mv).normalize();
+            const wasWalled = footing(was, st.grT).wall;
+            st.dir.copy(footing(slid, st.grT).wall && !wasWalled ? was : slid);
+            st.speed *= 0.9;
+          }
+        }
+      }
     }
     st.heading.sub(st.dir.clone().multiplyScalar(st.heading.dot(st.dir))).normalize();
     // place + orient: on the terrain, or on whatever floor you're standing on
-    const gr = standAt(st.dir);                                // terrain, floors, or the road ribbon
+    // terrain, floors, or the road ribbon; on foot, under any of her feet (she steps up
+    // as a shoe lands on the step, not once her middle is over it)
+    const gr = st.mode === 'walk' ? footing(st.dir, st.grT ?? null).r : standAt(st.dir);
+    st.grT = gr;
     if (!st.gr) st.gr = gr;
     st.gr += (gr - st.gr) * (1 - Math.exp(-16 * dt));         // step up/down, don't pop
     root.position.copy(st.dir).multiplyScalar(st.gr);

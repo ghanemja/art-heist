@@ -63,6 +63,9 @@ export function planTown() {
 export function buildTown(scene) {
   const out = { landmarks: [], sites: {}, museum: null, statics: [], colliders: [] };
   const solid = (d, r) => out.colliders.push({ dir: d.clone(), r });
+  // street furniture baked into a placed building (benches, lamp posts, planters,
+  // post boxes…) left [x, z, r] footprints in its userData.foots (buildings.js `foot`)
+  const feet = (g) => { g.updateWorldMatrix(true, false); for (const [x, z, r] of g.userData.foots || []) solid(g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r); };
   const add = (obj) => { scene.add(obj); out.statics.push(obj); return obj; };
 
   // ── 2. ROADS ───────────────────────────────────────────────────────────────
@@ -153,6 +156,7 @@ export function buildTown(scene) {
       const d = fC(x, Y);
       const g = placeOnPlanet(buildShop({ ...spec, w, pave }), d, yawToFace(d, fC(x, 0)), { inked: false });
       out.shops.push({ ...spec, dir: d, root: g });
+      feet(g);
       addFloor(g, (lx, lz) => lz > -0.05 && lz < 1.42 && lx > -w / 2 - pave[0] && lx < w / 2 + pave[1] ? 0.07 : null);
       const depth = spec.special === 'library' ? 3.0 : 2.4, n = Math.max(1, Math.round(w / 2));
       for (let c = 0; c < n; c++) solid(fC(x - w / 2 + (c + 0.5) * w / n, side * (SHOP_Y + depth / 2)), Math.min(1.2, Math.max(w / n, depth) / 2 + 0.05));
@@ -197,8 +201,9 @@ export function buildTown(scene) {
     // them, and so on — fronts face fronts across each street, backs face backs
     const n = j > 0 ? j : -1 - j, away = Math.sign(y) || 1;
     const faceY = n % 2 ? away : -away;
-    add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5 * faceY)), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
+    const pb = add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5 * faceY)), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
     if (r >= 0.12) solid(d, room * 0.5);
+    else feet(pb);                                            // a park: its tree and bench stop you
   }
   // street lamps at junctions, trees along the boulevard verge
   for (let i = -K; i <= K; i++) for (let j = -K; j <= K; j++) {
@@ -208,12 +213,13 @@ export function buildTown(scene) {
     const d = fC(x, y);
     if (zoneHit(d, 0.4) || onRoad(d, 0.35)) continue;
     add(settle(lamp(), d, 0.2, 0.02));
+    solid(d, 0.15);
   }
   // Maple Plaza: the strip mall out past the boulevard, its lot opening onto it
   {
     const d = fC(...MALL.at), g = add(placeOnPlanet(stripMall(), d, yawToFace(d, fC(MALL.at[0] - 10, MALL.at[1]))));
     out.mall = { dir: d, root: g };
-    addFloor(g, g.userData.floor);
+    addFloor(g, g.userData.floor); feet(g);
     for (let k = -2; k <= 2; k++) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 2.3), 1.3);
     for (const k of [-1, 1]) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 5.1), 0.8);
   }
@@ -243,7 +249,7 @@ export function buildTown(scene) {
     out.sites[k] = { ...s, dir: d, frame: frame(d, TOWN_C) };
     if (k === 'launchpad') {
       const g = add(placeOnPlanet(capeFarSide(), d, yawToFace(d, TOWN_C), { weight: 'mid' }));
-      addFloor(g, g.userData.floor);
+      addFloor(g, g.userData.floor); feet(g);
       for (const [[x, z], r] of g.userData.solids) solid(g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
       // the story places its moving parts in the site's own frame
       out.cape = { dir: d, root: g, at: (x, z) => g.localToWorld(new THREE.Vector3(x, 0, z)).normalize() };
@@ -251,7 +257,7 @@ export function buildTown(scene) {
     }
     if (k === 'station') {
       const g = add(placeOnPlanet(station(), d, yawToFace(d, TOWN_C)));
-      addFloor(g, g.userData.floor);
+      addFloor(g, g.userData.floor); feet(g);
       // the station's footprint is in its own local frame (x is mirrored in the site frame)
       for (const [[x, z], r] of g.userData.solids) solid(out.sites[k].frame(-x, z), r);
       continue;
@@ -329,6 +335,10 @@ function park(r = 1.1) {
   // facing the street
   const t = tree({ s: 0.85 * k }); t.position.set(-0.3 * k, 0.1, -0.15 * k); g.add(t);
   const b = bench(); b.position.set(0.35 * k, 0.1, 0.35 * k); b.rotation.y = 0; g.add(b);
+  // footprints the walker can't pass (collected by bake into userData.foots)
+  const foot = (x, z, r) => { const o = new THREE.Object3D(); o.position.set(x, 0, z); o.userData.foot = r; g.add(o); };
+  foot(-0.3 * k, -0.15 * k, 0.2);
+  for (const fx of [-0.4, 0, 0.4]) foot(0.35 * k + fx, 0.35 * k, 0.2);
   return ink(g, 'fine');
 }
 

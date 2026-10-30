@@ -71,7 +71,10 @@ function kit(g = new THREE.Group()) {
   const box = (w, h, d, mat, x, y, z, r = 0.035, rot) => put(rb(w, h, d, r), mat, x, y, z, rot);
   const flat = (w, h, mat, x, y, z, rot) => { const m = put(new THREE.PlaneGeometry(w, h), mat, x, y, z, rot); m.userData.noInk = true; return m; };
   const sub = (x = 0, y = 0, z = 0, ry = 0) => { const s = new THREE.Group(); s.position.set(x, y, z); s.rotation.y = ry; g.add(s); return kit(s); };
-  return { g, put, box, flat, sub };
+  // a footprint the walker can't pass through (a bench, a post box): an empty marker
+  // that bake() collects into userData.foots as [x, z, r] in the placed group's frame
+  const foot = (x, z, r) => { const o = new THREE.Object3D(); o.position.set(x, 0, z); o.userData.foot = r; g.add(o); return o; };
+  return { g, put, box, flat, sub, foot };
 }
 
 // ── hand-painted textures (redrawn once the bundled fonts arrive) ───────────
@@ -375,12 +378,14 @@ function flowerBox(K, x, y, z, w, col) {
   }
 }
 function planter(K, x, z, col = PAL.terracotta, s = 1) {
+  K.foot(x, z, 0.19 * s);
   K.put(lathe([[0.001, 0], [0.13 * s, 0], [0.17 * s, 0.26 * s], [0.19 * s, 0.3 * s], [0.001, 0.3 * s]], 16), paint(col), x, 0.07, z);
   K.put(lathe([[0.001, 0], [0.01, 0], [0.012, 0.32 * s], [0.001, 0.33 * s]], 6), paint(PAL.bark), x, 0.33 * s, z);
   K.put(_puff.clone().scale(0.22 * s, 0.22 * s, 0.22 * s), paint(PAL.leaf), x, 0.37 * s + 0.22 * s, z);
 }
 function aBoard(K, x, z, text, col = PAL.ink) {
   const s = K.sub(x, 0.07, z, 0.25);
+  s.foot(0, 0, 0.2);
   for (const sg of [-1, 1]) {
     s.box(0.38, 0.62, 0.035, paint(PAL.bark), 0, 0.3, sg * 0.1, 0.012, [-sg * 0.16, 0, 0]);
     s.flat(0.3, 0.46, signMat(text, { bg: css(col), fg: '#f6eedb', w: 128, h: 192, font: '700 $px ' + SCRIPT }), 0, 0.32, sg * 0.125, [-sg * 0.16, sg < 0 ? Math.PI : 0, 0]);
@@ -388,11 +393,13 @@ function aBoard(K, x, z, text, col = PAL.ink) {
 }
 function bench(K, x, z, ry = 0, col = PAL.bark, y = 0.07) {
   const s = K.sub(x, y, z, ry);
+  for (const fx of [-0.3, 0, 0.3]) s.foot(fx, -0.02, 0.17);   // seat + back, end to end
   s.box(0.9, 0.06, 0.3, paint(col), 0, 0.36, 0, 0.02);
   s.box(0.9, 0.22, 0.05, paint(col), 0, 0.55, -0.13, 0.02, [-0.15, 0, 0]);
   for (const sx of [-0.38, 0.38]) s.box(0.05, 0.36, 0.28, DARK(), sx, 0.18, 0, 0.015);
 }
 function lampPost(K, x, z, h = 2.1) {
+  K.foot(x, z, 0.1);
   K.put(lathe([[0.001, 0], [0.1, 0], [0.1, 0.08], [0.05, 0.18], [0.035, h - 0.1], [0.06, h - 0.04], [0.001, h]], 12), DARK(), x, 0.05, z);
   K.put(lathe([[0.001, 0], [0.08, 0.02], [0.13, 0.14], [0.1, 0.3], [0.03, 0.36], [0.001, 0.38]], 14), GLOW(), x, h + 0.02, z);
   K.put(lathe([[0.001, 0], [0.15, 0], [0.04, 0.1], [0.001, 0.16]], 14), DARK(), x, h + 0.36, z);
@@ -691,7 +698,7 @@ export function library(o) {
   K.put(lathe([[0.001, 0], [0.04, 0], [0.02, 0.2], [0.06, 0.24], [0.001, 0.32]], 10), paint(PAL.gold), 0, cy + 1.04, rz);
   // lamp standards at the steps, a book-return box
   for (const s of [-1, 1]) lampPost(K, s * 1.25, 0.4, 1.5);
-  K.box(0.32, 0.5, 0.26, paint(0x3f5872), 1.55, 0.32, 0.7, 0.05);
+  K.box(0.32, 0.5, 0.26, paint(0x3f5872), 1.55, 0.32, 0.7, 0.05); K.foot(1.55, 0.7, 0.18);
   K.flat(0.2, 0.08, signMat('BOOK RETURN', { bg: '#3f5872', w: 256, h: 96, border: false, font: '400 $px ' + HAND }), 1.55, 0.45, 0.832);
   const pv = uvFrom(rb(w + (o.pave?.[0] ?? 0) + (o.pave?.[1] ?? 0) + 0.02, 0.07, PAVE + 0.02, 0.02), 'x', 'z', 0.75);
   K.put(pv, paveMat(), ((o.pave?.[1] ?? 0) - (o.pave?.[0] ?? 0)) / 2, 0.035, PAVE / 2);
@@ -794,6 +801,7 @@ export function buildShop(spec) {
 // ── pavement props ──────────────────────────────────────────────────────────
 function trolley(K, x, z) {
   const s = K.sub(x, 0.07, z, 0.2);
+  for (const fx of [-0.17, 0.17]) s.foot(fx, 0, 0.17);
   // the box rests on its axles; four wheels on the ground, each with a hub
   s.box(0.62, 0.32, 0.3, paint(PAL.bark), 0, 0.34, 0, 0.03);
   for (let k = 0; k < 7; k++) s.box(0.06, 0.16 + (k % 3) * 0.03, 0.2, paint([PAL.accent, PAL.gold, PAL.teal, PAL.lilac, 0xf6eedb][k % 5]), -0.25 + k * 0.083, 0.57, 0, 0.01, [0, 0, (k % 2) * 0.12]);
@@ -808,6 +816,7 @@ function trolley(K, x, z) {
 }
 function flowerStand(K, x, z) {
   const s = K.sub(x, 0.07, z, 0);
+  for (const fx of [-0.3, 0, 0.3]) s.foot(fx, -0.1, 0.2);
   for (let t = 0; t < 2; t++) s.box(0.95, 0.06, 0.28, paint(PAL.bark), 0, 0.22 + t * 0.26, -t * 0.22, 0.015);
   for (const sx of [-0.43, 0.43]) s.box(0.04, 0.5, 0.5, paint(PAL.bark), sx, 0.25, -0.1, 0.01);
   for (let t = 0; t < 2; t++) for (let k = 0; k < 4; k++) {
@@ -819,6 +828,7 @@ function flowerStand(K, x, z) {
 }
 function produce(K, x, z) {
   const s = K.sub(x, 0.07, z, 0);
+  for (const fx of [-0.4, 0, 0.4]) s.foot(fx, 0, 0.2);
   for (let k = 0; k < 3; k++) {
     s.box(0.36, 0.2, 0.3, paint(0xc8a47c), -0.4 + k * 0.4, 0.42, 0, 0.02, [0.3, 0, 0]);
     const col = [0xd8573f, 0xf0a040, PAL.leafLight][k];
@@ -841,11 +851,13 @@ function balloons(K, x, z) {
     K.put(new THREE.SphereGeometry(0.13, 10, 7).scale(1, 1.15, 1), paint(col), x + dx, dy, z);
     K.box(0.006, dy - 0.75, 0.006, DARK(), x + dx * 0.5, (dy + 0.75) / 2 - 0.08, z, 0.002, [0, 0, dx * 0.4]);
   }
+  K.foot(x, z, 0.16);
   K.box(0.06, 0.72, 0.06, paint(PAL.bark), x, 0.43, z, 0.015);
   K.box(0.36, 0.06, 0.36, paint(PAL.bark), x, 0.1, z, 0.015);
 }
 function easel(K, x, z) {
   const s = K.sub(x, 0.07, z, -0.3);
+  s.foot(0, -0.06, 0.18);
   for (const sx of [-0.15, 0.15]) s.box(0.035, 1.05, 0.035, paint(PAL.bark), sx, 0.52, 0, 0.01, [0, 0, -sx * 0.5]);
   s.box(0.035, 1.0, 0.035, paint(PAL.bark), 0, 0.5, -0.18, 0.01, [-0.3, 0, 0]);
   s.box(0.42, 0.04, 0.08, paint(PAL.bark), 0, 0.42, 0.02, 0.01);
@@ -854,6 +866,7 @@ function easel(K, x, z) {
   s.put(extrude(fr, 0.03, 0.01), paint(PAL.gold), 0, 0.45, 0.02, [-0.08, 0, 0]);
 }
 function pillarBox(K, x, z) {
+  K.foot(x, z, 0.19);
   K.put(lathe([[0.001, 0], [0.19, 0], [0.19, 0.08], [0.15, 0.1], [0.15, 0.95], [0.18, 1.0], [0.18, 1.04], [0.14, 1.12], [0.06, 1.17], [0.001, 1.18]], 22), paint(0xc23f36), x, 0.07, z);
   K.box(0.18, 0.035, 0.04, DARK(), x, 0.92, z + 0.15, 0.01);
   K.flat(0.12, 0.08, signMat('POST', { bg: '#c23f36', w: 128, h: 64, border: false }), x, 0.78, z + 0.152);
@@ -1107,6 +1120,7 @@ export function station() {
   for (const s of [-1, 1]) lampPost(K, s * 3.6, front + 1.2, 2.0);
   bench(K, -2.4, front + 0.4, 0);
   const tx = K.sub(3.0, 0, front + 2.3);
+  tx.foot(0, 0, 0.08);
   tx.box(0.05, 1.3, 0.05, dk, 0, 0.65, 0, 0.01);
   tx.box(0.5, 0.2, 0.04, paint(PAL.gold), 0, 1.35, 0, 0.02);
   tx.flat(0.44, 0.15, signMat('TAXI', { bg: '#e4b84f', fg: '#2a2230', w: 192, h: 64, border: false }), 0, 1.35, 0.022);
@@ -1283,7 +1297,9 @@ function bake(g, roots = [g]) {
   g.updateMatrixWorld(true);
   const inv = g.matrixWorld.clone().invert(), buckets = new Map(), m4 = new THREE.Matrix4();
   for (const r of roots) r.updateMatrixWorld(true);
+  const foots = [], fp = new THREE.Vector3();
   for (const r of roots) r.traverse(o => {
+    if (o.userData.foot) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); foots.push([fp.x, fp.z, o.userData.foot]); return; }
     if (!o.isMesh || o.userData.isInk) return;
     const geo = o.geometry.clone().applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
     const noInk = !!o.userData.noInk, key = o.material.uuid + (noInk ? ':n' : '');
@@ -1295,6 +1311,7 @@ function bake(g, roots = [g]) {
     buckets.get(key).geos.push(geo);
   });
   const ud = g.userData;
+  if (foots.length) ud.foots = foots;
   const out = new THREE.Group();
   out.userData = ud;
   for (const { mat, noInk, geos } of buckets.values()) {
