@@ -314,12 +314,21 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     const balGeo = lathe([[0.001, 0], [0.07, 0], [0.05, 0.08], [0.09, 0.2], [0.05, 0.32], [0.06, 0.38], [0.001, 0.38]], 8);
     for (let k = 0; k < 12; k++) add(balGeo, TRIM, wx + s * (WING_W / 2 + 0.05), balY, BACK + 0.6 + k * 0.58);
     for (let k = 0; k < 4; k++) add(balGeo, TRIM, wx - 0.9 + k * 0.6, balY, FRONT);
-    // arched gallery windows down the outer wall
+    // arched gallery windows down the outer wall. The surround is cut to the arch (a square
+    // plate stuck out past the curve at both top corners): straight jambs, then a half-round
+    // head that meets the arch trim's outer edge (radius 0.43 at the springline, y 0.55)
     const sideX = wx + s * (WING_W / 2 + 0.01);
+    const SURR_B = 0.025, surround = new THREE.Shape();
+    {
+      const hw = 0.43 - SURR_B, yb = -0.75 + SURR_B;              // the bevel adds SURR_B all round
+      surround.moveTo(-hw, yb); surround.lineTo(hw, yb); surround.lineTo(hw, 0.55);
+      surround.absarc(0, 0.55, hw, 0, Math.PI, false); surround.lineTo(-hw, yb);
+    }
+    const surroundGeo = extrude(surround, 0.08 - 2 * SURR_B, SURR_B); surroundGeo.translate(0, 0, -(0.08 - 2 * SURR_B) / 2);
     for (let k = 0; k < 3; k++) {
       const z = BACK + 1.6 + k * 2.1;
       const grp = new THREE.Group(); grp.position.set(sideX, Y0 + 1.25, z); grp.rotation.y = s * Math.PI / 2; g.add(grp);
-      add(rbox(0.86, 1.5, 0.08, 0.03), TRIM, 0, 0, 0, grp);
+      add(surroundGeo, TRIM, 0, 0, 0, grp);
       add(new THREE.PlaneGeometry(0.66, 1.2), WIN, 0, -0.05, 0.05, grp);
       add(new THREE.CircleGeometry(0.33, 20, 0, Math.PI), WIN, 0, 0.55, 0.05, grp);
       add(new THREE.TorusGeometry(0.38, 0.05, 6, 12, Math.PI), TRIM, 0, 0.55, 0.05, grp);
