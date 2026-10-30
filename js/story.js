@@ -323,7 +323,8 @@ export function buildCase(scene, W) {
   { const d = mF(7.4, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.0, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
   { const d = mF(-2.2, 0.6), gd = mF(-2.2, 0.85);                                          // sparkle just over the easel's top (the frame fills 1.1–2.1 above the paving, the legs reach 2.4)
     items.push({ kind: 'clue', id: 'frames', dir: d, glintAt: gd.clone().multiplyScalar(groundAt(gd) + 2.25) }); }          // the easel's empty frame (museum +x is the town frame's -x: +2.2 was the sculpture)
-  { const d = mF(0, -14.0); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
+  { const d = mF(0, -15.7); const r = ruts();   // from the foot of the loading ramp out to the verge
+    place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
   { const d = mF(-7.1, -2.0); const b = booth(); place(b, d, yawToFace(d, mF(-7.1, 4)));   // window toward town: you see it as you walk up
     b.updateWorldMatrix(true, true); const L = (x, y, z) => b.localToWorld(new THREE.Vector3(x, y, z));
     items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.32, 0.95) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction

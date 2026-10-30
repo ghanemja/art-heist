@@ -321,7 +321,21 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     add(rbox(1.6, 0.08, 0.6, 0.03), STONE_D, 0, DY + 2.42, dz - 0.3);          // a little canopy
     for (const s of [-1, 1]) add(rbox(0.05, 0.05, 0.56, 0.02), TRIM, s * 0.72, DY + 2.34, dz - 0.3);
     add(new THREE.SphereGeometry(0.09, 14, 10), LAMP, 0, DY + 2.3, dz - 0.5);  // the light over it
-    add(rbox(1.5, 0.22, 0.5, 0.04), STONE_D, 0, 0.11, dz - 0.25);              // a step down to the verge
+    // a loading ramp down to the verge (the van backed up to it — the ruts end at its foot):
+    // a short landing at sill height, then a gentle slope, over the stylobate's back steps
+    {
+      const RL = 2.7, land = 0.35, rp = new THREE.Shape();
+      rp.moveTo(0, -0.06); rp.lineTo(0, DY); rp.lineTo(land, DY); rp.lineTo(RL, 0.03); rp.lineTo(RL, -0.06); rp.closePath();
+      const rg = new THREE.ExtrudeGeometry(rp, { depth: 1.5, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2 });
+      rg.rotateY(Math.PI / 2); rg.translate(-0.75, 0, 0);                       // shape x runs out from the wall (-z)
+      add(rg, STONE_D, 0, 0, dz - 0.07);
+      for (const s of [-1, 1]) {                                                  // kerbs along its sides
+        const kp = new THREE.Shape(); kp.moveTo(0, DY); kp.lineTo(land, DY + 0.08); kp.lineTo(RL, 0.1); kp.lineTo(RL, 0.0); kp.lineTo(land, DY - 0.02); kp.lineTo(0, DY - 0.02); kp.closePath();
+        const kg = new THREE.ExtrudeGeometry(kp, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 1 });
+        kg.rotateY(Math.PI / 2); kg.translate(s * 0.75 - 0.04, 0, 0);
+        add(kg, TRIM, 0, 0, dz - 0.07);
+      }
+    }
   }
 
   // ── the two gallery wings: lower, flat-roofed, balustraded, arched windows ──
