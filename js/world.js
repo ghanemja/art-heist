@@ -31,7 +31,7 @@ const extraFlats = [];                                          // {d, r, h} —
 // plane: a tangent point (unit dir). Then the ground is levelled to a true flat PLANE
 // touching the planet there, not a curved shell: on a radius-40 planet a 14-unit
 // building's edges would otherwise sit ~0.6 above the ground (floating, looking slanted).
-export function flatten(d, r, h = LAND, { plane = null } = {}) { extraFlats.push({ d: d.clone(), r, h, plane: plane?.clone() }); }
+export function flatten(d, r, h = LAND, { plane = null, blend = null } = {}) { extraFlats.push({ d: d.clone(), r, h, plane: plane?.clone(), blend }); }
 
 export function surfH(d) {
   // rolling hills: three soft, incommensurate waves
@@ -46,10 +46,13 @@ export function surfH(d) {
   const dp = arc(d, F.plateau.d);
   h += (LAND - h) * (1 - ss(F.plateau.r, F.plateau.r + 7, dp));
   for (const f of extraFlats) {
-    const df = arc(d, f.d);
-    if (df < f.r + 6) {
-      const target = f.plane ? (R + f.h) / Math.max(0.5, d.dot(f.plane)) - R : f.h;
-      h += (target - h) * (1 - ss(f.r, f.r + 5, df));
+    const df = arc(d, f.d), blend = f.blend ?? (f.plane ? 9 : 5);
+    if (df < f.r + blend + 1) {
+      // a plane rises off the sphere as you leave its tangent point: past its edge it holds the
+      // edge's height while it eases out (it used to keep climbing there, and threw up a ~5-high
+      // ridge round the museum — the steep hill the project roads ran over)
+      const target = f.plane ? (R + f.h) / Math.max(0.5, Math.cos(Math.min(df, f.r) / R)) - R : f.h;
+      h += (target - h) * (1 - ss(f.r, f.r + blend, df));
     }
   }
   // water last: the sea and its bay carve below everything

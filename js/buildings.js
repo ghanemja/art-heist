@@ -1459,3 +1459,393 @@ export function bookLibrary() {
   lampPost(K, -2.15, 1.45, 1.5); lampPost(K, 2.15, 1.45, 1.5);
   return bake(K.g);                                           // one mesh per material: ~400 parts → a few dozen draws
 }
+
+// ── Janelle's project shops (the shops of ghanemja.github.io's Main Street) ─────────
+// Each is a little walk-in shop themed on one project. It comes in two parts placed at
+// the same spot: BASE (plinth, floor, the back and side walls up to waist height, everything
+// inside, the props outside) stays; UPPER (the walls above the waist, the whole shopfront, the
+// sign, the roof) is hidden while you're inside, so the camera looks down into the shop like
+// a diorama instead of at a wall. Local frame: +Z faces the road (the door), y up.
+const SH = { W: 5.6, D: 4.6, H: 3.0, LOW: 1.15, DOOR: 1.4, DOORH: 2.3, FY: 0.16, T: 0.2 };
+function wrapText(c, text, maxW) {
+  const out = []; let line = '';
+  for (const w of text.split(' ')) { const t = line ? line + ' ' + w : w; if (c.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
+  if (line) out.push(line);
+  return out;
+}
+// an information board: a title and a few lines of hand lettering
+function boardMat(title, body, { bg = '#f6eedb', fg = INK, accent = '#e8604c', w = 512, h = 384 } = {}) {
+  return paint(0xffffff, { hatch: 0, map: canvasTex(w, h, (c) => {
+    c.fillStyle = bg; c.fillRect(0, 0, w, h);
+    c.strokeStyle = fg; c.globalAlpha = 0.6; c.lineWidth = 5; c.strokeRect(12, 12, w - 24, h - 24); c.globalAlpha = 1;
+    c.textAlign = 'center'; c.textBaseline = 'top'; c.fillStyle = accent;
+    fitText(c, title, '700 $px ' + SCRIPT, Math.round(h * 0.17), w - 60); c.fillText(title, w / 2, h * 0.07);
+    c.fillStyle = fg; c.textAlign = 'left'; c.font = `400 ${Math.round(h * 0.075)}px ${HAND}`;
+    let y = h * 0.3;
+    for (const ln of wrapText(c, body, w - 70)) { c.fillText(ln, 35, y); y += h * 0.09; }
+  }) });
+}
+// the shell every shop shares; returns where the walls are (for the walker's colliders)
+function shopShell(B, U, { wall, trim, floor, stone = paint(0xd8cab0), glass = upperGlass(1), name, sign = {}, sideWin = true }) {
+  const { W, D, H, LOW, DOOR, DOORH, FY, T } = SH, lowH = LOW - FY, upH = H - LOW;
+  B.box(W + 0.36, FY, D + 0.36, stone, 0, FY / 2, 0, 0.04);                       // plinth
+  B.box(W - 2 * T, 0.02, D - 2 * T, floor, 0, FY + 0.01, 0, 0.005);                 // the shop floor
+  B.box(W, lowH, T, wall, 0, FY + lowH / 2, -D / 2 + T / 2); U.box(W, upH, T, wall, 0, LOW + upH / 2, -D / 2 + T / 2);
+  for (const s of [-1, 1]) {
+    B.box(T, lowH, D, wall, s * (W / 2 - T / 2), FY + lowH / 2, 0);
+    U.box(T, upH, D, wall, s * (W / 2 - T / 2), LOW + upH / 2, 0);
+  }
+  // the waist rail: a trim band where the cutaway stops, so the low walls read as finished
+  B.box(W + 0.06, 0.07, T + 0.06, trim, 0, LOW, -D / 2 + T / 2, 0.02);
+  for (const s of [-1, 1]) B.box(T + 0.06, 0.07, D + 0.06, trim, s * (W / 2 - T / 2), LOW, 0, 0.02);
+  // shopfront: piers either side of the door, each with a display window above the stall riser
+  const pw = (W - DOOR) / 2, px = DOOR / 2 + pw / 2, fz = D / 2 - T / 2;
+  for (const s of [-1, 1]) {
+    U.box(pw, lowH, T, wall, s * px, FY + lowH / 2, fz);
+    U.box(pw + 0.04, 0.07, T + 0.1, trim, s * px, LOW, fz, 0.02);
+    U.box(pw, upH, T, wall, s * px, LOW + upH / 2, fz);
+    U.box(pw - 0.36, 1.0, 0.08, trim, s * px, 1.82, D / 2 + 0.01, 0.03);
+    U.flat(pw - 0.5, 0.86, glass, s * px, 1.82, D / 2 + 0.08);
+    U.box(0.05, 0.86, 0.04, trim, s * px, 1.82, D / 2 + 0.1, 0.01);               // a glazing bar
+  }
+  U.box(DOOR + 0.02, H - DOORH, T, wall, 0, DOORH + (H - DOORH) / 2, fz);
+  for (const s of [-1, 1]) {                                                        // door frame
+    U.box(0.12, lowH, T + 0.08, trim, s * (DOOR / 2 + 0.02), FY + lowH / 2, fz, 0.03);
+    U.box(0.12, DOORH - LOW, T + 0.08, trim, s * (DOOR / 2 + 0.02), LOW + (DOORH - LOW) / 2, fz, 0.03);
+  }
+  U.box(DOOR + 0.28, 0.12, T + 0.1, trim, 0, DOORH + 0.06, fz, 0.03);
+  if (sideWin) for (const s of [-1, 1]) {
+    U.box(0.08, 0.9, 1.3, trim, s * (W / 2 + 0.01), 1.85, -0.4, 0.03);
+    U.flat(1.15, 0.76, glass, s * (W / 2 + 0.055), 1.85, -0.4, [0, s * Math.PI / 2, 0]);
+  }
+  U.box(W + 0.24, 0.16, D + 0.24, trim, 0, H + 0.08, 0, 0.05);                      // cornice
+  if (name) {                                                                       // the fascia sign
+    U.box(W * 0.78, 0.52, 0.08, trim, 0, H - 0.3, D / 2 + 0.05, 0.03);
+    U.flat(W * 0.78 - 0.1, 0.44, signMat(name, { bg: '#2a2230', fg: '#f6eedb', gold: true, w: 640, h: 96, ...sign }), 0, H - 0.3, D / 2 + 0.12);
+  }
+  B.box(DOOR + 0.8, 0.1, 0.62, stone, 0, 0.05, D / 2 + 0.48, 0.03);                // the stoop
+  // colliders: the walls as a row of posts, a gap at the door (the car can't fit: r 0.42)
+  const walls = [];
+  for (let x = -W / 2 + 0.25; x <= W / 2 - 0.2; x += 0.5) { walls.push([x, -D / 2 + 0.1, 0.42]); if (Math.abs(x) > DOOR / 2 + 0.3) walls.push([x, D / 2 - 0.1, 0.42]); }
+  for (let z = -D / 2 + 0.6; z <= D / 2 - 0.5; z += 0.5) for (const s of [-1, 1]) walls.push([s * (W / 2 - 0.1), z, 0.42]);
+  return { walls, fz };
+}
+// a freestanding info stand inside (two legs, a tilted board)
+function infoStand(K, x, z, ry, mat, frame = DARK()) {
+  const S = K.sub(x, 0, z, ry);
+  for (const s of [-1, 1]) S.box(0.06, 1.2, 0.06, frame, s * 0.5, SH.FY + 0.6, 0, 0.02);
+  const b = S.sub(0, SH.FY + 1.25, 0); b.g.rotation.x = -0.18;
+  b.box(1.16, 0.84, 0.05, frame, 0, 0, -0.03, 0.02);
+  b.flat(1.08, 0.76, mat, 0, 0, 0.03);
+  return S;
+}
+
+// ── the six shops ──
+function shopBehaviors(B, U) {                 // The Proving Ground: a test hangar, NVIDIA green
+  const green = paint(0x76b900), dark = paint(0x3a3f47), steel = paint(0x9aa3ad), crate = paint(0xc8a47c), dk = DARK();
+  const { walls } = shopShell(B, U, { wall: dark, trim: green, floor: paint(0xcfd3d6), name: 'BEHAVIOR SEARCH', sign: { bg: '#2a2f36', fg: '#b8f05a', gold: false } });
+  // the barrel roof of a test hangar, ribbed
+  const roofG = new THREE.CylinderGeometry(SH.D / 2 + 0.16, SH.D / 2 + 0.16, SH.W + 0.3, 36, 1, false, 0, Math.PI);
+  roofG.rotateZ(Math.PI / 2);                    // axis along x; theta 0..π is the half above
+  const roof = U.put(roofG, steel, 0, SH.H + 0.16, 0); roof.scale.y = 0.55;
+  for (const x of [-2.2, -1.1, 0, 1.1, 2.2]) {
+    const rib = U.put(new THREE.TorusGeometry(SH.D / 2 + 0.18, 0.05, 6, 28, Math.PI), green, x, SH.H + 0.16, 0, [0, Math.PI / 2, 0]); rib.scale.y = 0.55;
+  }
+  U.flat(2.4, 0.4, signMat('the proving ground', { bg: '#3a3f47', fg: '#e8f0dc', font: '400 $px ' + HAND, border: false, w: 512, h: 86 }), 0, SH.H + 0.5, SH.D / 2 + 0.19);
+  // outside: the tilt ramp the objects slide down, a crate mid-slide and a ball rolling off
+  const R = B.sub(SH.W / 2 + 1.35, 0, 0.6, 0);
+  R.box(0.9, 0.08, 2.6, steel, 0, 0.7, 0, 0.02, [0.42, 0, 0]);
+  for (const [z, h] of [[-1.0, 1.15], [0.2, 0.62]]) for (const s of [-1, 1]) R.box(0.07, h, 0.07, dk, s * 0.38, h / 2, z, 0.02);
+  R.box(0.36, 0.36, 0.36, crate, 0, 0.98, -0.3, 0.04, [0.42, 0, 0]);
+  R.put(new THREE.SphereGeometry(0.17, 18, 12), paint(0xe8604c), 0.1, 0.17, 1.55);
+  // the drop rig: a frame with an object hanging ready to fall
+  const Dg = B.sub(-SH.W / 2 - 1.2, 0, 0.4, 0);
+  for (const s of [-1, 1]) Dg.box(0.08, 2.4, 0.08, green, s * 0.5, 1.2, 0, 0.02);
+  Dg.box(1.1, 0.08, 0.1, green, 0, 2.4, 0, 0.02);
+  Dg.box(0.02, 0.5, 0.02, dk, 0, 2.12, 0, 0.005);
+  Dg.put(lathe([[0.001, 0], [0.16, 0], [0.18, 0.28], [0.13, 0.32], [0.001, 0.32]], 16), paint(0xf6eedb), 0, 1.55, 0);
+  Dg.put(new THREE.CylinderGeometry(0.55, 0.55, 0.05, 24), paint(0xe1b95c), 0, 0.03, 0);
+  // inside: the probe bench — a ramp with test objects lined up, a pusher, a results screen
+  const T = B.sub(0, 0, -1.25, 0), fy = SH.FY;
+  T.box(3.4, 0.08, 0.9, paint(0xe6e2da), 0, fy + 0.78, 0, 0.03);
+  for (const [x, z] of [[-1.55, -0.35], [1.55, -0.35], [-1.55, 0.35], [1.55, 0.35]]) T.box(0.07, 0.78, 0.07, dk, x, fy + 0.39, z, 0.02);
+  T.box(1.3, 0.05, 0.6, steel, -0.8, fy + 0.98, 0, 0.015, [0, 0, 0.3]);
+  const objs = [[lathe([[0.001, 0], [0.09, 0], [0.1, 0.18], [0.001, 0.18]], 14), paint(0xdc9e9a), 0], [new THREE.SphereGeometry(0.1, 14, 10), paint(0xe8604c), 0.1],
+    [lathe([[0.001, 0], [0.12, 0], [0.001, 0.26]], 14), paint(0xe1b95c), 0], [rb(0.18, 0.18, 0.18, 0.03), paint(0x7fb3a8), 0.09], [new THREE.TorusGeometry(0.09, 0.035, 8, 16), paint(0xb7a3c6), 0.125]];
+  objs.forEach(([geo, mat, lift], i) => T.put(geo, mat, 0.2 + i * 0.32, fy + 0.82 + lift, 0.05));
+  T.box(0.5, 0.12, 0.12, green, 1.55, fy + 0.95, 0.05, 0.03);                         // the pusher
+  // results screen on a stand: bars of how far each thing slid
+  const scr = B.sub(-1.6, 0, 0.6, 0.5);
+  scr.box(0.06, 1.3, 0.06, dk, 0, fy + 0.65, 0, 0.02);
+  scr.box(1.0, 0.66, 0.06, dk, 0, fy + 1.55, 0, 0.02);
+  scr.flat(0.92, 0.58, paint(0xffffff, { hatch: 0, emissive: 0x1a2a10, map: canvasTex(256, 160, (c, w, h) => {
+    c.fillStyle = '#1d232a'; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#b8f05a'; c.font = `700 22px ${HAND}`; c.fillText('slid / rolled / tipped', 14, 26);
+    [0.8, 0.45, 0.62, 0.25, 0.9, 0.35].forEach((v, i) => { c.fillStyle = i % 2 ? '#76b900' : '#b8f05a'; c.fillRect(20 + i * 38, h - 16 - v * 100, 26, v * 100); });
+  }) }), 0, fy + 1.55, 0.06);
+  infoStand(B, 1.55, 0.75, -0.5, boardMat('Behavior Search', 'Every one of NVIDIA’s 2,166 SimReady objects got the same pokes: pushed low, pushed high, tilted, dropped. Search them by how they move.', { accent: '#5a8c00' }));
+  walls.push(...[[-1.2, -1.25, 0.45], [0, -1.25, 0.45], [1.2, -1.25, 0.45], [-1.6, 0.6, 0.25], [1.55, 0.75, 0.3]]);                          // the furniture is solid
+  return walls;
+}
+function shopQR(B, U) {                        // The Map Room: a QR facade and a compass on the roof
+  const navy = paint(0x2f4a6b), cream = paint(0xf3ead7), red = paint(0xd8573f), dk = DARK();
+  const qrMat = paint(0xffffff, { hatch: 0, map: canvasTex(256, 256, (c, w, h, r) => {
+    c.fillStyle = '#f6f1e6'; c.fillRect(0, 0, w, h); const n = 21, s = w / n;
+    c.fillStyle = '#2a2230';
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (r() > 0.52) c.fillRect(i * s, j * s, s + 0.5, s + 0.5);
+    for (const [fx, fy] of [[0, 0], [n - 7, 0], [0, n - 7]]) {
+      c.fillStyle = '#f6f1e6'; c.fillRect((fx - 1) * s, (fy - 1) * s, 9 * s, 9 * s);
+      c.fillStyle = '#2a2230'; c.fillRect(fx * s, fy * s, 7 * s, 7 * s); c.fillStyle = '#f6f1e6'; c.fillRect((fx + 1) * s, (fy + 1) * s, 5 * s, 5 * s);
+      c.fillStyle = '#2a2230'; c.fillRect((fx + 2) * s, (fy + 2) * s, 3 * s, 3 * s);
+    }
+  }) });
+  const { walls } = shopShell(B, U, { wall: cream, trim: navy, floor: paint(0xd9c29a), name: 'QR COMPASS', sign: { bg: '#2f4a6b', fg: '#f6eedb' } });
+  // QR panels on the sides and on the stall risers under the windows
+  for (const s of [-1, 1]) U.flat(1.2, 1.2, qrMat, s * (SH.W / 2 + 0.06), 1.9, 1.3, [0, s * Math.PI / 2, 0]);
+  for (const s of [-1, 1]) { U.box(0.9, 0.9, 0.04, navy, s * 1.75, 0.66, SH.D / 2 + 0.02, 0.02); U.flat(0.8, 0.8, qrMat, s * 1.75, 0.66, SH.D / 2 + 0.07); }
+  // a flat roof with the compass rose painted on it and a big needle on a mast
+  U.box(SH.W - 0.1, 0.06, SH.D - 0.1, paint(0xd8cab0), 0, SH.H + 0.19, 0, 0.02);
+  U.flat(2.6, 2.6, paint(0xffffff, { hatch: 0, map: canvasTex(256, 256, (c, w, h) => {
+    c.fillStyle = '#d8cab0'; c.fillRect(0, 0, w, h); c.translate(w / 2, h / 2);
+    c.strokeStyle = '#2f4a6b'; c.lineWidth = 6; c.beginPath(); c.arc(0, 0, 118, 0, 7); c.stroke();
+    for (let k = 0; k < 8; k++) { c.rotate(Math.PI / 4); c.fillStyle = k % 2 ? '#2f4a6b' : '#d8573f'; c.beginPath(); c.moveTo(0, -112); c.lineTo(14, 0); c.lineTo(-14, 0); c.fill(); }
+    c.setTransform(1, 0, 0, 1, 0, 0);
+  }) }), 0, SH.H + 0.23, 0, [-Math.PI / 2, 0, 0]);
+  U.box(0.08, 1.4, 0.08, dk, 0, SH.H + 0.9, 0, 0.02);
+  const needle = U.sub(0, SH.H + 1.6, 0, 0.6);
+  needle.put(new THREE.OctahedronGeometry(0.5, 0), red, 0.45, 0, 0).scale.set(1, 0.18, 0.18);
+  needle.put(new THREE.OctahedronGeometry(0.5, 0), cream, -0.45, 0, 0).scale.set(1, 0.18, 0.18);
+  needle.put(new THREE.SphereGeometry(0.1, 12, 8), paint(0xe4b84f), 0, 0, 0);
+  // inside: the map table — seven regions on a tiled slab, tiny company models, pixels falling into a code
+  const fy = SH.FY, tb = B.sub(0, 0, -0.75, 0);
+  tb.box(3.2, 0.12, 1.8, paint(0x8a6448), 0, fy + 0.78, 0, 0.04);
+  for (const [x, z] of [[-1.45, -0.75], [1.45, -0.75], [-1.45, 0.75], [1.45, 0.75]]) tb.box(0.1, 0.78, 0.1, paint(0x6e452c), x, fy + 0.39, z, 0.02);
+  const cols = [0x7fb3a8, 0xe1b95c, 0xdc9e9a, 0xb7a3c6, 0xa8b994, 0x93abc0, 0xd58b63], R = rng(77);
+  cols.forEach((col, i) => {
+    const x = -1.2 + (i % 4) * 0.8 + (i > 3 ? 0.4 : 0), z = i > 3 ? 0.4 : -0.35;
+    tb.box(0.72, 0.08, 0.68, paint(col), x, fy + 0.88, z, 0.02);
+    for (let k = 0; k < 3; k++) { const h = 0.08 + R() * 0.22; tb.box(0.1, h, 0.1, paint([0xf6eedb, 0x2a2230, 0xe8604c][k % 3]), x - 0.2 + k * 0.2, fy + 0.92 + h / 2, z + (R() - 0.5) * 0.3, 0.015); }
+  });
+  for (let k = 0; k < 6; k++) tb.box(0.07, 0.07, 0.07, k % 2 ? cream : dk, 1.3 - (k % 3) * 0.1, fy + 1.15 + k * 0.12, 0.62, 0.01);
+  // a globe on a stand
+  const gl = B.sub(-2.0, 0, 0.9, 0);
+  gl.put(lathe([[0.001, 0], [0.22, 0], [0.05, 0.08], [0.04, 0.9], [0.001, 0.9]], 14), paint(0x6e452c), 0, fy, 0);
+  gl.put(new THREE.SphereGeometry(0.3, 20, 14), paint(0x8fc3c9), 0, fy + 1.15, 0);
+  gl.put(new THREE.TorusGeometry(0.34, 0.02, 6, 24), paint(0xe4b84f), 0, fy + 1.15, 0, [0, 0, 0.4]);
+  infoStand(B, 1.7, 1.0, -0.6, boardMat('QR Compass', 'America’s biggest companies on a 3D map, each a little model. Tap one and it breaks into pixels that land on its QR code.', { accent: '#2f4a6b' }));
+  walls.push(...[[-1.05, -0.75, 0.62], [0, -0.75, 0.62], [1.05, -0.75, 0.62], [-2.0, 0.9, 0.3], [1.7, 1.0, 0.3]]);                          // the furniture is solid
+  return walls;
+}
+function shopYarn(B, U) {                      // Pattern Haberdashery: a giant yarn ball on the roof
+  const rose = paint(0xe7b2ad), cream = paint(0xf6eedb), plum = paint(0x8a4f6e), dk = DARK();
+  const { walls } = shopShell(B, U, { wall: rose, trim: cream, floor: paint(0xd9b48f), name: 'YarnFlow', sign: { bg: '#8a4f6e', fg: '#f6eedb' }, glass: upperGlass(2) });
+  // a striped awning over the shopfront
+  const aw = paint(0xffffff, { hatch: 0, side: THREE.DoubleSide, map: canvasTex(128, 32, (c, w, h) => { for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? '#f6eedb' : '#c4607e'; c.fillRect(i * 16, 0, 16, h); } }) });
+  const awG = new THREE.PlaneGeometry(SH.W - 0.3, 0.9, 1, 1); awG.rotateX(-1.0);
+  U.put(awG, aw, 0, 2.17, SH.D / 2 + 0.38);
+  U.box(SH.W - 0.3, 0.12, 0.05, paint(0xc4607e), 0, 1.88, SH.D / 2 + 0.75, 0.02);
+  // pitched roof (plum slates), the yarn ball sat on its ridge, two needles through it
+  const pr = shape([[-(SH.D / 2 + 0.3), 0], [SH.D / 2 + 0.3, 0], [0, 1.25]]);
+  const roofG = extrude(pr, SH.W + 0.3, 0.04); roofG.translate(0, 0, -(SH.W + 0.3) / 2); roofG.rotateY(Math.PI / 2);
+  U.put(roofG, plum, 0, SH.H + 0.16, 0);
+  const ballY = SH.H + 1.75, yarn = paint(0x7fb3a8);
+  U.put(new THREE.SphereGeometry(0.85, 28, 18), yarn, 0.6, ballY, 0);
+  for (let k = 0; k < 7; k++) U.put(new THREE.TorusGeometry(0.86, 0.035, 6, 36), paint(0x5f948a), 0.6, ballY, 0, [k * 0.45, k * 0.7, 0]);
+  for (const s of [-1, 1]) U.put(new THREE.CylinderGeometry(0.04, 0.025, 2.4, 10), paint(0xe4b84f), 0.6 + s * 0.2, ballY + 0.5, 0, [0, 0, s * 0.5]);
+  // the loose end trails down the roof
+  const tr = new THREE.CatmullRomCurve3([[0.0, ballY - 0.7, 0.4], [-0.7, SH.H + 0.9, 0.9], [-1.5, SH.H + 0.6, 1.6], [-2.2, SH.H + 0.35, 2.4]].map(p => new THREE.Vector3(...p)));
+  U.put(new THREE.TubeGeometry(tr, 24, 0.04, 6), yarn, 0, 0, 0);
+  // inside: baskets of yarn, a mannequin in a striped scarf, a giant hook
+  const fy = SH.FY, R = rng(31), yc = [0xe8604c, 0xe1b95c, 0x7fb3a8, 0xb7a3c6, 0xdc9e9a, 0xa8b994, 0x93abc0];
+  for (const [bx, bz] of [[-1.9, -1.4], [-0.8, -1.55], [1.9, -1.4]]) {
+    B.put(lathe([[0.001, 0], [0.42, 0], [0.48, 0.42], [0.44, 0.44], [0.001, 0.44]], 18), paint(0xc8a47c), bx, fy, bz);
+    for (let k = 0; k < 5; k++) B.put(new THREE.SphereGeometry(0.17, 14, 10), paint(yc[Math.floor(R() * yc.length)]), bx + (R() - 0.5) * 0.45, fy + 0.5 + (k > 2 ? 0.12 : 0), bz + (R() - 0.5) * 0.45);
+  }
+  const mq = B.sub(0.7, 0, -1.35, 0);
+  mq.put(lathe([[0.001, 0], [0.2, 0], [0.04, 0.06], [0.03, 0.75], [0.001, 0.75]], 12), dk, 0, fy, 0);
+  mq.put(lathe([[0.001, 0], [0.2, 0.02], [0.26, 0.3], [0.2, 0.55], [0.24, 0.7], [0.08, 0.8], [0.001, 0.8]], 18), cream, 0, fy + 0.75, 0);
+  const sc = paint(0xffffff, { hatch: 0, map: canvasTex(64, 16, (c, w, h) => { for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? '#e1b95c' : '#c4607e'; c.fillRect(i * 8, 0, 8, h); } }) });
+  mq.put(new THREE.TorusGeometry(0.17, 0.06, 8, 18), sc, 0, fy + 1.45, 0, [Math.PI / 2, 0, 0]);
+  mq.box(0.12, 0.55, 0.04, paint(0xc4607e), 0.1, fy + 1.15, 0.2, 0.02, [0.1, 0, 0.1]);
+  infoStand(B, -1.6, 0.6, 0.5, boardMat('YarnFlow', 'Pick a pattern — a scarf, a coaster, an amigurumi ball — and watch it get made row by row, stitch by stitch, in 3D.', { accent: '#8a4f6e' }));
+  B.put(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 10), paint(0xe4b84f), SH.DOOR / 2 + 0.45, fy + 0.8, SH.D / 2 - 0.45, [0.15, 0, -0.12]);
+  walls.push(...[[-1.9, -1.4, 0.45], [-0.8, -1.55, 0.45], [1.9, -1.4, 0.45], [0.7, -1.35, 0.3], [-1.6, 0.6, 0.3]]);                          // the furniture is solid
+  return walls;
+}
+function shopDeck(B, U) {                      // Picture Palace: a little art-deco cinema
+  const red = paint(0xa94848), gold = paint(0xe4b84f), cream = paint(0xf6eedb), dk = DARK();
+  const { walls } = shopShell(B, U, { wall: red, trim: gold, floor: paint(0x6b3a44), name: null, sideWin: false });
+  // stepped deco parapet
+  for (const [w, h, y] of [[SH.W + 0.1, 0.4, SH.H + 0.36], [3.2, 0.5, SH.H + 0.8], [1.6, 0.45, SH.H + 1.26]]) U.box(w, h, 0.3, red, 0, y, SH.D / 2 - 0.12, 0.05);
+  U.box(1.62, 0.08, 0.32, gold, 0, SH.H + 1.5, SH.D / 2 - 0.12, 0.02);
+  // the marquee: a canopy edged with bulbs, its letter board saying what's on
+  U.box(SH.W - 0.2, 0.1, 1.0, dk, 0, 2.5, SH.D / 2 + 0.5, 0.03);
+  U.box(SH.W - 0.2, 0.5, 0.08, cream, 0, 2.78, SH.D / 2 + 1.0, 0.02);
+  U.flat(SH.W - 0.4, 0.42, signMat('NOW SHOWING: YOUR DECK', { bg: '#f6eedb', fg: '#2a2230', font: '700 $px ' + HAND, w: 768, h: 72 }), 0, 2.78, SH.D / 2 + 1.07);
+  const bulb = paint(0xfff1c8, { emissive: 0xffd98a, hatch: 0 });
+  for (let x = -2.5; x <= 2.51; x += 0.42) { U.put(new THREE.SphereGeometry(0.055, 8, 6), bulb, x, 3.06, SH.D / 2 + 1.0); U.put(new THREE.SphereGeometry(0.055, 8, 6), bulb, x, 2.5, SH.D / 2 + 1.0); }
+  // the blade sign: DECKGPT down a tall vertical board
+  const blade = U.sub(2.1, 0, SH.D / 2 + 0.2, 0);
+  blade.box(0.18, 2.4, 0.7, red, 0, SH.H + 0.7, 0.3, 0.05);
+  for (const s of [-1, 1]) blade.flat(0.62, 2.25, paint(0xffffff, { hatch: 0, map: canvasTex(64, 256, (c, w, h) => {
+    c.fillStyle = '#2a2230'; c.fillRect(0, 0, w, h); c.fillStyle = '#e4b84f'; c.font = `700 34px ${HAND}`; c.textAlign = 'center';
+    [...'DECKGPT'].forEach((ch, i) => c.fillText(ch, w / 2, 36 + i * 34));
+  }) }), s * 0.1, SH.H + 0.7, 0.3, [0, s * Math.PI / 2, 0]);
+  // posters either side of the door
+  for (const [s, t] of [[-1, 'Scope → Story'], [1, 'Visuals → Deck']]) {
+    U.box(1.0, 1.15, 0.06, gold, s * 2.1, 1.75, SH.D / 2 + 0.06, 0.02);
+    U.flat(0.9, 1.05, boardMat(t, 'A four-stage pipeline, in your house style.', { bg: '#2a2230', fg: '#f6eedb', accent: '#e4b84f', w: 256, h: 300 }), s * 2.1, 1.75, SH.D / 2 + 0.12);
+  }
+  // inside: the screen (a slide), two rows of red seats, a popcorn cart
+  const fy = SH.FY, scr = B.sub(0, 0, -1.95, 0);
+  for (const s of [-1, 1]) scr.box(0.08, 2.4, 0.08, dk, s * 1.75, fy + 1.2, 0, 0.02);
+  scr.box(3.6, 1.9, 0.08, dk, 0, fy + 1.45, 0, 0.02);
+  scr.flat(3.4, 1.72, paint(0xffffff, { hatch: 0, emissive: 0x222222, map: canvasTex(512, 260, (c, w, h) => {
+    c.fillStyle = '#f6eedb'; c.fillRect(0, 0, w, h); c.fillStyle = '#a94848'; c.fillRect(0, 0, w, 54);
+    c.fillStyle = '#f6eedb'; c.font = `700 40px ${SCRIPT}`; c.fillText('DeckGPT', 22, 40);
+    c.fillStyle = '#2a2230'; c.font = `400 28px ${HAND}`;
+    ['1  Scope — what are you sharing?', '2  Story — the argument', '3  Visuals — your house style', '4  Deck — export it'].forEach((t, i) => c.fillText(t, 30, 100 + i * 40));
+  }) }), 0, fy + 1.45, 0.075);
+  const seat = paint(0xc0404a);
+  for (const z of [-0.45, 0.55]) for (const x of [-1.85, -0.95, 0.95, 1.85]) {                 // an aisle up the middle
+    B.box(0.62, 0.14, 0.5, seat, x, fy + 0.42, z, 0.05);
+    B.box(0.62, 0.55, 0.12, seat, x, fy + 0.72, z + 0.26, 0.05);
+    B.box(0.66, 0.35, 0.5, dk, x, fy + 0.18, z, 0.03);
+  }
+  const pc = B.sub(-2.0, 0, 1.55, 0.4);
+  pc.box(0.6, 0.7, 0.45, red, 0, fy + 0.35, 0, 0.04);
+  pc.box(0.56, 0.4, 0.42, paint(0xbfd8e0, { opacity: 0.55 }), 0, fy + 0.9, 0, 0.02);
+  for (let k = 0; k < 6; k++) pc.put(new THREE.SphereGeometry(0.07, 8, 6), cream, -0.15 + (k % 3) * 0.15, fy + 0.78 + Math.floor(k / 3) * 0.08, -0.05 + (k % 2) * 0.1);
+  infoStand(B, 2.0, 1.45, -0.6, boardMat('DeckGPT', 'Builds a presentation with you, step by step: what you are sharing, the story, the visuals — then the deck.', { accent: '#a94848' }));
+  walls.push(...[[-1.85, -0.45, 0.38], [-0.95, -0.45, 0.38], [0.95, -0.45, 0.38], [1.85, -0.45, 0.38], [-1.85, 0.55, 0.38], [-0.95, 0.55, 0.38], [0.95, 0.55, 0.38], [1.85, 0.55, 0.38], [-2.0, 1.55, 0.35], [2.0, 1.45, 0.3]]);                          // the furniture is solid
+  return walls;
+}
+function shopSplat(B, U) {                     // Paint & Supplies: paint pours off the roof
+  const white = paint(0xf6f0e4), blue = paint(0x4f7fc4), dk = DARK();
+  const { walls } = shopShell(B, U, { wall: white, trim: paint(0x2a2230), floor: paint(0xd8cab0), name: 'Splatform', sign: { bg: '#f6f0e4', fg: '#e8604c', gold: false } });
+  // splats on the walls: torn-edge blots in each medium's colour
+  // (painted on the wall's / floor's own colour: the paint material has no alpha)
+  const splat = (col, seed, bg = '#f6f0e4') => paint(0xffffff, { hatch: 0, map: canvasTex(128, 128, (c, w, h) => {
+    const R = rng(seed); c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = col; c.beginPath();
+    for (let k = 0; k <= 18; k++) { const a = k / 18 * Math.PI * 2, r = 34 + R() * 22; c.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); }
+    c.fill(); for (let k = 0; k < 6; k++) { c.beginPath(); c.arc(64 + (R() - 0.5) * 100, 64 + (R() - 0.5) * 100, 3 + R() * 6, 0, 7); c.fill(); }
+  }) });
+  const SPLC = [['#e8604c', 3], ['#e1b95c', 7], ['#7fb3a8', 11], ['#b7a3c6', 13], ['#4f7fc4', 17]];
+  const SPL = SPLC.map(([c, s]) => splat(c, s)), SPLF = SPLC.map(([c, s]) => splat(c, s + 1, '#d8cab0'));
+  [[-1.4, 0.62, 0], [1.6, 0.6, 3]].forEach(([x, y, i]) => U.flat(0.7, 0.7, SPL[i], x, y, SH.D / 2 + 0.106));
+  for (const s of [-1, 1]) [[0.9, 2.3, 4], [-1.2, 0.65, 2]].forEach(([z, y, i]) => (y > SH.LOW ? U : B).flat(0.8, 0.8, SPL[(i + (s > 0 ? 1 : 0)) % 5], s * (SH.W / 2 + 0.106), y, z, [0, s * Math.PI / 2, 0]));
+  // a flat roof; a giant tin of blue paint tipped on its front edge, pouring down the shopfront
+  U.box(SH.W - 0.1, 0.06, SH.D - 0.1, paint(0xd8cab0), 0, SH.H + 0.19, 0, 0.02);
+  const can = U.sub(-2.35, SH.H + 0.8, 1.2, 0.25); can.g.rotation.x = 1.0;
+  can.put(lathe([[0.001, -0.55], [0.55, -0.55], [0.55, 0.5], [0.5, 0.55], [0.001, 0.55]], 26), paint(0xb8bec6), 0, 0, 0);
+  can.put(new THREE.CylinderGeometry(0.56, 0.56, 0.5, 26, 1, true), paint(0xffffff, { hatch: 0, map: canvasTex(128, 32, (c, w, h) => { c.fillStyle = '#f6eedb'; c.fillRect(0, 0, w, h); c.fillStyle = '#4f7fc4'; c.font = `700 22px ${HAND}`; c.fillText('BLUE', 10, 24); c.fillText('BLUE', 74, 24); }) }), 0, -0.05, 0);
+  can.put(new THREE.CircleGeometry(0.5, 24), blue, 0, 0.56, 0, [-Math.PI / 2, 0, 0]);
+  // the pour: a thick ribbon of paint over the cornice and down the wall above the door, a pool on the stoop
+  const pour = shape([[-0.42, 0], [0.42, 0], [0.38, -0.5], [0.28, -0.9], [0.34, -1.3], [0.18, -1.75], [0.2, -2.2], [0.05, -2.4], [-0.12, -2.25], [-0.2, -1.6], [-0.36, -1.1], [-0.3, -0.6]]);
+  U.put(extrude(pour, 0.06, 0.02), blue, -2.55, SH.H + 0.3, SH.D / 2 + 0.13).scale.set(0.62, 0.8, 1);
+  U.put(extrude(pour, 0.06, 0.02), blue, -2.55, SH.LOW + 0.02, SH.D / 2 + 0.13).scale.set(0.5, 0.42, 1);   // it carries on down the riser
+  B.put(new THREE.CylinderGeometry(0.45, 0.5, 0.03, 20), blue, -2.5, 0.11, SH.D / 2 + 0.3).scale.set(1.0, 1, 0.7);
+  // a giant brush leaning on the side
+  const br = B.sub(SH.W / 2 + 0.45, 0, 1.2, 0); br.g.rotation.z = 0.22;
+  br.put(new THREE.CylinderGeometry(0.08, 0.1, 2.0, 12), paint(0xd58b63), 0, 1.4, 0);
+  br.put(new THREE.CylinderGeometry(0.16, 0.12, 0.3, 14), paint(0xb8bec6), 0, 0.35, 0);
+  br.put(lathe([[0.001, 0], [0.17, 0], [0.19, 0.25], [0.04, 0.42], [0.001, 0.42]], 14), paint(0xe8604c), 0, 0.2, 0, [Math.PI, 0, 0]);
+  // inside: shelves of paint pots, an easel of swatches (the five media), splats on the floor
+  const fy = SH.FY, pots = [0xe8604c, 0xe1b95c, 0x7fb3a8, 0xb7a3c6, 0x4f7fc4, 0xa8b994, 0xdc9e9a, 0x2a2230];
+  for (const s of [-1, 1]) {
+    const sh = B.sub(s * 1.5, 0, -1.9, 0);
+    for (const y of [0.35, 0.8]) {
+      sh.box(1.9, 0.05, 0.4, paint(0x8a6448), 0, fy + y, 0, 0.015);
+      for (let k = 0; k < 5; k++) sh.put(lathe([[0.001, 0], [0.13, 0], [0.13, 0.2], [0.001, 0.2]], 14), paint(pots[(k + (y > 0.5 ? 3 : 0) + (s > 0 ? 2 : 0)) % pots.length]), -0.75 + k * 0.375, fy + y + 0.025, 0);
+    }
+    for (const x of [-0.92, 0.92]) sh.box(0.05, 1.0, 0.4, paint(0x6e452c), x, fy + 0.5, 0, 0.015);
+  }
+  const ea = B.sub(1.6, 0, 0.3, -0.5);
+  for (const s of [-1, 1]) ea.box(0.05, 1.7, 0.05, paint(0x8a5a35), s * 0.4, fy + 0.85, 0, 0.015, [0, 0, s * 0.1]);
+  ea.box(0.9, 0.05, 0.12, paint(0x8a5a35), 0, fy + 0.62, 0.02, 0.015);
+  ea.flat(0.8, 0.95, paint(0xffffff, { hatch: 0, map: canvasTex(200, 240, (c, w, h) => {
+    c.fillStyle = '#fbf6ec'; c.fillRect(0, 0, w, h); c.font = `400 18px ${HAND}`;
+    [['watercolor', '#7fb3a8'], ['acrylic', '#e8604c'], ['charcoal', '#2a2230'], ['torn paper', '#e1b95c'], ['marker', '#4f7fc4']].forEach(([t, col], i) => {
+      c.fillStyle = col; c.globalAlpha = i === 0 ? 0.6 : 1; c.fillRect(14, 14 + i * 44, 92, 32); c.globalAlpha = 1; c.fillStyle = '#2a2230'; c.fillText(t, 112, 36 + i * 44);
+    });
+  }) }), 0, fy + 1.12, 0.06);
+  for (const [x, z, i] of [[-0.6, 0.4, 0], [0.4, -0.6, 2], [-1.6, 1.0, 3]]) B.flat(0.6, 0.6, SPLF[i], x, fy + 0.025, z, [-Math.PI / 2, 0, 0]);
+  infoStand(B, -1.6, 0.4, 0.5, boardMat('Splatform', 'Components, painted: every button, card and input made of a real medium. One attribute paints your whole site.', { accent: '#e8604c' }));
+  walls.push(...[[-2.0, -1.9, 0.3], [-1.0, -1.9, 0.3], [1.0, -1.9, 0.3], [2.0, -1.9, 0.3], [1.6, 0.3, 0.35], [-1.6, 0.4, 0.3]]);                          // the furniture is solid
+  return walls;
+}
+function shopEyes(B, U) {                      // Optics & Menagerie: the roof is a great watching eye
+  const night = paint(0x34506a), brass = paint(0xc9a14a), cream = paint(0xf6eedb), dk = DARK();
+  const { walls } = shopShell(B, U, { wall: night, trim: brass, floor: paint(0x5b4a3c), name: 'Borrowed Eyes', sign: { bg: '#1f2d3d', fg: '#f2d27a' }, glass: upperGlass(3) });
+  // the eye: a white eyeball sat in a drum on the roof, looking down the road, lids above and below
+  const ey = SH.H + 1.15, ez = 0.2;
+  U.put(lathe([[0.001, 0], [1.75, 0], [1.6, 0.4], [0.001, 0.45]], 30), paint(0x2a3a4e), 0, SH.H + 0.16, 0);
+  U.put(new THREE.SphereGeometry(1.15, 32, 20), cream, 0, ey, ez);
+  // iris and pupil: caps of slightly bigger spheres, so they hug the eyeball (looking a touch down the road)
+  const look = U.sub(0, ey, ez, 0); look.g.rotation.x = 0.12;
+  look.put(new THREE.SphereGeometry(1.165, 32, 10, 0, Math.PI * 2, 0, 0.5), paint(0x6f9a5a), 0, 0, 0, [Math.PI / 2, 0, 0]);
+  look.put(new THREE.SphereGeometry(1.18, 28, 8, 0, Math.PI * 2, 0, 0.24), paint(0x2a2230, { hatch: 0 }), 0, 0, 0, [Math.PI / 2, 0, 0]);
+  look.put(new THREE.SphereGeometry(0.09, 10, 8), paint(0xffffff, { hatch: 0 }), -0.17, 0.2, 1.15);
+  look.put(new THREE.TorusGeometry(0.555, 0.035, 6, 32), paint(0xd9a73e), 0, 0, 1.03);
+  // the upper lid droops over the top of the eye (a heavy, knowing look); lashes along its rim
+  const LT = 0.4, LR = 1.24, LA = 1.0;          // lid tilt (forward), radius, cap angle
+  const lid = U.put(new THREE.SphereGeometry(LR, 30, 12, 0, Math.PI * 2, 0, LA), night, 0, ey, ez); lid.rotation.x = LT;
+  const rc = LR * Math.cos(LA), rr = LR * Math.sin(LA), cy = ey + rc * Math.cos(LT), cz = ez + rc * Math.sin(LT);
+  U.put(new THREE.TorusGeometry(rr, 0.07, 8, 36), brass, 0, cy, cz, [LT - Math.PI / 2, 0, 0]);       // its brass rim
+  for (let k = -3; k <= 3; k++) {                // lashes along the front of the rim, flicking forward and up
+    const a = k * 0.3, w = rr * Math.cos(a);
+    U.box(0.06, 0.32, 0.06, dk, rr * Math.sin(a), cy - w * Math.sin(LT) + 0.1, cz + w * Math.cos(LT) + 0.12, 0.015, [0.9, 0, -a * 0.5]);
+  }
+  // a brass telescope poking out of the drum
+  const ts = U.sub(-1.6, SH.H + 0.55, -1.0, 0.5); ts.g.rotation.z = 0.75;
+  ts.put(new THREE.CylinderGeometry(0.14, 0.2, 1.5, 14), brass, 0, 0.6, 0);
+  ts.put(new THREE.CylinderGeometry(0.22, 0.22, 0.12, 14), dk, 0, 1.35, 0);
+  // brass porthole rings round the display windows
+  for (const s of [-1, 1]) U.put(new THREE.TorusGeometry(0.42, 0.06, 8, 26), brass, s * (SH.DOOR / 2 + (SH.W - SH.DOOR) / 4), 1.82, SH.D / 2 + 0.12);
+  // inside: four pedestals, each an animal and the eyes you borrow from it
+  const fy = SH.FY, ped = (x, z, label, sub, build) => {
+    const P = B.sub(x, 0, z, 0);
+    P.put(lathe([[0.001, 0], [0.32, 0], [0.32, 0.08], [0.24, 0.12], [0.22, 0.8], [0.3, 0.84], [0.3, 0.9], [0.001, 0.9]], 18), cream, 0, fy, 0);
+    const b = P.sub(0, fy + 0.55, 0.33, 0); b.g.rotation.x = -0.5;
+    b.box(0.52, 0.26, 0.03, brass, 0, 0, 0, 0.01);
+    b.flat(0.48, 0.22, signMat(label + ' · ' + sub, { bg: '#1f2d3d', fg: '#f2d27a', font: '700 $px ' + HAND, w: 256, h: 112, border: false }), 0, 0, 0.04);
+    build(P.sub(0, fy + 0.9, 0));
+  };
+  ped(-1.7, -1.4, 'bee', 'ultraviolet', (A) => {
+    A.put(new THREE.SphereGeometry(0.16, 16, 12), paint(0xe1b95c), 0, 0.16, 0).scale.set(1, 0.8, 1.4);
+    for (const z of [-0.08, 0.06]) A.put(new THREE.TorusGeometry(0.135, 0.03, 6, 16), dk, 0, 0.16, z);
+    for (const s of [-1, 1]) A.put(new THREE.SphereGeometry(0.11, 10, 8), paint(0xdfe9f2, { opacity: 0.7 }), s * 0.12, 0.3, -0.02).scale.set(1, 0.3, 0.7);
+  });
+  ped(-0.55, -1.6, 'snake', 'heat pits', (A) => {
+    for (let k = 0; k < 3; k++) A.put(new THREE.TorusGeometry(0.2 - k * 0.04, 0.06, 8, 20), paint(0x6f9a5a), 0, 0.07 + k * 0.1, 0, [Math.PI / 2, 0, 0]);
+    A.put(new THREE.SphereGeometry(0.08, 10, 8), paint(0x6f9a5a), 0.05, 0.36, 0.05).scale.set(1, 0.8, 1.4);
+  });
+  ped(0.6, -1.6, 'bat', 'echoes', (A) => {
+    A.put(new THREE.SphereGeometry(0.1, 12, 10), paint(0x4a3f4f), 0, 0.2, 0).scale.set(1, 1.2, 0.9);
+    for (const s of [-1, 1]) A.put(extrude(shape([[0, 0], [0.32, 0.12], [0.28, -0.04], [0.2, 0.0], [0.14, -0.08], [0.06, -0.02]]), 0.02, 0.005), paint(0x4a3f4f), 0, 0.22, 0).scale.set(s, 1, 1);
+  });
+  ped(1.75, -1.4, 'owl', 'night eyes', (A) => {
+    A.put(new THREE.SphereGeometry(0.18, 16, 12), paint(0x9a744e), 0, 0.2, 0).scale.set(1, 1.25, 0.9);
+    for (const s of [-1, 1]) { A.put(new THREE.SphereGeometry(0.065, 12, 8), cream, s * 0.075, 0.3, 0.14); A.put(new THREE.SphereGeometry(0.035, 8, 6), dk, s * 0.075, 0.3, 0.19); }
+    A.put(new THREE.ConeGeometry(0.03, 0.07, 6), paint(0xe1b95c), 0, 0.25, 0.17, [Math.PI / 2, 0, 0]);
+  });
+  // a big lens on a stand to look through
+  const ln = B.sub(1.9, 0, 0.9, -0.7);
+  ln.box(0.06, 1.2, 0.06, dk, 0, fy + 0.6, 0, 0.02);
+  ln.put(new THREE.TorusGeometry(0.42, 0.06, 8, 28), brass, 0, fy + 1.45, 0);
+  ln.put(new THREE.CircleGeometry(0.4, 28), paint(0xbfd8e0, { opacity: 0.45, hatch: 0 }), 0, fy + 1.45, 0).userData.noInk = true;
+  infoStand(B, -1.75, 0.8, 0.55, boardMat('Borrowed Eyes', 'Photograph 14 hidden animals and borrow their eyes: see in ultraviolet, feel heat, hear in echoes, own the night.', { bg: '#1f2d3d', fg: '#f6eedb', accent: '#f2d27a' }));
+  walls.push(...[[-1.7, -1.4, 0.35], [-0.55, -1.6, 0.35], [0.6, -1.6, 0.35], [1.75, -1.4, 0.35], [1.9, 0.9, 0.25], [-1.75, 0.8, 0.3]]);                          // the furniture is solid
+  return walls;
+}
+const SHOPS = { behaviors: shopBehaviors, qr: shopQR, yarn: shopYarn, deckgpt: shopDeck, splat: shopSplat, eyes: shopEyes };
+export const isProjectShop = (style) => style in SHOPS;
+// build one project's shop: unplaced raw groups + its walls [[x, z, r]…], floor test and "inside" test
+export function projectShop(style) {
+  const B = kit(), U = kit();
+  const walls = SHOPS[style](B, U);
+  const { W, D, FY, DOOR } = SH;
+  const floor = (x, z) => (Math.abs(x) < W / 2 + 0.18 && Math.abs(z) < D / 2 + 0.18) ? FY
+    : (Math.abs(x) < DOOR / 2 + 0.4 && z > 0 && z < D / 2 + 0.8) ? 0.1 : null;        // the stoop
+  return { base: B.g, upper: U.g, walls, floor, inside: (x, z) => Math.abs(x) < W / 2 - 0.05 && z > -D / 2 && z < D / 2 + 0.2 };
+}
