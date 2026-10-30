@@ -9,6 +9,7 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=10';
+import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
@@ -54,6 +55,7 @@ export function planTown() {
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const c = s.shift ? frame(llv(s.at), TOWN_C)(0, s.shift) : llv(s.at);
     reserve(c, s.r, 'site:' + k); flatten(c, s.r + 1);
+    if (k === 'harbour') planHarbour(c, TOWN_C);          // the quay's land: a true plane, its ground kept clear
   }
   const fT = frame(TOWN_C);
   reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
@@ -275,6 +277,10 @@ export function buildTown(scene) {
       for (const [[x, z], r] of g.userData.solids) solid(out.sites[k].frame(-x, z), r);
       continue;
     }
+    if (k === 'harbour') {
+      out.harbour = buildHarbour(d, TOWN_C, add, solid);
+      continue;
+    }
     const g = site(k, out.sites[k].frame);
     if (g) { settle(g, d, s.r * 0.8, 0.06, yawToFace(d, TOWN_C)); add(g);
       if (g.userData.floor) addFloor(g, g.userData.floor); for (const c of g.userData.solids || []) solid(out.sites[k].frame(...c[0]), c[1]); }
@@ -303,22 +309,9 @@ export function buildTown(scene) {
   return out;
 }
 
-// ── the story's sites: the harbour (Central Station is modelled in buildings.js) ──
-function site(kind, F) {
-  const g = new THREE.Group();
-  const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
-  if (kind === 'harbour') {
-    const wood = paint(PAL.bark), deck = paint(0xc8a47c);
-    m(rbox(2.2, 0.16, 7.5, 0.05), deck, 0, 0.45, -3.2);                                  // the pier, out over the bay
-    for (let z = 0; z >= -6.8; z -= 1.7) for (const x of [-0.95, 0.95]) m(lathe([[0.001, -1.5], [0.12, -1.5], [0.12, 0.5], [0.001, 0.55]], 10), wood, x, 0.3, z);
-    m(rbox(3.0, 2.0, 2.4, 0.15), paint(PAL.dusty), -3.4, 1.0, 0.8);                      // the boathouse
-    const r2 = new THREE.Mesh(lathe([[0.001, 0], [2.2, 0], [0.001, 1.0]], 4), paint(PAL.roofRed));
-    r2.position.set(-3.4, 2.0, 0.8); r2.rotation.y = Math.PI / 4; r2.scale.set(1, 1, 0.8); g.add(r2);
-    for (const z of [-2, -5]) m(lathe([[0.001, 0], [0.16, 0], [0.12, 0.3], [0.18, 0.36], [0.001, 0.4]], 12), paint(PAL.ink, { hatch: 0 }), 0.85, 0.53, z);
-    g.userData.solids = [[[-3.4, 0.8], 1.7]];
-  } else return null;
-  return ink(g, 'mid');
-}
+// ── the story's other sites: nothing modelled here any more (the harbour is harbour.js;
+// Central Station and Cape Far Side are buildings.js) ──
+function site() { return null; }
 
 // bunting strung across Main Street from facade to facade, sagging in the middle
 function bunting(fC, x, Y) {
