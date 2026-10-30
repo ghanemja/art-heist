@@ -155,6 +155,7 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   // ── dimensions ──
   const Y0 = 0.66;              // top of the stylobate
   const PZ = 0.45;              // top of the forecourt paving
+  const LADDER_Z = -7.5;        // the east-wing ladder (and the rope beside it): between the topiary pots at z -6 and -9
   const COL_Z = -3.6;           // portico column line
   const FRONT = -3.9;           // temple-body / wing front wall
   const BACK = -11.3;
@@ -540,7 +541,7 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
       for (let k = 1; k <= 4; k++) pts.push(onDome(T2 + 0.02 + (Math.PI / 2 - T2 - 0.02) * k / 4, holeA + 0.08 * k / 4, DOME_R + 0.06));
       const drumX = Math.sin(holeA + 0.08) * 2.12, drumZ = DOME_Z + Math.cos(holeA + 0.08) * 2.12;
       pts.push(new THREE.Vector3(drumX, DRUM_Y + 0.1, drumZ), new THREE.Vector3(drumX + 0.05, roofAt(drumX) + 0.05, drumZ));
-      const zEnd = -8.6;
+      const zEnd = LADDER_Z;
       for (let k = 1; k <= 4; k++) { const x = drumX + (CW / 2 - drumX) * k / 4, z = drumZ + (zEnd - drumZ) * k / 4; pts.push(new THREE.Vector3(x, roofAt(x), z)); }
       const wingTop = Y0 + WING_H + 0.28, outer = WING_X + WING_W / 2 + 0.05;
       pts.push(new THREE.Vector3(CW / 2 + 0.25, wingTop + 0.25, zEnd), new THREE.Vector3(CW / 2 + 0.7, wingTop, zEnd),
@@ -701,7 +702,7 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     // (which sticks out to WING_X + WING_W/2 + 0.15) — it used to lean into the ledge
     const LT = 0.2, ledge = WING_X + (WING_W + 0.3) / 2, topY = Y0 + WING_H + 0.3, footY = 0.08;
     const LL = (topY - footY) / Math.cos(LT);
-    lad.position.set(ledge + 0.08 + LL * Math.sin(LT), footY, -8.6);
+    lad.position.set(ledge + 0.08 + LL * Math.sin(LT), footY, LADDER_Z);
     lad.rotation.z = LT;
     g.add(lad);
     const ALU = S(0xb8c0c8, { roughness: 0.35, metalness: 0.7 });
