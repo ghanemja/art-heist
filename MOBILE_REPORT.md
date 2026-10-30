@@ -72,7 +72,7 @@ talking, clues and the car. Screenshots are in `screenshots/mobile/`.
 | Triangles drawn | ~530k | **760–800k** |
 | Geometries / textures / shader programs | ~1,500–1,700 / 125–146 / 40 | same |
 | JS heap after start | ~116 MB | |
-| Canvas (old cap 1.75) | 682×1162 (iPhone 13) | 1162×682 |
+| Canvas (old cap 1.75 → new 1.5 on touch) | 682×1162 → 585×996 | 1162×682 → 996×585 |
 
 - **Page weight is fine:** about 3.0 MB decoded, about 1.5 MB over the wire. That's three.js
   (1.27 MB, about 256 KB gzipped), the game JS (441 KB, about 141 KB gzipped), `critic.glb`
@@ -123,4 +123,6 @@ talking, clues and the car. Screenshots are in `screenshots/mobile/`.
   play, notebook, backpack, handset, prompt, talk.
 - `fixed-iPhone13-port-*`: **this branch** — play with the stick and the folded board, talk, a
   clue, the accusation, the getaway, driving with the minimap, the countdown, the end card.
-- `fixed-iPhone13-land-*`: this branch in landscape (phone, backpack, talk).
+- `fixed-iPhone13-land-*`: this branch in landscape (phone, play, backpack, talk). The phone shot was taken just
+  before the last handset-height fix, so the "put away" button is still above the frame there. With the fix, a DOM
+  measurement at 664×390 puts it 19px from the top and the handset at y=56–378.
