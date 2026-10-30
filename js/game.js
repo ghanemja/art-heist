@@ -464,7 +464,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (G.act >= 4) {
       h = `<div class="st go">Case closed ✓</div><p>All 45 paintings are going home. Rex is going somewhere else.</p>` +
         `<div class="st">Janelle's projects</div><p>Dotted around the planet, out past town, are buildings for her real work. Click one to follow the arrow (most are a drive away), then walk up and press <kbd>E</kbd>.</p>` +
-        town.landmarks.filter(lm => !lm.decor).map(lm => row('lm:' + lm.key, `<i>›</i> ${lm.name} <span class="ct">${lm.tag}</span>`)).join('');
+        town.landmarks.filter(lm => !lm.decor).map(lm => row('lm:' + lm.key, `<i>›</i> ${lm.name} <span class="ct">${lm.tag}</span>`)).join('') +
+        `<p>…and the rest of her work lives on <a href="https://ghanemja.github.io" target="_blank" rel="noopener">ghanemja.github.io ↗</a> — go walk its streets.</p>`;
     } else if (G.act === 3) {
       h = `<div class="st go">5 · ABORT the launch!</div>` + row('console', `<i>›</i> the launch console — run!`) +
         `<p>Rex is up the gantry. The console's by the road — press <kbd>E</kbd> at it.</p>`;
@@ -807,7 +808,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     phone.push('The Chronicle', 'FRONT PAGE: CRITIC CATCHES THE FRAMER — all 45 paintings home safe. Rex Calloway charged. Story & photos: you.');
     setTimeout(() => phone.push('Mum', 'SO proud!!! dinner sunday. bring the newspaper'), 3000);
     $('endcard').innerHTML = `<h2>Case closed.</h2><p>Forty-five paintings, home by morning. Thank you for playing <b>The Vanishing Gallery</b>.</p>
-      <p class="soft">The planet's still yours — and the buildings dotted around it, out past town, are Janelle's real projects. Pick one on the case board, follow the arrow, and press <kbd>E</kbd> when you get there.</p>
+      <p class="soft">The planet's still yours — and the buildings dotted around it, out past town, are Janelle's real projects. Pick one on the case board, follow the arrow, and press <kbd>E</kbd> when you get there. Everything else she's made is at <a href="https://ghanemja.github.io" target="_blank" rel="noopener">ghanemja.github.io ↗</a>.</p>
       <button class="sk" id="endOk">keep exploring</button>`;
     show($('endcard'));
     $('endOk').onclick = () => show($('endcard'), false);
