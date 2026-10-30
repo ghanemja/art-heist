@@ -10,7 +10,7 @@ import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=10';
 import { planHarbour, buildHarbour } from './harbour.js';
-import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 
