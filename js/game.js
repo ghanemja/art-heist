@@ -273,7 +273,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     // Anyone else standing nearby counts as two spheres (body, head) — their skinned meshes are
     // far too slow to cast at. The ground never blocks (the big un-inked surfaces: lawns, roads,
     // plazas), and nor do ink hulls or glass.
-    const people = new Set([...items.filter(i => i.kind === 'person').map(i => i.obj), ...walkers.map(w => w.obj), player.root]);
+    // (everyone the car can knock over is registered with the bumps: the cast, walkers, citizens)
+    const people = new Set([...bumps.bodies.map(b => b.obj), player.root]);
     const reach = 4.5 + dist * 0.6, near = [], _bs = new THREE.Sphere();
     const others = [...people].filter(o => !skip.has(o) && o.visible && o.position.distanceTo(mid) < reach + 1)
       .flatMap(o => { const u = o.position.clone().normalize(); return [new THREE.Sphere(o.position.clone().addScaledVector(u, 0.45), 0.3), new THREE.Sphere(o.position.clone().addScaledVector(u, 1.0), 0.22)]; });
