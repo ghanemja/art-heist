@@ -12,7 +12,9 @@ import { paint, ink, blobShadow } from './style.js';
 import { makeFolk, poseFolk, shoeGeo } from './folk.js';
 import { noseGeo } from './faces.js';
 
-export const HUMAN_SCALE = 0.13;           // ≈1.2 units tall
+// the critic's size: ≈1.12 units tall (beret included), the same as the Citizen Maker
+// bystanders (citizens.js) and the folk (FOLK_SCALE). Was 0.13 (≈1.21, a head over the town).
+export const HUMAN_SCALE = 0.12;
 const FOOT = 4.593;                        // model units from the origin down to the soles
 
 let _glb = null;
@@ -690,7 +692,8 @@ export function sit(inst) {
   const { fwd, side } = AX;
   for (const n of ['upperlegL', 'upperlegR']) turn(inst, n, side, 1.45);
   for (const n of ['lowerlegL', 'lowerlegR']) turn(inst, n, side, -1.35);
-  for (const n of ['upperarmL', 'upperarmR']) turn(inst, n, side, 0.75);
-  for (const n of ['lowerarmL', 'lowerarmR']) turn(inst, n, side, 0.6);
+  // arms reach well forward: at her size (HUMAN_SCALE) the wheel is most of an arm away
+  for (const n of ['upperarmL', 'upperarmR']) turn(inst, n, side, 1.05);
+  for (const n of ['lowerarmL', 'lowerarmR']) turn(inst, n, side, 0.4);
   turn(inst, 'upperarmL', fwd, 0.09); turn(inst, 'upperarmR', fwd, -0.09);
 }

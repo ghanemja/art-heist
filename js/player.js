@@ -8,11 +8,11 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { R, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
-import { loadHuman, makeHuman, pose, sit, LOOKS } from './human.js';
+import { loadHuman, makeHuman, pose, sit, LOOKS, HUMAN_SCALE } from './human.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const MODES = {
-  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.95, radius: 0.3, follow: 1.4 },
+  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.88, radius: 0.3, follow: 1.4 },
   jeep: { max: 11, accel: 6, turn: 2.4, camD: 9.5, camH: 3.6, look: 1.2, radius: 0.8, follow: 3.0 },
 };
 
@@ -222,12 +222,14 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       const bp = buildBackpack();
       const bw = new THREE.Vector3(), bq = new THREE.Quaternion(), bs = new THREE.Vector3();
       spine.matrixWorld.decompose(bw, bq, bs);
-      const at = bodies.walk.worldToLocal(bw.clone()).add(new THREE.Vector3(0, -0.02, -0.11));
+      // (the pack and its straps were drawn for her at scale 0.13: they shrink with her)
+      const K = HUMAN_SCALE / 0.13;
+      const at = bodies.walk.worldToLocal(bw.clone()).add(new THREE.Vector3(0, -0.02, -0.11).multiplyScalar(K));
       const world = bodies.walk.localToWorld(at);
       bp.position.copy(spine.worldToLocal(world));
       const wq = new THREE.Quaternion(); bodies.walk.getWorldQuaternion(wq);
       bp.quaternion.copy(bq.clone().invert().multiply(wq));
-      bp.scale.setScalar(1 / bs.x);
+      bp.scale.setScalar(K / bs.x);
       spine.add(bp);
       critic.backpack = bp;
       fitStraps(bp, critic.inst.rig);
@@ -235,7 +237,9 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // the critic also drives the jeep
     const rider = makeHuman(glb, LOOKS.critic);
     sit(rider);
-    const seat = new THREE.Group(); seat.position.set(0.3, 0.42, -0.36); seat.add(rider.rig);
+    // (her hips sit 0.565·HUMAN_SCALE/0.13 above the rig's origin: lift the seat so they stay on the
+    // cushion, and slide it a touch forward so her shorter arms reach the wheel)
+    const seat = new THREE.Group(); seat.position.set(0.3, 0.42 + 0.565 * (1 - HUMAN_SCALE / 0.13), -0.31); seat.add(rider.rig);
     bodies.jeep.add(seat);
   });
 
