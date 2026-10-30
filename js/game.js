@@ -463,7 +463,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     let h = '';
     if (G.act >= 4) {
       h = `<div class="st go">Case closed ✓</div><p>All 45 paintings are going home. Rex is going somewhere else.</p>` +
-        `<div class="st">Janelle's projects</div><p>The buildings around town are her real work — walk up and press <kbd>E</kbd>.</p>` +
+        `<div class="st">Janelle's projects</div><p>Dotted around the planet, out past town, are buildings for her real work. Click one to follow the arrow (most are a drive away), then walk up and press <kbd>E</kbd>.</p>` +
         town.landmarks.filter(lm => !lm.decor).map(lm => row('lm:' + lm.key, `<i>›</i> ${lm.name} <span class="ct">${lm.tag}</span>`)).join('');
     } else if (G.act === 3) {
       h = `<div class="st go">5 · ABORT the launch!</div>` + row('console', `<i>›</i> the launch console — run!`) +
@@ -706,11 +706,16 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
         const [red, blue] = P.lights, f = Math.sin(t * 9 + i * 1.3) > 0;
         red.emissiveIntensity = f ? 2.2 : 0.2; blue.emissiveIntensity = f ? 0.2 : 2.2;
         if (P.done) return;
-        const e = 1 - (1 - k) ** 3;
+        const e = Math.min(1 - (1 - k) ** 3, P.stopE ?? 1);
         capeAttach(P.frame, P.x, P.z + 9 * (1 - e), P.ry);
         P.frame.position.setLength(standAt(P.frame.position.clone().normalize()));    // on the ground…
         player.fitToGround(P.body, P.frame);                                           // …all four wheels down
-        if (k >= 1) P.done = true;
+        if (k >= 1) {
+          P.done = true;
+          // parked: solid, nose and tail, so you (on foot or driving) can't pass through it
+          P.frame.updateWorldMatrix(true, false);
+          for (const z of [-0.6, 0.6]) town.colliders.push({ dir: P.frame.localToWorld(new THREE.Vector3(0, 0, z)).normalize(), r: 0.75 });
+        }
       });
     }
     // crate lids pop off (the epilogue)
@@ -742,6 +747,19 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (rex.fleeing) rex.fleeing.phase = rex.fleeing.phase === 'top' ? 'top' : rex.fleeing.phase;
     rex.dir.copy(GANTRY_FOOT());                                   // shout up at him from the foot of the gantry
     phone.push('Editor', 'You stopped a ROCKET. Front page. Tomorrow. Yours.');
+    // the police pull up short of your car (and of each other) instead of driving through it:
+    // each stops where its run in along the road would first come within a car's length of it
+    {
+      const cars = [[player.st.mode === 'jeep' ? player.st.dir.clone() : jeepDir.clone(), 2.8]];   // [where, keep-off]
+      for (const P of cape.police) {
+        P.stopE = 1;
+        for (let e = 0; e <= 1.0001; e += 0.02) {
+          const d = capeDir(P.x, P.z + 9 * (1 - e));
+          if (cars.some(([c, r]) => arc(c, d) < r)) { P.stopE = Math.max(0, e - 0.04); break; }
+        }
+        cars.push([capeDir(P.x, P.z + 9 * (1 - P.stopE)), 2.1]);
+      }
+    }
     cape.policeT = 0;
     updateGoal();
     setTimeout(startEpilogue, 4200);
@@ -789,7 +807,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     phone.push('The Chronicle', 'FRONT PAGE: CRITIC CATCHES THE FRAMER — all 45 paintings home safe. Rex Calloway charged. Story & photos: you.');
     setTimeout(() => phone.push('Mum', 'SO proud!!! dinner sunday. bring the newspaper'), 3000);
     $('endcard').innerHTML = `<h2>Case closed.</h2><p>Forty-five paintings, home by morning. Thank you for playing <b>The Vanishing Gallery</b>.</p>
-      <p class="soft">The planet's still yours — and the buildings around town are Janelle's real projects. Walk up to one and press <kbd>E</kbd>.</p>
+      <p class="soft">The planet's still yours — and the buildings dotted around it, out past town, are Janelle's real projects. Pick one on the case board, follow the arrow, and press <kbd>E</kbd> when you get there.</p>
       <button class="sk" id="endOk">keep exploring</button>`;
     show($('endcard'));
     $('endOk').onclick = () => show($('endcard'), false);
