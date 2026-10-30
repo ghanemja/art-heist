@@ -67,6 +67,7 @@ function loop() {
   }
   town.museum.tick(t, 1 - atm.k);
   if (!game.update(dt, t)) player.update(dt, t);
+  town.tickShops(player.st.dir);                 // inside a project shop: its upper walls lift away
   citizens.update(dt);
   plaza.update(dt);
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);

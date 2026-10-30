@@ -10,7 +10,7 @@ import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=10';
 import { planHarbour, buildHarbour } from './harbour.js';
-import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -59,7 +59,8 @@ export function planTown() {
   }
   const fT = frame(TOWN_C);
   reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
-  for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 4.4); }
+  // each project shop gets a wide level yard that eases out gently (its spur road arrives on the flat)
+  for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, undefined, { blend: 7 }); }
 }
 
 export function buildTown(scene) {
@@ -120,7 +121,7 @@ export function buildTown(scene) {
   // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
   // everything built after (blocks, lamps, the verge trees and bushes) see them —
   // laid later, a spur ran straight over the verge planting it crossed
-  for (const p of PLAN.projects) spur(llv(p.at), 4.6, 'lm:' + p.key);
+  for (const p of PLAN.projects) spur(llv(p.at), p.style === 'library' ? 4.6 : 3.7, 'lm:' + p.key);   // shops: up to the stoop
   for (const [k, s] of Object.entries(PLAN.sites))
     if (k !== 'airport') spur(llv(s.at), s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
 
@@ -253,6 +254,17 @@ export function buildTown(scene) {
   // project buildings, each on its own plaza, each with a spur road
   for (const p of PLAN.projects) {
     const d = llv(p.at);
+    if (isProjectShop(p.style)) {
+      // a walk-in shop: the base (floor, low walls, the inside, props) and the upper part (walls
+      // above the waist, shopfront, sign, roof), placed at the same spot; the upper part hides
+      // while you're inside (tickShops)
+      const S = projectShop(p.style), yaw = yawToFace(d, TOWN_C);
+      const base = add(placeOnPlanet(S.base, d, yaw, { weight: 'mid' })), upper = add(placeOnPlanet(S.upper, d, yaw, { weight: 'mid' }));
+      addFloor(base, S.floor);
+      for (const [x, z, r] of S.walls) solid(base.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
+      out.landmarks.push({ ...p, dir: d, root: base, upper, inside: S.inside });
+      continue;
+    }
     const g = landmark(p);
     settle(g, d, 3.5, 0.08, yawToFace(d, TOWN_C));
     add(g);
@@ -306,6 +318,16 @@ export function buildTown(scene) {
       solid(d, 0.35);
     }
   }
+  // walk into a project shop and its upper walls and roof lift away, so you see in
+  const _sp = new THREE.Vector3();
+  out.tickShops = (dir) => {
+    for (const lm of out.landmarks) {
+      if (!lm.upper) continue;
+      if (arc(dir, lm.dir) > 6) { lm.upper.visible = true; continue; }
+      lm.root.worldToLocal(_sp.copy(dir).multiplyScalar(R));
+      lm.upper.visible = !lm.inside(_sp.x, _sp.z);
+    }
+  };
   return out;
 }
 
@@ -348,35 +370,11 @@ function park(r = 1.1) {
   return ink(g, 'fine');
 }
 
-// ── project landmarks: soft, characterful buildings on a round plaza ──
+// ── the library: the bookcase building on a round plaza (the project shops are buildings.js projectShop) ──
 function landmark(p) {
   const g = new THREE.Group();
-  const col = { library: PAL.terracotta, dome: PAL.lilac, tower: PAL.dusty, lighthouse: PAL.cream, arch: PAL.teal }[p.style] ?? PAL.cream;
-  // plaza
-  const plaza = new THREE.Mesh(lathe([[0.001, 0], [3.0, 0], [3.05, 0.08], [3.0, 0.16], [0.001, 0.16]], 40), paint(PAL.kerb));
-  g.add(plaza);
-  const body = paint(col), trim = paint(PAL.cream), dark = paint(PAL.ink, { hatch: 0 });
-  const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
-  if (p.style === 'library') {
-    const lib = bookLibrary(); lib.position.y = 0.14; g.add(lib);    // the bookcase building (buildings.js)
-  } else if (p.style === 'dome') {
-    m(lathe([[0.001, 0], [1.9, 0], [1.9, 1.0], [2.0, 1.1], [1.75, 1.2], [0.001, 1.2]], 32), trim, 0, 0.16, 0);
-    m(new THREE.SphereGeometry(1.75, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), body, 0, 1.35, 0);
-    m(lathe([[0.001, 0], [0.28, 0], [0.22, 0.4], [0.001, 0.7]], 16), paint(PAL.gold), 0, 3.05, 0);
-  } else if (p.style === 'tower') {
-    m(lathe([[0.001, 0], [1.2, 0], [1.1, 0.4], [0.95, 3.6], [1.05, 3.75], [0.001, 3.75]], 28), body, 0, 0.16, 0);
-    m(lathe([[0.001, 0], [1.15, 0], [0.6, 0.9], [0.001, 1.2]], 28), paint(PAL.roofSlate), 0, 3.9, 0);
-  } else if (p.style === 'lighthouse') {
-    m(lathe([[0.001, 0], [1.1, 0], [0.75, 4.2], [0.85, 4.3], [0.001, 4.3]], 28), body, 0, 0.16, 0);
-    for (let i = 0; i < 2; i++) m(lathe([[1.06 - i * 0.16, 0], [0.98 - i * 0.16, 0.5]], 28), paint(PAL.accent), 0, 1.1 + i * 1.5, 0);
-    m(new THREE.CylinderGeometry(0.55, 0.55, 0.6, 20), paint(0xfff1c8, { emissive: 0xffd98a, hatch: 0 }), 0, 4.75, 0);
-    m(lathe([[0.001, 0], [0.75, 0], [0.001, 0.7]], 20), dark, 0, 5.05, 0);
-  } else {   // arch
-    for (const s of [-1, 1]) m(rbox(0.8, 3.2, 1.0, 0.18), body, s * 1.1, 1.75, 0);
-    const a = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.42, 14, 28, Math.PI), body);
-    a.position.y = 3.3; g.add(a);
-  }
-  if (p.style !== 'library') m(rbox(0.7, 1.1, 0.12, 0.05), paint(PAL.bark), 0, 0.7, p.style === 'arch' ? -0.6 : 1.75);
+  g.add(new THREE.Mesh(lathe([[0.001, 0], [3.0, 0], [3.05, 0.08], [3.0, 0.16], [0.001, 0.16]], 40), paint(PAL.kerb)));
+  const lib = bookLibrary(); lib.position.y = 0.14; g.add(lib);
   g.add(blobShadow(3.2));
   return ink(g, 'heavy');
 }
