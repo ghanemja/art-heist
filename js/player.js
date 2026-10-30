@@ -396,7 +396,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       // collide: slide out of every footprint (the car ploughs past lamps and
       // people — people get knocked flying instead, see bump.js)
       for (const c of colliders) {
-        if (st.mode === 'jeep' && c.r < 0.4) continue;
+        if (st.mode === 'jeep' && c.r < 0.4 || st.mode === 'walk' && c.carOnly) continue;   // carOnly: the parked train's bulk (she walks in through its door)
         const a = arc(st.dir, c.dir), lim = c.r + M.radius;
         if (a >= lim || a < 1e-5) continue;
         const perp = st.dir.clone().sub(c.dir.clone().multiplyScalar(c.dir.dot(st.dir))).normalize();
@@ -484,7 +484,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     const camAt = (yaw) => anchor.clone()
       .addScaledVector(st.camFwd.clone().applyAxisAngle(up, yaw), -camD * (1 + st.camPitch * 0.25))
       .addScaledVector(up, camH + st.camPitch * 4.5 * st.zoom);
-    const near = colliders.filter(c => c.r >= 0.5 && arc(st.dir, c.dir) < c.r + camD + 2);
+    const near = colliders.filter(c => c.r >= 0.5 && !c.carOnly && arc(st.dir, c.dir) < c.r + camD + 2);
     const reach = (w) => {
       for (let i = 1; i <= 10; i++) {
         const p = head.clone().lerp(w, i / 10).normalize();

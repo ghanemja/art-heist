@@ -9,7 +9,9 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=8';
-import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, STATION_TRACK } from './buildings.js';
+import { parkedTrain } from './train.js';
+import { railLoop, buildRailway, onRail } from './rail.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -260,6 +262,23 @@ export function buildTown(scene) {
       addFloor(g, g.userData.floor); feet(g);
       // the station's footprint is in its own local frame (x is mirrored in the site frame)
       for (const [[x, z], r] of g.userData.solids) solid(out.sites[k].frame(-x, z), r);
+      // the railway: the station's straight closes into a loop round the countryside
+      railLoop(g, { tz: STATION_TRACK.z, half: STATION_TRACK.half });
+      out.railway = buildRailway(scene);
+      // the 7:40, waiting at the platform (placed with the station's own transform)
+      const tr = add(placeOnPlanet(parkedTrain(), d, yawToFace(d, TOWN_C), { weight: 'fine' }));
+      addFloor(tr, tr.userData.floor);
+      const TL = (x, z) => tr.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
+      for (const [x, z, r] of tr.userData.solids) solid(TL(x, z), r);
+      // the car can't drive through it either (its own small footprints are too fine for the car)
+      for (let x = -5.6; x <= 6.2; x += 1.1) out.colliders.push({ dir: TL(x, STATION_TRACK.z), r: 0.75, carOnly: true });
+      const inv = tr.matrixWorld.clone().invert(), rm = tr.userData.roofMats;
+      out.train = {
+        root: tr, roofs: tr.children.filter(m => rm.includes(m.material)),   // the roofs and ceiling lamps: they lift off while you are inside
+        // inside a carriage? (a world direction)
+        inside: (dir) => { const p = dir.clone().multiplyScalar(R).applyMatrix4(inv); return tr.userData.inside(p.x, p.z); },
+        reader: { dir: TL(tr.userData.reader.x, tr.userData.reader.z), facing: TL(tr.userData.reader.x, tr.userData.reader.z + 1) },
+      };
       continue;
     }
     const g = site(k, out.sites[k].frame);
@@ -282,7 +301,7 @@ export function buildTown(scene) {
     const n = 3 + Math.floor(rnd() * 5);
     for (let k = 0; k < n; k++) {
       const d = f((rnd() - 0.5) * 7, (rnd() - 0.5) * 7);
-      if (isWater(d, -0.2) || zoneHit(d, 1) || onRoad(d, 1.2)) continue;
+      if (isWater(d, -0.2) || zoneHit(d, 1) || onRoad(d, 1.2) || onRail(d, 0.9)) continue;
       add(settle(rnd() > 0.5 ? pine() : tree(), d, 0.5, 0.05, rnd() * 6));
       solid(d, 0.35);
     }

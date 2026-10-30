@@ -469,6 +469,12 @@ export const LOOKS = {
     // the framer (and suspect): a square jaw, a Roman nose, narrowed eyes, one brow up, a smirk in a trimmed beard
     face: { shape: { jaw: 1.0, chin: 0.85, cheeks: 0.35, long: 0.15, skull: 0.6, brow: 0.85 }, nose: 'roman', noseSize: 1.0, mouth: 'smirk',
       eyes: 'narrow', browsL: 'frown', browsR: 'raised', browW: 1.3, hair: 'crop', beard: true, blush: 0 } },
+  ezra: { folk: true, skin: 'rose', hair: 0xe4e0d8, hairStyle: 'crop', beard: true, glasses: true, hat: 'flat', hatColor: 0x5e5446, stance: 'reading',
+    top: 0x8fa38a, outfit: 'cardigan', accent: 0x7a5a3a, bottom: 0x5a5048, shoes: 0x4a3226, sole: 0x6a5e54, height: 0.93, build: 0.98, belly: 0.45,
+    // the retired signalman on the 7:40: a long, lined face, a big nose, sleepy eyes under
+    // bushy white brows, a white beard, reading glasses on the end of his nose
+    face: { shape: { jaw: 0.45, chin: 0.4, cheeks: 0.3, long: 0.45, skull: 0.55, brow: 0.6 }, nose: 'roman', noseSize: 1.3, mouth: 'flat',
+      eyes: 'sleepy', brows: 'heavy', browW: 1.5, browColor: 0xe8e4dc, glasses: true, hair: 'sides', beard: true, blush: 0.9, blushColor: 0xd98a7a } },
 };
 
 const AX = { fwd: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0), side: new THREE.Vector3(0, 0, 1) };

@@ -65,6 +65,13 @@ function loop() {
   }
   town.museum.tick(t, 1 - atm.k);
   if (!game.update(dt, t)) player.update(dt, t);
+  // inside a carriage of the parked train: its roof lifts off and the camera rises to look in
+  if (town.train) {
+    const st = player.st, inT = st.mode === 'walk' && town.train.inside(st.dir);
+    for (const r of town.train.roofs) r.visible = !inT;
+    if (inT) { if (st.prePitch == null) st.prePitch = st.camPitch; st.camPitch += (0.85 - st.camPitch) * (1 - Math.exp(-3 * dt)); }
+    else if (st.prePitch != null) { st.camPitch += (st.prePitch - st.camPitch) * (1 - Math.exp(-3 * dt)); if (Math.abs(st.camPitch - st.prePitch) < 0.01) st.prePitch = null; }
+  }
   citizens.update(dt);
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);

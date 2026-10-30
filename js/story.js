@@ -68,6 +68,13 @@ export const PEOPLE = [
       'Terrible business. Terrible. I framed every one of those pieces myself, you know.',
       'Last night? Home. Asleep. The van\'s been parked right here since yesterday.',
     ] },
+  // tucked away on the 7:40 at Central Station (it never leaves): optional, a hint, never proof
+  { id: 'ezra', name: 'Ezra, retired signalman', colors: [PAL.dusty, PAL.ink], hidden: true,
+    lines: [
+      'Hm? Oh — sit, sit. Forty years I worked the signals on this line. Now I just ride the 7:40. It doesn\'t go anywhere these days, but the seats are good.',
+      'Says here forty-five paintings walked out of the museum. Three in the morning. I don\'t sleep much — I heard something go past the yard about then. Big, boxy, no lights. Not a train. I know trains.',
+      'Funny thing. Week ago a fellow bought every empty frame at the junk stall, paid cash, smelled of varnish. Said they were for a client "very far away". Far away. Ha. You can\'t get further than the far side of this little world, can you?',
+    ] },
 ];
 
 // ── props for the case ──
@@ -345,15 +352,19 @@ export function buildCase(scene, W) {
   const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.1, 0.45), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: null };
   // Rex waits on the street corner by his van, on the pavement in plain view
   at.rex = W.townAt([W.vanSpot[0] - 1.3, W.vanSpot[1] + 0.5]);
+  // Ezra reads on the far bench of the parked train's second carriage, facing the door
+  if (W.train) at.ezra = W.train.reader.dir;
   for (const p of PEOPLE) {
-    const d = at[p.id];
+    const d = at[p.id]; if (!d) continue;
     const m = person(LOOKS[p.id]);
-    settle(m, d, 0.25, 0, yawToFace(d, mF(0, 6))); m.position.setLength(standAt(d)); scene.add(m);   // people stand ON the ground/road (no sink)
-    items.push({ kind: 'person', id: p.id, dir: d, obj: m });
+    const facing = p.id === 'ezra' ? W.train.reader.facing : mF(0, 6);
+    settle(m, d, 0.25, 0, yawToFace(d, facing)); m.position.setLength(standAt(d)); scene.add(m);   // people stand ON the ground/road (no sink)
+    items.push({ kind: 'person', id: p.id, dir: d, obj: m, seated: !!LOOKS[p.id].stance && LOOKS[p.id].stance === 'reading', hidden: !!p.hidden });
     W.solid(d, 0.35);
   }
   // a faint, hand-drawn glint over anything you haven't looked at yet
   for (const it of items) {
+    if (it.hidden) continue;                          // someone you have to find for yourself
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTex(it.kind), transparent: true, depthWrite: false }));
     s.scale.setScalar(0.7);
     if (it.glintAt) s.position.copy(it.glintAt);
