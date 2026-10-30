@@ -607,7 +607,10 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   ];
   const beaconGeo = new THREE.CapsuleGeometry(0.11, 0.12, 6, 14);
   [[-3.3, 1.4], [3.3, 1.4]].forEach(([x, z], i) => {
-    add(lathe([[0.001, 0], [0.2, 0], [0.2, 0.05], [0.05, 0.1], [0.04, 0.9], [0.09, 0.95], [0.001, 0.97]], 16), DARK, x, PZ, z);
+    // they stand on the lawn just off the forecourt (which ends at r 3.3), not at paving height:
+    // the foot sits at the lawn and the post stretches up so the light stays where it was
+    const foot = 0.08, post = add(lathe([[0.001, 0], [0.2, 0], [0.2, 0.05], [0.05, 0.1], [0.04, 0.9], [0.09, 0.95], [0.001, 0.97]], 16), DARK, x, foot, z);
+    post.scale.y = (PZ + 0.97 - foot) / 0.97;
     add(beaconGeo, beaconMats[i], x, PZ + 1.08, z);
   });
   const beamMat = new THREE.MeshBasicMaterial({
