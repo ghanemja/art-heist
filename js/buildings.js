@@ -968,8 +968,9 @@ export function stripMall() {
   // parking lot: asphalt, painted bays, wheel stops, planted islands, lamps
   const LD = 4.6, lotZ = 1.55;
   const lot = rb(W + tower * 2 + 0.6, 0.05, LD, 0.02, 2);
-  K.put(lot, paint(0x8a8392, { hatch: 0 }), 0, 0.025, lotZ + LD / 2);
-  K.put(rb(3.6, 0.045, 3.6, 0.02, 2), paint(0x8a8392, { hatch: 0 }), 0, 0.022, lotZ + LD + 1.75);  // the drive out to the boulevard
+  K.put(lot, paint(0x8a8392, { hatch: 0 }), 0, 0.025, lotZ + LD / 2).userData.noInk = true;   // asphalt meets asphalt: no drawn edge
+  // the drive out to the boulevard: it runs onto the road, so no ink either (its outline drew a box on the road)
+  K.put(rb(3.6, 0.045, 3.6, 0.02, 2), paint(0x8a8392, { hatch: 0 }), 0, 0.022, lotZ + LD + 1.75).userData.noInk = true;
   const line = paint(0xf6eedb, { hatch: 0 }), nb = 9, span = W + tower * 2 - 0.6;
   for (const row of [0, 1]) {
     const z0 = row ? lotZ + LD - 1.75 : lotZ + 0.15;
