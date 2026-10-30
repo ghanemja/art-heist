@@ -6,7 +6,6 @@
 // Act 2 (once you've named the thief): the getaway to Cape Far Side, a launch
 // countdown, an ABORT button, the police, and a letterboxed epilogue.
 import * as THREE from 'three';
-import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { R, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurface, slerpDir } from './world.js';
 import { CAPE, cargoRocket, launchConsole, paintingCrate } from './buildings.js';
 import { buildCar } from './player.js';
@@ -251,19 +250,19 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const conv = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false, side: 1 };
   const _cv = new THREE.Vector3();
   // where the talk camera sits: off to one side of the pair, swung round by `sw` radians
-  const _rc = new THREE.Raycaster(); _rc.camera = camera; _rc.firstHitOnly = true;
-  THREE.Mesh.prototype.raycast = acceleratedRaycast;     // uses a mesh's BVH when it has one, the plain cast otherwise
-  function convoSpot(mid, up, ab, dist, sg, sw) {
+  const _rc = new THREE.Raycaster(); _rc.camera = camera;
+  // (k < 1 pulls the camera in toward the pair, when nothing further out has a clear view)
+  function convoSpot(mid, up, ab, dist, sg, sw, k = 1) {
     const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(sg);
-    const off = side.multiplyScalar(2.5 + dist * 0.6).addScaledVector(ab, -0.45).applyAxisAngle(up, sw * sg);
-    return mid.clone().add(off).addScaledVector(up, 1.05);
+    const off = side.multiplyScalar(2.5 + dist * 0.6).addScaledVector(ab, -0.45).applyAxisAngle(up, sw * sg).multiplyScalar(k);
+    return mid.clone().add(off).addScaledVector(up, 0.72 + 0.33 * k);
   }
   function convoCam(cam, root) {
     const it = items.find(i => i.id === G.talkWho?.id); if (!it) return;
     const a = root.position, b = it.obj.position;
     const mid = a.clone().add(b).multiplyScalar(0.5), up = mid.clone().normalize();
     const ab = b.clone().sub(a).projectOnPlane(up); const dist = ab.length(); ab.normalize();
-    const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing || 0);
+    const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing || 0, conv.k ?? 1);
     const look = mid.clone().addScaledVector(up, 0.72);
     const now = performance.now() / 1000, dt = conv.init ? Math.min(0.1, now - conv.t) : 0; conv.t = now;
     if (!conv.init) { conv.pos.copy(conv.cut ? want : cam.position); conv.look.copy(look); conv.init = true; }
@@ -284,38 +283,77 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const pa = player.root.position, pb = it.obj.position;
     const at = (p, h) => p.clone().addScaledVector(up, h);
     const targets = [look, at(pa, 1.1), at(pb, 1.1), at(pa, 0.2), at(pb, 0.2), look.clone().addScaledVector(ab, 1.7), look.clone().addScaledVector(ab, -1.7), at(mid, 1.6), at(mid, 0.05)];
-    // gather what could stand in the shot ONCE: only meshes near the pair (a recursive cast over
-    // the whole planet — every skinned townsperson — ~200 times froze the game on E)
-    const reachR = Math.max(5 + dist * 0.6, camera.position.distanceTo(mid) + 1), _bs = new THREE.Sphere();
-    const near = [];
-    const shown = (o) => { for (let q = o; q; q = q.parent) { if (!q.visible) return false; if (skip.has(q)) return null; } return true; };
+    // what can stand in the way: the solid things near the pair. Raycasting the whole scene for
+    // each candidate froze the game for a second or more — the town is baked into big meshes (a
+    // block per material, up to ~30k triangles each) and every person's skin is re-posed per ray.
+    // So, once: take the triangles of the solid things near the pair, in world space, into small
+    // stand-in meshes, one per metre cell (each ray then skips every cell it doesn't pass near).
+    // Anyone else standing nearby counts as two spheres (body, head) — their skinned meshes are
+    // far too slow to cast at. The ground never blocks (the big un-inked surfaces: lawns, roads,
+    // plazas), and nor do ink hulls or glass.
+    // (everyone the car can knock over is registered with the bumps: the cast, walkers, citizens)
+    const people = new Set([...bumps.bodies.map(b => b.obj), player.root]);
+    const reach = 4.5 + dist * 0.6, near = [], _bs = new THREE.Sphere();
+    const others = [...people].filter(o => !skip.has(o) && o.visible && o.position.distanceTo(mid) < reach + 1)
+      .flatMap(o => { const u = o.position.clone().normalize(); return [new THREE.Sphere(o.position.clone().addScaledVector(u, 0.45), 0.3), new THREE.Sphere(o.position.clone().addScaledVector(u, 1.0), 0.22)]; });
+    const _sp = new THREE.Vector3();
+    const a3 = new THREE.Vector3(), b3 = new THREE.Vector3(), c3 = new THREE.Vector3(), cen = new THREE.Vector3();
+    const cells = new Map();                                             // stand-in triangles, by cell + material side
     scene.traverse(o => {
-      if (!o.isMesh || o.userData.isInk || o.isSprite || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return;
-      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-      _bs.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
-      if (_bs.center.distanceTo(mid) > reachR + _bs.radius) return;
-      const v = shown(o); if (v === true) near.push(o); else if (v === null) skip.add(o);
+      if (!o.isMesh || o.isSkinnedMesh || !o.visible || o.userData.isInk || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return;
+      for (let q = o; q; q = q.parent) { if (skip.has(q) || people.has(q) || !q.visible) return; }
+      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+      _bs.copy(o.isInstancedMesh ? (o.boundingSphere || (o.computeBoundingSphere(), o.boundingSphere)) : g.boundingSphere).applyMatrix4(o.matrixWorld);
+      if (o.userData.noInk && _bs.radius > 6 || _bs.center.distanceTo(mid) > reach + _bs.radius) return;
+      if (o.isInstancedMesh) { near.push(o); return; }
+      const pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      for (let i = 0; i < n; i += 3) {
+        a3.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(o.matrixWorld);
+        b3.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(o.matrixWorld);
+        c3.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2).applyMatrix4(o.matrixWorld);
+        cen.copy(a3).add(b3).add(c3).divideScalar(3);
+        const rad = Math.max(cen.distanceTo(a3), cen.distanceTo(b3), cen.distanceTo(c3));
+        if (cen.distanceTo(mid) > reach + rad) continue;
+        const key = `${mat.side}|${Math.floor(cen.x)},${Math.floor(cen.y)},${Math.floor(cen.z)}`;
+        let out = cells.get(key); if (!out) cells.set(key, out = []);
+        out.push(a3.x, a3.y, a3.z, b3.x, b3.y, b3.z, c3.x, c3.y, c3.z);
+      }
     });
-    // …and give each static one a BVH (built once, kept on the geometry): the merged buildings
-    // are tens of thousands of triangles, and every ray used to test all of them
-    for (const o of near) if (!o.isSkinnedMesh && !o.morphTargetInfluences && !o.geometry.boundsTree) {
-      o.geometry.boundsTree = computeBoundsTree.call(o.geometry);
+    const sideMat = [0, 1, 2].map(side => new THREE.MeshBasicMaterial({ side }));
+    for (const [key, tri] of cells) {
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(tri, 3));
+      near.push(new THREE.Mesh(g, sideMat[+key.split('|')[0]]));
     }
-    const blocked = (from, to) => {
+    const hit = (from, to) => {
       const dv = to.clone().sub(from), L = dv.length();
       _rc.set(from, dv.normalize()); _rc.far = Math.max(0.01, L - 0.15);
+      if (others.some(sp => _rc.ray.intersectSphere(sp, _sp) && _sp.distanceTo(from) < _rc.far)) return true;
       return _rc.intersectObjects(near, false).length > 0;
     };
-    const clear = (p) => !targets.some(t => blocked(p, t));
+    // cast both ways: a ray only meets the faces turned toward it, so one leaving a spot that is
+    // inside something (the van), or passing behind a one-sided wall, would see nothing at all
+    const blocked = (a, b) => hit(a, b) || hit(b, a);
+    // a spot's cost: how much of the shot is hidden (the look point counts triple); stop counting
+    // as soon as it can't beat the best spot so far
+    const cost = (p, cap) => { let n = 0; for (const t of targets) { if (blocked(p, t)) n += t === look ? 3 : 1; if (n >= cap) break; } return n; };
     const sides = it.id === 'otto' ? [-1, 1] : [1, -1];                  // Otto: from the road side, away from the easels
-    conv.side = sides[0]; conv.swing = 0;
+    conv.side = sides[0]; conv.swing = 0; conv.k = 1;
+    let best = 1e9;
     outer: for (const sw of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]) for (const sg of sides) {
-      if (clear(convoSpot(mid, up, ab, dist, sg, sw))) { conv.side = sg; conv.swing = sw; break outer; }
+      const c = cost(convoSpot(mid, up, ab, dist, sg, sw), best);
+      if (c < best) { best = c; conv.side = sg; conv.swing = sw; }
+      if (!c) break outer;
+    }
+    // nothing fully clear: on the best side, come in toward the pair until they can be seen
+    if (best) for (const k of [0.8, 0.62, 0.46, 0.34]) {
+      const p = convoSpot(mid, up, ab, dist, conv.side, conv.swing, k);
+      conv.k = k;
+      if (!blocked(p, look)) break;
     }
     // if gliding there would pass through something (an easel, a wall), cut straight to it
-    { const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing), dv = want.clone().sub(camera.position), L = dv.length();
-      _rc.set(camera.position, dv.normalize()); _rc.far = L;
-      conv.cut = _rc.intersectObjects(near, false).length > 0; }
+    conv.cut = hit(camera.position, convoSpot(mid, up, ab, dist, conv.side, conv.swing, conv.k));
+    for (const m of near) if (!m.parent) m.geometry.dispose();
+    sideMat.forEach(m => m.dispose());
     conv.init = false;
     player.st.camHook = convoCam;
   }
@@ -424,7 +462,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   // the case board's tab: fold it down to its title + the current step, and remember it
   {
-    let min = false; try { min = localStorage.getItem('caseMin') === '1'; } catch {}
+    // folded by default on a phone (it covers a third of a portrait screen); a choice sticks
+    let min = matchMedia('(pointer: coarse)').matches && (innerWidth < 700 || innerHeight < 500); try { const v = localStorage.getItem('caseMin'); if (v) min = v === '1'; } catch {}
     const apply = () => { $('hud').classList.toggle('min', min); const b = $('caseTog'); b.textContent = min ? '+' : '–'; b.title = min ? 'expand' : 'minimize'; };
     $('caseTog').onclick = (e) => { e.stopPropagation(); min = !min; try { localStorage.setItem('caseMin', min ? '1' : '0'); } catch {} apply(); };
     apply();
@@ -556,8 +595,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       cape.puffs.push({ m, t: 1 + i / 16, seed: i * 1.7 });
     }
     // the police: a convoy of three, each a level frame with the car inside it, so its wheels
-    // can be seated on the ground under them (the site isn't flat) — like your parked car
-    cape.police = [[1.6, 5.2, Math.PI, 0], [3.9, 6.1, Math.PI + 0.45, 0.6], [-0.9, 6.8, Math.PI - 0.35, 1.2]].map(([x, z, ry, delay]) => {
+    // can be seated on the ground under them (the site isn't flat) — like your parked car.
+    // They pull up short of the CAPE FAR SIDE sign by the road (it now stands further out, by x 6, z 4 — clear of the launch desk)
+    cape.police = [[1.7, 6.5, Math.PI, 0], [4.6, 7.0, Math.PI + 0.45, 0.6], [-1.1, 6.8, Math.PI - 0.35, 1.2]].map(([x, z, ry, delay]) => {
       const frame = new THREE.Group(), body = buildCar({ body: 0xf3eee4, police: true });
       frame.add(body); frame.visible = false; frame.userData.noGround = true; scene.add(frame);
       return { frame, body, x, z, ry, delay, lights: body.userData.lights };
@@ -812,8 +852,11 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     }
     if (G.state === 'title') {
       // the planet turns slowly behind the title page
-      // the planet sits low, under the title, like an illustrated book cover
-      const a = 0.9 + t * 0.05;
+      // the planet sits low, under the title, like an illustrated book cover. It opens on
+      // downtown and the museum (1.57) and turns by frame time (capped), not the clock — or a
+      // slow load or a first-frame stall would already have turned it on to the empty fields
+      G.titleA = (G.titleA ?? 1.57) + dt * 0.05;
+      const a = G.titleA;
       camera.position.set(Math.sin(a) * 96, 30, Math.cos(a) * 96);
       camera.up.set(0, 1, 0); camera.lookAt(0, 30, 0);
       return true;

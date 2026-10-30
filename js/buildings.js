@@ -968,8 +968,9 @@ export function stripMall() {
   // parking lot: asphalt, painted bays, wheel stops, planted islands, lamps
   const LD = 4.6, lotZ = 1.55;
   const lot = rb(W + tower * 2 + 0.6, 0.05, LD, 0.02, 2);
-  K.put(lot, paint(0x8a8392, { hatch: 0 }), 0, 0.025, lotZ + LD / 2);
-  K.put(rb(3.6, 0.045, 3.6, 0.02, 2), paint(0x8a8392, { hatch: 0 }), 0, 0.022, lotZ + LD + 1.75);  // the drive out to the boulevard
+  K.put(lot, paint(0x8a8392, { hatch: 0 }), 0, 0.025, lotZ + LD / 2).userData.noInk = true;   // asphalt meets asphalt: no drawn edge
+  // the drive out to the boulevard: it runs onto the road, so no ink either (its outline drew a box on the road)
+  K.put(rb(3.6, 0.045, 3.6, 0.02, 2), paint(0x8a8392, { hatch: 0 }), 0, 0.022, lotZ + LD + 1.75).userData.noInk = true;
   const line = paint(0xf6eedb, { hatch: 0 }), nb = 9, span = W + tower * 2 - 0.6;
   for (const row of [0, 1]) {
     const z0 = row ? lotZ + LD - 1.75 : lotZ + 0.15;
@@ -1200,7 +1201,7 @@ export function capeFarSide() {
     K.box(0.9, 0.36, 0.2, dk, x, 3.75, z, 0.04);
     for (const lx of [-0.24, 0, 0.24]) K.put(new THREE.CircleGeometry(0.1, 14), GLOW(), x + lx, 3.75, z + 0.11).userData.noInk = true;
   }
-  const S = K.sub(5.6, 0, 4.6, -0.5);              // off to the side: it used to stand right in front of the launch desk
+  const S = K.sub(6.0, 0, 4.0, -0.5);              // off to the side: it used to stand right in front of the launch desk
   for (const sx of [-0.7, 0.7]) S.box(0.08, 1.6, 0.08, paint(PAL.bark), sx, 0.8, 0, 0.02);
   S.box(1.7, 0.6, 0.06, white, 0, 1.35, 0.02, 0.03);
   S.flat(1.6, 0.5, signMat('CAPE FAR SIDE · cargo launch', { bg: '#f3eee4', fg: '#2a2230', w: 640, h: 192, font: '400 $px ' + HAND }), 0, 1.35, 0.056);

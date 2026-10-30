@@ -243,7 +243,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     mode: 'walk', dir: startDir.clone(), heading: null, speed: 0, steer: 0,
     camPos: new THREE.Vector3(), camLook: new THREE.Vector3(), camFwd: null, camYaw: 0, camPitch: 0, camInit: false, dragT: 9,
     keys: new Set(), enabled: true, squashK: 0, gr: 0,
-    zoom: 1, zoomT: 1, recenter: 0,
+    zoom: 1, zoomT: 1, recenter: 0, stick: { x: 0, y: 0 },
   };
   st.heading = startToward.clone().sub(st.dir.clone().multiplyScalar(st.dir.dot(startToward))).normalize();
   st.camFwd = st.heading.clone();
@@ -280,6 +280,32 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     });
     addEventListener('wheel', e => { if (e.target.tagName === 'CANVAS' && st.playing) { zoomBy(Math.exp(e.deltaY * 0.0012)); e.preventDefault(); } }, { passive: false });
   }
+  // touch: a thumb stick, bottom-left — walks (push it all the way to run) and drives
+  // (up/down = throttle/brake, left/right = steer). It only shows once someone touches.
+  const stickEl = document.createElement('div');
+  stickEl.id = 'stick'; stickEl.className = 'ui'; stickEl.innerHTML = '<i></i>';
+  document.body.appendChild(stickEl);
+  {
+    const knob = stickEl.firstChild, R0 = 46;
+    let id = null, cx = 0, cy = 0;
+    const set = (x, y) => {
+      let dx = x - cx, dy = y - cy; const L = Math.hypot(dx, dy);
+      if (L > R0) { dx *= R0 / L; dy *= R0 / L; }
+      st.stick.x = dx / R0; st.stick.y = -dy / R0;
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    };
+    stickEl.addEventListener('pointerdown', e => {
+      if (id !== null) return;
+      id = e.pointerId; stickEl.setPointerCapture(id);
+      const r = stickEl.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+      set(e.clientX, e.clientY); e.preventDefault();
+    });
+    stickEl.addEventListener('pointermove', e => { if (e.pointerId === id) set(e.clientX, e.clientY); });
+    const end = e => { if (e.pointerId !== id) return; id = null; st.stick.x = st.stick.y = 0; knob.style.transform = ''; };
+    stickEl.addEventListener('pointerup', end); stickEl.addEventListener('pointercancel', end);
+    addEventListener('touchstart', () => document.body.classList.add('touch'), { once: true, passive: true });
+    if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
+  }
   const key = (...c) => c.some(k => st.keys.has(k));
   const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _w = new THREE.Vector3(), _m = new THREE.Matrix4();
 
@@ -313,6 +339,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
 
   function update(dt, t) {
     const M = MODES[st.mode];
+    stickEl.classList.toggle('on', !!(st.enabled && st.playing));
     const up = st.dir;
     // the camera keeps its own facing, carried over the curve of the planet;
     // walking is relative to it, and it never chases your turns (no spiralling)
@@ -326,18 +353,23 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     let target = 0;
     if (st.enabled) {
       if (st.mode === 'walk') {
-        const ix = (key('KeyD', 'ArrowRight') ? 1 : 0) - (key('KeyA', 'ArrowLeft') ? 1 : 0);
-        const iy = (key('KeyW', 'ArrowUp') ? 1 : 0) - (key('KeyS', 'ArrowDown') ? 1 : 0);
+        let ix = (key('KeyD', 'ArrowRight') ? 1 : 0) - (key('KeyA', 'ArrowLeft') ? 1 : 0);
+        let iy = (key('KeyW', 'ArrowUp') ? 1 : 0) - (key('KeyS', 'ArrowDown') ? 1 : 0);
+        const sm = Math.hypot(st.stick.x, st.stick.y);
+        if (!ix && !iy && sm > 0.2) { ix = st.stick.x; iy = st.stick.y; }
         if (ix || iy) {
           _w.copy(_f).multiplyScalar(iy).addScaledVector(_r, ix).normalize();
           // turn smoothly toward the input direction (by angle, so a U-turn can't collapse)
           const da = Math.atan2(_r.clone().crossVectors(st.heading, _w).dot(up), st.heading.dot(_w));
           st.heading.applyAxisAngle(up, da * (1 - Math.exp(-M.turn * dt))).normalize();
-          target = M.max * (key('ShiftLeft', 'ShiftRight') ? 1.6 : 1);
+          target = M.max * (key('ShiftLeft', 'ShiftRight') || sm > 0.95 ? 1.6 : sm > 0.2 ? Math.min(1, sm / 0.8) : 1);
         }
       } else {
-        const thr = (key('KeyW', 'ArrowUp') ? 1 : 0) - (key('KeyS', 'ArrowDown') ? 0.6 : 0);
-        const steer = (key('KeyD', 'ArrowRight') ? 1 : 0) - (key('KeyA', 'ArrowLeft') ? 1 : 0);
+        let thr = (key('KeyW', 'ArrowUp') ? 1 : 0) - (key('KeyS', 'ArrowDown') ? 0.6 : 0);
+        let steer = (key('KeyD', 'ArrowRight') ? 1 : 0) - (key('KeyA', 'ArrowLeft') ? 1 : 0);
+        const sy = Math.abs(st.stick.y) > 0.2 ? st.stick.y : 0, sx = Math.abs(st.stick.x) > 0.15 ? st.stick.x : 0;
+        if (!thr && sy) thr = sy > 0 ? sy : sy * 0.6;
+        if (!steer && sx) steer = sx;
         st.steerIn = steer;
         target = thr * M.max;
         st.steer += (steer - st.steer) * (1 - Math.exp(-8 * dt));

@@ -246,5 +246,9 @@ export const audio = {
     if (AC) master.gain.setTargetAtTime(m ? 0 : LEVEL, AC.currentTime, 0.08);
   },
 };
+// iOS Safari only lets audio start inside a tap: keep (re)starting it on taps and keys until it runs
+const UNLOCK = ['pointerdown', 'touchend', 'keydown'];
+function unlock() { audio.start(); if (AC && AC.state === 'running') for (const ev of UNLOCK) removeEventListener(ev, unlock); }
+for (const ev of UNLOCK) addEventListener(ev, unlock);
 // the bump voices (bump.js) share the context and the mute
 export function sfxOut() { audio.start(); return AC ? { ac: AC, out: sfxBus } : null; }

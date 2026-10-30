@@ -38,7 +38,9 @@ function restyle(root) {
     if (!o.isMesh) return;
     const role = o.userData.role, m = o.material;
     const vc = !!o.geometry.getAttribute('color');
-    o.material = paint(vc ? 0xffffff : m.color.getHex(), { vertexColors: vc, soft: role === 'skin' || role === 'hair' || role === 'eye', hatch: role === 'cloth' ? 1 : 0 });
+    // a thin sheet (the newspaper) is double-sided: keep it so, or from behind you'd see only
+    // its ink hull — a dark sheet — instead of the paper
+    o.material = paint(vc ? 0xffffff : m.color.getHex(), { vertexColors: vc, soft: role === 'skin' || role === 'hair' || role === 'eye', hatch: role === 'cloth' ? 1 : 0, side: m.side === THREE.DoubleSide ? THREE.DoubleSide : undefined });
     if (role === 'eye' || role === 'brow') o.userData.noInk = true;
     // skinned bounds are the rest pose's: pad them so a stride or a pedal stroke is never culled
     if (o.isSkinnedMesh) { o.geometry.computeBoundingSphere(); o.geometry.boundingSphere.radius *= 1.6; }
