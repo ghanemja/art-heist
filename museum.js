@@ -225,12 +225,19 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     const cv = document.createElement('canvas'); cv.width = 2048; cv.height = 124;
     const c = cv.getContext('2d');
     c.fillStyle = '#d8cab0'; c.fillRect(0, 0, 2048, 124);
-    c.font = '600 78px Georgia, "Times New Roman", serif';
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    try { c.letterSpacing = '26px'; } catch { /* older canvas */ }
     const txt = 'THE DOWNTOWN MUSEUM OF ART';
-    c.fillStyle = '#fff7e6'; c.fillText(txt, 1026, 66);       // carved: light lip below…
-    c.fillStyle = '#6b5226'; c.fillText(txt, 1024, 62);       // …dark cut above
+    // shrink to fit: with the wide tracking it used to run off both ends ("HE … AR")
+    let fs = 78, ls = 26;
+    for (; fs > 30; fs -= 2, ls = fs / 3) {
+      c.font = `600 ${fs}px Georgia, "Times New Roman", serif`;
+      try { c.letterSpacing = `${ls}px`; } catch { /* older canvas */ }
+      if (c.measureText(txt).width + ls <= 1880) break;
+    }
+    // the tracking trails the last letter too: nudge right by half of it to centre
+    const cx = 1024 + ls / 2;
+    c.fillStyle = '#fff7e6'; c.fillText(txt, cx + 2, 66);       // carved: light lip below…
+    c.fillStyle = '#6b5226'; c.fillText(txt, cx, 62);           // …dark cut above
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
     add(new THREE.PlaneGeometry(8.0, 0.48), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }),

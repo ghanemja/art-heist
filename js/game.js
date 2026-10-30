@@ -6,6 +6,7 @@
 // Act 2 (once you've named the thief): the getaway to Cape Far Side, a launch
 // countdown, an ABORT button, the police, and a letterboxed epilogue.
 import * as THREE from 'three';
+import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { R, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurface, slerpDir } from './world.js';
 import { CAPE, cargoRocket, launchConsole, paintingCrate } from './buildings.js';
 import { buildCar } from './player.js';
@@ -106,7 +107,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     document.body.classList.remove('cine');
     show($('caption'), false); show($('skip'), false);
     atmosphere.fadeTo(0, 1.6);                       // dawn breaks
-    player.st.camInit = false;
+    // open looking at the museum: drop any look-drag made over the cold open
+    Object.assign(player.st, { camYaw: 0, camPitch: 0, zoomT: 1, zoom: 1, camInit: false });
+    player.st.camFwd.copy(player.st.heading);
     setTimeout(openPhone, 900);
   }
   // the opening brief arrives as texts on the critic's own phone: it buzzes, comes up
@@ -232,7 +235,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const conv = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false, side: 1 };
   const _cv = new THREE.Vector3();
   // where the talk camera sits: off to one side of the pair, swung round by `sw` radians
-  const _rc = new THREE.Raycaster(); _rc.camera = camera;
+  const _rc = new THREE.Raycaster(); _rc.camera = camera; _rc.firstHitOnly = true;
+  THREE.Mesh.prototype.raycast = acceleratedRaycast;     // uses a mesh's BVH when it has one, the plain cast otherwise
   function convoSpot(mid, up, ab, dist, sg, sw) {
     const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(sg);
     const off = side.multiplyScalar(2.5 + dist * 0.6).addScaledVector(ab, -0.45).applyAxisAngle(up, sw * sg);
@@ -264,11 +268,27 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const pa = player.root.position, pb = it.obj.position;
     const at = (p, h) => p.clone().addScaledVector(up, h);
     const targets = [look, at(pa, 1.1), at(pb, 1.1), at(pa, 0.2), at(pb, 0.2), look.clone().addScaledVector(ab, 1.7), look.clone().addScaledVector(ab, -1.7), at(mid, 1.6), at(mid, 0.05)];
+    // gather what could stand in the shot ONCE: only meshes near the pair (a recursive cast over
+    // the whole planet — every skinned townsperson — ~200 times froze the game on E)
+    const reachR = Math.max(5 + dist * 0.6, camera.position.distanceTo(mid) + 1), _bs = new THREE.Sphere();
+    const near = [];
+    const shown = (o) => { for (let q = o; q; q = q.parent) { if (!q.visible) return false; if (skip.has(q)) return null; } return true; };
+    scene.traverse(o => {
+      if (!o.isMesh || o.userData.isInk || o.isSprite || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      _bs.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
+      if (_bs.center.distanceTo(mid) > reachR + _bs.radius) return;
+      const v = shown(o); if (v === true) near.push(o); else if (v === null) skip.add(o);
+    });
+    // …and give each static one a BVH (built once, kept on the geometry): the merged buildings
+    // are tens of thousands of triangles, and every ray used to test all of them
+    for (const o of near) if (!o.isSkinnedMesh && !o.morphTargetInfluences && !o.geometry.boundsTree) {
+      o.geometry.boundsTree = computeBoundsTree.call(o.geometry);
+    }
     const blocked = (from, to) => {
       const dv = to.clone().sub(from), L = dv.length();
       _rc.set(from, dv.normalize()); _rc.far = Math.max(0.01, L - 0.15);
-      return _rc.intersectObjects(scene.children, true).some(h => { const o = h.object; if (!o.visible || o.userData.isInk || o.isSprite || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return false;
-        for (let q = o; q; q = q.parent) if (skip.has(q)) return false; return true; });
+      return _rc.intersectObjects(near, false).length > 0;
     };
     const clear = (p) => !targets.some(t => blocked(p, t));
     const sides = it.id === 'otto' ? [-1, 1] : [1, -1];                  // Otto: from the road side, away from the easels
@@ -279,7 +299,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     // if gliding there would pass through something (an easel, a wall), cut straight to it
     { const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing), dv = want.clone().sub(camera.position), L = dv.length();
       _rc.set(camera.position, dv.normalize()); _rc.far = L;
-      conv.cut = _rc.intersectObjects(scene.children, true).some(h => h.object.visible && !h.object.userData.isInk && !h.object.isSprite && h.object.name !== 'planet' && h.object.name !== 'sea'); }
+      conv.cut = _rc.intersectObjects(near, false).length > 0; }
     conv.init = false;
     player.st.camHook = convoCam;
   }
@@ -494,8 +514,11 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const CL = (x, y, z) => town.cape.root.localToWorld(new THREE.Vector3(x, y, z));
   const capeDir = (x, z) => town.cape.at(x, z);
   // put an object on the site in its own frame: local (x, z), turned ry about the up axis
+  // set on the ground the site was laid onto (placeOnPlanet: terrain under each point, less its
+  // 0.04 sink) — the site's flat local y=0 sits above it out here, so the desk's screen floated
   const capeAttach = (obj, x, z, ry = 0, lift = 0) => {
-    obj.position.copy(CL(x, lift, z));
+    const d = capeDir(x, z);
+    obj.position.copy(d).multiplyScalar(radiusAt(d) - 0.04 + lift);
     obj.quaternion.copy(town.cape.root.quaternion).multiply(new THREE.Quaternion().setFromAxisAngle(UPV, ry));
   };
   const cape = { count: 0, hopT: -1, puffs: [], crates: [], lidT: -1, policeT: -1, shown: -1 };

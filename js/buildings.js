@@ -1200,7 +1200,7 @@ export function capeFarSide() {
     K.box(0.9, 0.36, 0.2, dk, x, 3.75, z, 0.04);
     for (const lx of [-0.24, 0, 0.24]) K.put(new THREE.CircleGeometry(0.1, 14), GLOW(), x + lx, 3.75, z + 0.11).userData.noInk = true;
   }
-  const S = K.sub(3.2, 0, 4.4, -0.35);
+  const S = K.sub(5.6, 0, 4.6, -0.5);              // off to the side: it used to stand right in front of the launch desk
   for (const sx of [-0.7, 0.7]) S.box(0.08, 1.6, 0.08, paint(PAL.bark), sx, 0.8, 0, 0.02);
   S.box(1.7, 0.6, 0.06, white, 0, 1.35, 0.02, 0.03);
   S.flat(1.6, 0.5, signMat('CAPE FAR SIDE · cargo launch', { bg: '#f3eee4', fg: '#2a2230', w: 640, h: 192, font: '400 $px ' + HAND }), 0, 1.35, 0.056);
