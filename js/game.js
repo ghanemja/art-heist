@@ -572,8 +572,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       cape.puffs.push({ m, t: 1 + i / 16, seed: i * 1.7 });
     }
     // the police: a convoy of three, each a level frame with the car inside it, so its wheels
-    // can be seated on the ground under them (the site isn't flat) — like your parked car
-    cape.police = [[1.6, 5.2, Math.PI, 0], [3.9, 6.1, Math.PI + 0.45, 0.6], [-0.9, 6.8, Math.PI - 0.35, 1.2]].map(([x, z, ry, delay]) => {
+    // can be seated on the ground under them (the site isn't flat) — like your parked car.
+    // They pull up short of the CAPE FAR SIDE sign by the road (its posts at about x 2.5 and 3.9)
+    cape.police = [[1.7, 6.5, Math.PI, 0], [4.6, 7.0, Math.PI + 0.45, 0.6], [-1.1, 6.8, Math.PI - 0.35, 1.2]].map(([x, z, ry, delay]) => {
       const frame = new THREE.Group(), body = buildCar({ body: 0xf3eee4, police: true });
       frame.add(body); frame.visible = false; frame.userData.noGround = true; scene.add(frame);
       return { frame, body, x, z, ry, delay, lights: body.userData.lights };
@@ -825,8 +826,11 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     }
     if (G.state === 'title') {
       // the planet turns slowly behind the title page
-      // the planet sits low, under the title, like an illustrated book cover
-      const a = 0.9 + t * 0.05;
+      // the planet sits low, under the title, like an illustrated book cover. It opens on
+      // downtown and the museum (1.57) and turns by frame time (capped), not the clock — or a
+      // slow load or a first-frame stall would already have turned it on to the empty fields
+      G.titleA = (G.titleA ?? 1.57) + dt * 0.05;
+      const a = G.titleA;
       camera.position.set(Math.sin(a) * 96, 30, Math.cos(a) * 96);
       camera.up.set(0, 1, 0); camera.lookAt(0, 30, 0);
       return true;
