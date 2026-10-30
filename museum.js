@@ -227,15 +227,17 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     c.fillStyle = '#d8cab0'; c.fillRect(0, 0, 2048, 124);
     c.textAlign = 'center'; c.textBaseline = 'middle';
     const txt = 'THE DOWNTOWN MUSEUM OF ART';
-    // letter-spaced capitals, shrunk until the whole line fits inside the frieze with a margin
-    // (at full size the spaced line ran off both ends: "HE DOWNTOWN MUSEUM OF AR")
-    let px = 78, sp = 26;
-    const setF = () => { c.font = `600 ${px}px Georgia, "Times New Roman", serif`; try { c.letterSpacing = `${sp}px`; } catch { /* older canvas */ } };
-    setF();
-    while (c.measureText(txt).width > 1840 && px > 30) { px -= 2; sp = Math.round(px / 3); setF(); }
-    const cx = 1024 + sp / 2;                                 // the spacing trails the last letter too
-    c.fillStyle = '#fff7e6'; c.fillText(txt, cx + 2, 66);     // carved: light lip below…
-    c.fillStyle = '#6b5226'; c.fillText(txt, cx, 62);         // …dark cut above
+    // shrink to fit: with the wide tracking it used to run off both ends ("HE … AR")
+    let fs = 78, ls = 26;
+    for (; fs > 30; fs -= 2, ls = fs / 3) {
+      c.font = `600 ${fs}px Georgia, "Times New Roman", serif`;
+      try { c.letterSpacing = `${ls}px`; } catch { /* older canvas */ }
+      if (c.measureText(txt).width + ls <= 1880) break;
+    }
+    // the tracking trails the last letter too: nudge right by half of it to centre
+    const cx = 1024 + ls / 2;
+    c.fillStyle = '#fff7e6'; c.fillText(txt, cx + 2, 66);       // carved: light lip below…
+    c.fillStyle = '#6b5226'; c.fillText(txt, cx, 62);           // …dark cut above
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
     add(new THREE.PlaneGeometry(8.0, 0.48), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }),

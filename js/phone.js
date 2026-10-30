@@ -4,6 +4,7 @@
 // story arrives as texts — and Mum), a hand-drawn Map you can tap to follow a
 // place, a Camera that takes polaroids of whatever you're looking at, and Photos.
 import { ROADS, isWater, arc } from './world.js';
+import { audio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const show = (el, on = true) => el.classList.toggle('hide', !on);
@@ -49,7 +50,7 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
     el.innerHTML = `<b>${esc(from)}</b> ${esc(text.length > 70 ? text.slice(0, 68) + '…' : text)}<small>P to read</small>`;
     show(el); toastT = 5.5;
     el.onclick = () => open('messages');
-    navigator.vibrate?.(60);
+    navigator.vibrate?.(60); audio.buzz(1);
   }
   function badge() {
     const n = S.unread;

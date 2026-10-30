@@ -6,17 +6,12 @@
 import * as THREE from 'three';
 import { groundAt, standAt, alignToSurface, yawToFace, arc, slerpDir, R } from './world.js';
 import { poseFolk } from './folk.js';
+import { sfxOut } from './audio.js';
 
 // ── voices: a falling "oooooh" sung through two vowel formants ──
-let AC = null;
-function audio() {
-  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
-  if (AC.state === 'suspended') AC.resume();
-  return AC;
-}
-// iOS Safari only lets audio start inside a tap: open (and resume) it on the first one
-function unlock() { const ac = audio(); if (ac && ac.state === 'running') for (const ev of ['pointerdown', 'keydown']) removeEventListener(ev, unlock); }
-for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, unlock);
+// (through the game's sound bus, so the mute covers them — see audio.js)
+let OUT = null;
+function audio() { const a = sfxOut(); OUT = a && a.out; return a && a.ac; }
 function wail(pitch = 300, dur = 1.25, vol = 0.18) {
   const ac = audio(); if (!ac) return;
   const t = ac.currentTime, out = ac.createGain();
@@ -24,7 +19,7 @@ function wail(pitch = 300, dur = 1.25, vol = 0.18) {
   out.gain.exponentialRampToValueAtTime(vol, t + 0.06);
   out.gain.setValueAtTime(vol, t + dur * 0.7);
   out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  out.connect(ac.destination);
+  out.connect(OUT);
   // "oo": formants around 330 Hz and 870 Hz
   const f1 = ac.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 330; f1.Q.value = 5;
   const f2 = ac.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 870; f2.Q.value = 7;
@@ -49,7 +44,7 @@ function thud(vol = 0.25) {
   const src = ac.createBufferSource(); src.buffer = buf;
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380;
   const g = ac.createGain(); g.gain.value = vol;
-  src.connect(lp); lp.connect(g); g.connect(ac.destination); src.start(t);
+  src.connect(lp); lp.connect(g); g.connect(OUT); src.start(t);
 }
 
 // ── speech bubbles that hang over a person (hand-drawn, in the DOM) ──

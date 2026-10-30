@@ -262,7 +262,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     let pinch0 = 0;
     const zoomBy = (k) => { st.zoomT = THREE.MathUtils.clamp(st.zoomT * k, 0.5, 1.9); };
     addEventListener('pointerdown', e => {
-      if (e.target.tagName !== 'CANVAS') return;
+      if (e.target.tagName !== 'CANVAS' || !st.playing) return;   // no look-around until play starts: you open facing the museum
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); }
     });
@@ -282,7 +282,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       st.dragT = 0; st.recenter = 0;
       p.x = e.clientX; p.y = e.clientY;
     });
-    addEventListener('wheel', e => { if (e.target.tagName === 'CANVAS') { zoomBy(Math.exp(e.deltaY * 0.0012)); e.preventDefault(); } }, { passive: false });
+    addEventListener('wheel', e => { if (e.target.tagName === 'CANVAS' && st.playing) { zoomBy(Math.exp(e.deltaY * 0.0012)); e.preventDefault(); } }, { passive: false });
   }
   // touch: a thumb stick, bottom-left — walks (push it all the way to run) and drives
   // (up/down = throttle/brake, left/right = steer). It only shows once someone touches.
