@@ -170,6 +170,9 @@ export function smooth(pts, passes = 3, closed = false) {
 
 // ── roads: every carriageway's centre-line samples, so nothing builds on one ──
 export const ROADS = [];          // {pts, half}
+// paved ground a car may drive off the road onto (car parks and their drives): (dir) => bool.
+// Inside one, the car's keep-to-the-road assist lets go (player.js keepOnRoad)
+export const LOTS = [];
 // the painted road ribbons sit a hair above the ground: people stand ON them
 const ROAD_TOP = 0.05, KERB_TOP = 0.035;
 export function roadLift(d) {

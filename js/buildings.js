@@ -984,14 +984,23 @@ export function stripMall() {
   K.put(lot, paint(0x8a8392, { hatch: 0 }), 0, 0.025, lotZ + LD / 2).userData.noInk = true;   // asphalt meets asphalt: no drawn edge
   // the drive out to the boulevard: it runs onto the road, so no ink either (its outline drew a box on the road)
   K.put(rb(3.6, 0.045, 3.6, 0.02, 2), paint(0x8a8392, { hatch: 0 }), 0, 0.022, lotZ + LD + 1.75).userData.noInk = true;
-  const line = paint(0xf6eedb, { hatch: 0 }), nb = 9, span = W + tower * 2 - 0.6;
-  for (const row of [0, 1]) {
-    const z0 = row ? lotZ + LD - 1.75 : lotZ + 0.15;
-    for (let k = 0; k <= nb; k++) {
-      const lx = -span / 2 + k * span / nb;
-      K.box(0.05, 0.012, 1.6, line, lx, 0.055, z0 + 0.8, 0.004).userData.noInk = true;
-      if (k < nb) K.box(0.5, 0.08, 0.1, paint(0xd8cab0), lx + span / nb / 2, 0.09, row ? z0 + 1.45 : z0 + 0.15, 0.02);
-    }
+  // one row of car-sized bays along the shops (nose in, a wheel stop at the kerb end); the
+  // front row is gone, so the drive from the boulevard opens straight into the aisle
+  const line = paint(0xf6eedb, { hatch: 0 }), span = W + tower * 2 - 0.6;
+  const NB = 5, bayX0 = -4.4, bayW = 8.8 / NB, bayZ0 = lotZ + 0.15, bayD = 3.0;
+  const bays = [];
+  for (let k = 0; k <= NB; k++) K.box(0.05, 0.012, bayD, line, bayX0 + k * bayW, 0.055, bayZ0 + bayD / 2, 0.004).userData.noInk = true;
+  for (let k = 0; k < NB; k++) {
+    const bx = bayX0 + (k + 0.5) * bayW;
+    K.box(0.6, 0.08, 0.1, paint(0xd8cab0), bx, 0.09, bayZ0 + 0.2, 0.02);
+    bays.push({ x: bx, z: bayZ0 + bayD / 2, stopZ: bayZ0 + 0.2 });
+  }
+  // lane arrows on the drive: in on the left, out on the right
+  const arrow = new THREE.Shape();
+  arrow.moveTo(-0.09, -0.45); arrow.lineTo(0.09, -0.45); arrow.lineTo(0.09, 0.1); arrow.lineTo(0.22, 0.1); arrow.lineTo(0, 0.42); arrow.lineTo(-0.22, 0.1); arrow.lineTo(-0.09, 0.1); arrow.closePath();
+  for (const [ax, dirn] of [[-0.85, -1], [0.85, 1]]) {
+    const a = K.put(new THREE.ShapeGeometry(arrow), line, ax, 0.052, lotZ + LD + 1.0, [-Math.PI / 2, 0, dirn > 0 ? Math.PI : 0]);
+    a.userData.noInk = true;
   }
   for (const s of [-1, 1]) {
     const ix = s * (span / 2 - 0.2);
@@ -1011,6 +1020,10 @@ export function stripMall() {
   bench(K, -W * 0.18, 0.5, 0, PAL.bark, 0.08); bench(K, W * 0.3, 0.5, 0, PAL.bark, 0.08);
   const half = W / 2 + tower;
   K.g.userData.floor = (x, z) => (z > -0.05 && z < 1.55 && Math.abs(x) < half) ? 0.08 : (z >= 1.55 && z < lotZ + LD && Math.abs(x) < half + 0.3) ? 0.05 : null;
+  // for the plaza's life (js/plaza.js): the shop doors, the bays, the aisle
+  let ux = -W / 2;
+  K.g.userData.mall = { bays, aisleZ: lotZ + LD - 0.75, walkZ: 1.05, lotEnd: lotZ + LD, lotHalf: (W + tower * 2 + 0.6) / 2,
+    doors: units.map(u => { const d = { name: u.name, x: ux + u.w / 2 + u.w * 0.25, z: 0.12 }; ux += u.w; return d; }) };
   return K.g;
 }
 
