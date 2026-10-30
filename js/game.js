@@ -20,6 +20,7 @@ import { LOOKS } from './human.js';
 import { pose } from './human.js';
 import { poseFolk } from './folk.js';
 import { ink } from './style.js';
+import { audio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const show = (el, on = true) => el.classList.toggle('hide', !on);
@@ -83,6 +84,14 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   show($('loader'), false);
   show($('title'));
   $('start').onclick = () => startColdOpen();
+  // sound can only start from a click or a key: the title's own music comes in on the first one
+  const wake = () => { audio.start(); if (G.state === 'title') audio.setScene('title'); };
+  addEventListener('pointerdown', wake, { once: true }); addEventListener('keydown', wake, { once: true });
+  const sndBtn = $('sndBtn');
+  const drawSnd = () => { sndBtn.classList.toggle('off', audio.muted); sndBtn.title = audio.muted ? 'sound off (M)' : 'sound on (M)'; };
+  sndBtn.onclick = (e) => { e.stopPropagation(); audio.start(); audio.setMuted(!audio.muted); drawSnd(); sndBtn.blur(); };
+  addEventListener('keydown', (e) => { if (e.code === 'KeyM' && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)) { audio.start(); audio.setMuted(!audio.muted); drawSnd(); } });
+  drawSnd();
   addEventListener('keydown', (e) => { if (e.code === 'Enter' && G.state === 'title') startColdOpen(); });
 
   // ── cold open: three silent shots of last night ──
@@ -94,7 +103,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const COLD = SHOTS.reduce((a, s) => a + s.dur, 0);
   function startColdOpen() {
     if (G.state !== 'title') return;
-    G.state = 'cold'; G.t0 = performance.now() / 1000;
+    G.state = 'cold'; G.t0 = performance.now() / 1000; G.coldShot = -1;
+    audio.start(); audio.setScene('night');
     show($('title'), false);
     document.body.classList.add('cine');
     show($('skip'));
@@ -107,6 +117,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     document.body.classList.remove('cine');
     show($('caption'), false); show($('skip'), false);
     atmosphere.fadeTo(0, 1.6);                       // dawn breaks
+    audio.setScene('dawn');
     // open looking at the museum: drop any look-drag made over the cold open
     Object.assign(player.st, { camYaw: 0, camPitch: 0, zoomT: 1, zoom: 1, camInit: false });
     player.st.camFwd.copy(player.st.heading);
@@ -115,7 +126,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   // the opening brief arrives as texts on the critic's own phone: it buzzes, comes up
   // open on Messages, the editor types, and you answer "on it"
   function openPhone() {
-    navigator.vibrate?.([60, 80, 60]);
+    navigator.vibrate?.([60, 80, 60]); audio.buzz(2);
     phone.open('messages');
     phone.setTyping(true);
     setTimeout(() => { phone.setTyping(false); phone.push('Editor', 'You\'re at the museum? Good. All 45 paintings went overnight. The police have nothing.'); phone.setTyping(true); }, 900);
@@ -133,6 +144,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   function beginPlay() {
     G.state = 'play';
+    audio.setScene('day');
     // start the game looking at the museum, whatever happened over the intro and the texts
     Object.assign(player.st, { camYaw: 0, camPitch: 0, recenter: 0 });
     player.st.camFwd.copy(player.st.heading);
@@ -219,6 +231,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   function openClue(it) {
     const c = CLUES.find(c => c.id === it.id);
     const isNew = !G.found.has(c.id);
+    audio.knock();
     G.found.add(c.id);
     if (it.glint) it.glint.visible = false;
     if (isNew) {
@@ -313,6 +326,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const REX_CAUGHT = { id: 'rex', name: 'Rex, framer', lines: ['I\'m not coming down.', '…Is there such a thing as a lawyer on the far side?'] };
   function openTalk(id) {
     G.talkWho = id === 'rex' && G.act === 2 ? REX_CAPE : id === 'rex' && G.act >= 4 ? REX_CAUGHT : PEOPLE.find(p => p.id === id); G.talkIdx = 0;
+    audio.knock();
     startConvo(items.find(i => i.id === id));
     G.met.add(id);
     const it = items.find(i => i.id === id); if (it?.glint) it.glint.visible = false;
@@ -582,6 +596,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   // Rex bolts up the gantry; the countdown starts; the rocket rumbles
   function startCountdown() {
     G.act = 3; cape.count = 60; cape.shown = -1;
+    audio.setScene('tense');
     const rex = personIt('rex'), b = bumps.body(rex.obj);
     if (b) b.immune = true;
     rex.fleeing = { phase: 'run', y: 0 };
@@ -691,6 +706,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   function abortLaunch() {
     if (G.act !== 3) return;
     G.act = 4; cape.hopT = -1;
+    audio.setScene('end');
     const U = cape.console.userData;
     U.draw('ABORTED', '#ff8a7a');
     U.btn.position.y -= 0.045; U.cover.rotation.x = -1.2; U.cover.position.z -= 0.1;
@@ -783,6 +799,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       let acc = 0, i = 0;
       while (i < SHOTS.length - 1 && e > acc + SHOTS[i].dur) acc += SHOTS[i++].dur;
       const S = SHOTS[i], k = Math.min(1, (e - acc) / S.dur), ease = k * k * (3 - 2 * k);
+      if (i !== G.coldShot) { G.coldShot = i; if (i === 1) audio.cue('low'); if (i === 2) audio.cue('swell'); }
       const from = new THREE.Vector3(...S.from), to = new THREE.Vector3(...S.to);
       camera.position.copy(ML(...from.lerp(to, ease).toArray()));
       camera.up.copy(mus.position).normalize();

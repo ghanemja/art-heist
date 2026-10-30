@@ -127,6 +127,8 @@
   #minimapLab b { font-family: 'Caveat', cursive; font-size: 20px; }
   body.cine #minimapBox { opacity: 0 !important; }
   #bagBtn { right: 160px; top: 14px; padding: 2px 10px 0; line-height: 0; }
+  #sndBtn { right: 228px; top: 14px; padding: 4px 10px 0; line-height: 0; z-index: 40; }
+  #sndBtn .x { display: none; } #sndBtn.off .x { display: inline; } #sndBtn.off .w { display: none; }
   #bagBtn i, .it i, .app i { position: absolute; top: -8px; right: -8px; font-style: normal; min-width: 22px; line-height: 22px; background: var(--accent); color: #fff; border-radius: 50%; text-align: center; font-size: 14px; border: 2px solid var(--ink); }
   #bag { left: 50%; top: 50%; width: min(560px, 94vw); transform: translate(-50%, -50%) rotate(-0.8deg); padding: 16px 22px 20px; z-index: 24; background: #f3e1b4; }
   #bag h2 { font-family: 'Caveat', cursive; font-size: 40px; margin: 0 0 8px; }
@@ -217,7 +219,7 @@
   button.sk.next { background: var(--gold); font-size: 21px; padding: 9px 20px; margin-top: 10px; animation: nudge 1.6s ease-in-out infinite; }
   @keyframes nudge { 0%, 100% { transform: rotate(-0.6deg); } 50% { transform: translateX(4px) rotate(-0.6deg); } }
   #card a.btn { font-size: 20px; color: var(--ink); text-decoration: none; padding: 8px 18px; background: var(--gold); }
-  @media (max-width: 640px) { #hint { display: none; } #nbBtn { top: auto; bottom: 16px; } #bagBtn { top: auto; bottom: 16px; right: 150px; } }
+  @media (max-width: 640px) { #sndBtn { right: 16px; } #hint { display: none; } #nbBtn { top: auto; bottom: 16px; } #bagBtn { top: auto; bottom: 16px; right: 150px; } }
 </style>
 </head>
 <body>
@@ -237,6 +239,7 @@
 <div id="hud" class="ui sk fade hide"><button id="caseTog" title="minimize" aria-label="minimize the case board">–</button><b>The Vanishing Gallery <span>To Do List</span></b><div id="caseMini"></div><div id="case"></div></div>
 <div id="way" class="ui hide"><svg viewBox="0 0 64 40" width="54" height="34"><path d="M4 14 C 18 13, 30 15, 38 14 L 37 4 L 60 20 L 37 36 L 38 26 C 28 25, 16 27, 4 26 Z" fill="#e8604c" stroke="#2a2230" stroke-width="3.2" stroke-linejoin="round"/></svg><span></span></div>
 <div id="minimapBox" class="ui sk hide"><canvas id="minimap" width="200" height="200"></canvas><div id="minimapLab"></div></div>
+<button id="sndBtn" class="ui sk" title="sound (M)" aria-label="sound on/off"><svg viewBox="0 0 40 40" width="28" height="28" fill="none" stroke="#2a2230" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16 h6 l8 -7 v22 l-8 -7 h-6z" fill="#e1b95c"/><path class="w" d="M27 15 q4 5 0 10 M31 11 q7 9 0 18"/><path class="x" d="M28 15 l9 10 M37 15 l-9 10"/></svg></button>
 <button id="nbBtn" class="ui sk fade hide">notebook<i id="nbCount">0</i></button>
 <button id="bagBtn" class="ui sk fade hide" title="backpack (B)"><svg viewBox="0 0 40 40" width="30" height="30"><rect x="9" y="11" width="22" height="24" rx="7" fill="#e1b95c" stroke="#2a2230" stroke-width="2.4"/><path d="M9 19 q11 -6 22 0 v-4 q-11 -7 -22 0z" fill="#c7533e" stroke="#2a2230" stroke-width="2"/><rect x="17" y="17" width="6" height="4" rx="1" fill="#e4b84f" stroke="#2a2230" stroke-width="1.4"/><path d="M15 11 q5 -8 10 0" fill="none" stroke="#2a2230" stroke-width="2.4"/></svg><i id="bagCount" style="display:none">0</i></button>
 <div id="bag" class="ui sk fade hide"></div>
@@ -260,6 +263,6 @@
   "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.8/build/index.module.js"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=82"></script>
+<script type="module" src="./js/main.js?cb=83"></script>
 </body>
 </html>
