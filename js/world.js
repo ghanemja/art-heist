@@ -309,6 +309,10 @@ export function nearestRoad(d) {
 const roadMat = paint(PAL.road, { hatch: 0 });
 const kerbMat = paint(PAL.kerb, { hatch: 0 });
 const dashMat = paint(PAL.dash, { hatch: 0 });
+// where roads meet, one road's kerb and the next one's surface (or a dash and the surface)
+// lie a hair apart over curved ground and flickered through each other: the surface draws
+// in front of any kerb, and the dashes in front of the surface
+for (const [m, o] of [[roadMat, -2], [dashMat, -4]]) { m.polygonOffset = true; m.polygonOffsetFactor = o; m.polygonOffsetUnits = o; }
 for (const m of [roadMat, kerbMat, dashMat]) { m.polygonOffset = true; m.side = THREE.DoubleSide; }
 roadMat.polygonOffsetFactor = -2; roadMat.polygonOffsetUnits = -2;
 kerbMat.polygonOffsetFactor = -1; kerbMat.polygonOffsetUnits = -1;
@@ -367,8 +371,8 @@ export function buildRoad(scene, pts, { half = 1.1, closed = false, dashed = tru
   pts = resample(pts, 0.6, closed);
   const g = new THREE.Group();
   ROADS.push({ pts, half, closed, dashed: dashed && half > 0.8, group: g });
-  g.add(ribbon(pts, half + 0.28, 0.035, closed, kerbMat));
-  g.add(ribbon(pts, half, 0.05, closed, roadMat));
+  g.add(ribbon(pts, half + 0.28, 0.03, closed, kerbMat));
+  g.add(ribbon(pts, half, 0.06, closed, roadMat));
   scene.add(g);
   return pts;
 }
