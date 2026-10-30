@@ -36,6 +36,9 @@ export default {
     launchpad: { at: [-8, -150], r: 7, stop: 6.2, name: 'Cape Far Side' },   // the finale: pad, gantry, rocket, crates
     overlook:  { at: [49, -40], r: 3.5, name: 'Summit Overlook' },
   },
+  // a town park out past Maple Plaza (no road: you walk in across the grass). Splatform's
+  // shop used to stand here with a spur road forking off to it; it moved round the planet
+  park: { at: [20, -48], r: 4.9, name: 'Lantern Park' },
   // Janelle's projects: buildings around town, each a portfolio piece
   projects: [
     { key: 'library',   name: 'The Library', tag: 'the bookshelf', at: [44, 2], style: 'library', decor: true },   // scenery only: no portfolio link
@@ -48,7 +51,7 @@ export default {
       desc: 'A browser game about how other animals see: photograph 14 hidden animals and borrow their eyes — bee ultraviolet, snake heat pits, bat echolocation, owl night vision.', url: 'https://ghanemja.github.io/borrowed_eyes/' },
     { key: 'yarnflow',  name: 'YarnFlow', tag: 'pattern haberdashery · crochet', at: [34, 53], style: 'yarn',
       desc: 'A crochet studio: watch a pattern get made stitch by stitch in 3D, learn the stitches, and share what you make.', url: 'https://ghanemja.github.io/crochet/' },
-    { key: 'splatform', name: 'Splatform', tag: 'paint & supplies · ui library', at: [20, -48], style: 'splat',
+    { key: 'splatform', name: 'Splatform', tag: 'paint & supplies · ui library', at: [16, -110], style: 'splat',
       desc: 'Components, painted: a UI library where every button, card and input is made of a real art medium — watercolor, acrylic, charcoal, torn paper or marker.', url: 'https://ghanemja.github.io/art-asset/' },
     { key: 'qr',        name: 'QR Compass', tag: 'the map room · 3d map', at: [-12, -64], style: 'qr',
       desc: "America's biggest companies on a 3D map, each drawn as its own little model — and every model turns into that company's scannable QR code.", url: 'https://ghanemja.github.io/qr/' },
