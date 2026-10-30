@@ -88,6 +88,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const VOICE = {
     vivi: { pitch: 380, line: 'My INSURANCE!' }, otto: { pitch: 150, line: 'I was on my BREAK!' },
     pia: { pitch: 350, line: 'Watch it — I\'m the courier here!' }, rex: { pitch: 190, line: 'Oi! Mind the paintwork!' },
+    ezra: { pitch: 135, line: 'Mind my PAPER!' },
   };
   for (const it of items) {
     if (it.kind !== 'person') continue;
@@ -889,6 +890,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       const talking = G.ui === 'talk' && G.talkWho?.id === it.id;
       h.talkK = (h.talkK || 0) + ((talking ? 1 : 0) - (h.talkK || 0)) * (1 - Math.exp(-5 * dt));
       pose(h, dt, 0, { talk: h.talkK });
+      if (it.seated) continue;                        // on a bench: he looks up from the paper, he doesn't swivel round
       const l = it.obj.worldToLocal(_pv.copy(player.root.position));
       const target = G.state === 'play' && Math.hypot(l.x, l.z) < 4.5 ? Math.atan2(l.x, l.z) : 0;
       const tg = it.obj.userData.turn;

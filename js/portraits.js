@@ -80,7 +80,7 @@ function frame(fig, wash, seed) {
 }
 
 const WASH = {
-  vivi: 'rgba(232,96,76,A)', otto: 'rgba(120,150,190,A)', pia: 'rgba(214,224,76,A)', rex: 'rgba(201,149,58,A)',
+  vivi: 'rgba(232,96,76,A)', otto: 'rgba(120,150,190,A)', pia: 'rgba(214,224,76,A)', rex: 'rgba(201,149,58,A)', ezra: 'rgba(143,163,138,A)',
   editor: 'rgba(170,160,190,A)', clue: 'rgba(228,184,79,A)',
 };
 

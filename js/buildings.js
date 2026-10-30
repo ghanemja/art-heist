@@ -1076,6 +1076,8 @@ export function mallDrive(edgeZ, lotEnd) {
   return K.g;
 }
 
+// the station's track in its own frame: along x at z, ±half (the loop in rail.js joins it there)
+export const STATION_TRACK = { z: -5.55, half: 7.0, platformEdge: -4.7, platformTop: 0.5 };
 // ── Central Station: a brick booking hall with a clock tower, a platform
 // under a fretted canopy, and track out the back ───────────────────────────
 export function station() {
@@ -1165,19 +1167,14 @@ export function station() {
   hc.box(0.02, 0.3, 0.02, dk, 0, 0.2, 0, 0.006);
   hc.put(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 24), iron, 0, 0, 0, [Math.PI / 2, 0, 0]);
   for (const s of [1, -1]) hc.put(new THREE.CircleGeometry(0.17, 24), paint(0xffffff, { map: clockTex(), hatch: 0 }), 0, 0, s * 0.052, [0, s > 0 ? 0 : Math.PI, 0]).userData.noInk = true;
-  // track: ballast, sleepers, two rails, buffer stops at both ends
-  const tz2 = pz0 - PD - 0.85, TL = PL + 1.6;
+  // track: ballast, sleepers, two rails — the straight of the railway loop (rail.js
+  // carries the line on from both ends, so no buffer stops)
+  const tz2 = STATION_TRACK.z, TL = STATION_TRACK.half * 2;
   K.box(TL, 0.12, 1.5, paint(0xb8ab98), 0, 0.06, tz2, 0.04);
   const sl = [];
   for (let x = -TL / 2 + 0.2; x < TL / 2 - 0.1; x += 0.42) sl.push(rb(0.16, 0.06, 1.2, 0.015).translate(x, 0.14, tz2));
   K.put(mergeGeometries(sl), paint(PAL.bark));
   for (const s of [-1, 1]) K.box(TL - 0.2, 0.08, 0.06, paint(0x8d8996), 0, 0.21, tz2 + s * 0.4, 0.015);
-  for (const s of [-1, 1]) {
-    const bx = s * (TL / 2 - 0.25);
-    K.box(0.14, 0.42, 1.0, paint(0xb8664e), bx, 0.42, tz2, 0.03);
-    K.box(0.16, 0.12, 1.1, paint(0xd8573f), bx - s * 0.05, 0.5, tz2, 0.03);
-    for (const bz2 of [-0.4, 0.4]) K.put(new THREE.CylinderGeometry(0.07, 0.07, 0.16, 12), paint(PAL.gold), bx - s * 0.17, 0.5, tz2 + bz2, [0, 0, Math.PI / 2]);
-  }
   // forecourt life: lamps, a bench, a taxi sign
   for (const s of [-1, 1]) lampPost(K, s * 3.6, front + 1.2, 2.0);
   bench(K, -2.4, front + 0.4, 0);
@@ -1911,3 +1908,5 @@ export function projectShop(style) {
     : (Math.abs(x) < DOOR / 2 + 0.4 && z > 0 && z < D / 2 + 0.8) ? 0.1 : null;        // the stoop
   return { base: B.g, upper: U.g, walls, floor, inside: (x, z) => Math.abs(x) < W / 2 - 0.05 && z > -D / 2 && z < D / 2 + 0.2 };
 }
+// shared with train.js (the parked train at Central Station)
+export { kit, lathe, signMat, upperGlass, DARK, HAND };

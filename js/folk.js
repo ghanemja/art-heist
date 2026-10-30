@@ -215,6 +215,7 @@ export const STANCES = {
     L: { fwd: -0.12, out: 0.56, twist: 1.6, bend: 1.35, wrist: 0.2, grip: 0.3 },
     R: { fwd: 0.3, out: -0.14, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 0.62, hold: ['cup', [-0.033, -0.046, 0.004], [2.2, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { const sip = Math.max(0, Math.sin(t * 0.55)) ** 10; p.bend += 0.5 * sip; p.fwd += 0.25 * sip; } } },
+  reading: { free: null, ik: true, read: true, seated: true },   // on a bench, a newspaper open in both hands (readPose)
   crossed: { free: 'R',        // the framer: arms crossed, defensive
     L: { fwd: 0.62, out: -0.2, twist: 1.35, bend: 2.0, wrist: 0, grip: 0.6 },
     R: { fwd: 0.7, out: -0.22, twist: 1.35, bend: 1.88, wrist: 0, grip: 0.6 },
@@ -498,6 +499,10 @@ export function makeFolk(spec) {
   for (const k of ['L', 'R']) J['arm' + k].rotation.order = 'XZY';
   const stance = STANCES[S.stance] || null;
   let board = null, pen = null;
+  let paper = null;
+  if (stance?.read) { paper = newspaper(); J.spine.add(paper); }
+  // sitting: the hips come down to a seat's height (thighs level, shins down to the floor)
+  if (stance?.seated) J.hips.position.y = 0.295;
   if (S.stance === 'writing') {
     board = PROPS.board(); board.position.set(-0.012, 0.13, 0.19); board.rotation.x = -0.62; J.spine.add(board);
     pen = PROPS.pen(); pen.position.set(0, -0.046, 0.004); J.handR.add(pen);
@@ -507,7 +512,7 @@ export function makeFolk(spec) {
     const prop = PROPS[h[0]](); prop.position.set(...h[1]); prop.rotation.set(...h[2]);
     J['grip' + k].add(prop);
   }
-  const inst = { kind: 'folk', rig: root, J, armOut, stance, board, pen, t: Math.random() * 10, wc: Math.random() * 6 };
+  const inst = { kind: 'folk', rig: root, J, armOut, stance, board, pen, paper, t: Math.random() * 10, wc: Math.random() * 6 };
   return inst;
 }
 
@@ -566,6 +571,69 @@ function writePose(inst, t, talk) {
   if (lift) J.head.rotation.y *= 1 - lift * 0.3;
 }
 
+// an open broadsheet: two pages hinged at the fold (the right one turns), printed both sides
+let _paperTex;
+function paperTex() {
+  if (_paperTex) return _paperTex;
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 360;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#f4eedf'; c.fillRect(0, 0, 256, 360);
+  c.fillStyle = '#2a2230'; c.font = '700 34px Georgia, serif'; c.textAlign = 'center';
+  c.fillText('THE CHRONICLE', 128, 40);
+  c.fillRect(14, 50, 228, 3);
+  c.font = '700 30px Georgia, serif'; c.fillText('45 PAINTINGS', 128, 92); c.fillText('VANISH', 128, 124);
+  c.fillStyle = '#b7ab96'; c.fillRect(18, 140, 108, 80);
+  c.fillStyle = '#8f8a8a';
+  for (let y = 146; y < 345; y += 9) { c.fillRect(136, y, 102, 3); if (y > 228) c.fillRect(18, y, 108, 3); }
+  _paperTex = new THREE.CanvasTexture(cv); _paperTex.colorSpace = THREE.SRGBColorSpace;
+  return _paperTex;
+}
+const PW = 0.17, PH = 0.24;
+function newspaper() {
+  const g = new THREE.Group();
+  const mat = paint(0xffffff, { map: paperTex(), side: THREE.DoubleSide, hatch: 0 });
+  const page = (sx) => {
+    const geo = new THREE.PlaneGeometry(PW, PH, 6, 1);
+    const p = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < p.count; i++) {
+      const u = (p.getX(i) + PW / 2) / PW;                   // 0 at the fold … 1 at the edge (for sx = 1)
+      p.setX(i, sx * u * PW); p.setZ(i, 0.012 * Math.sin(Math.PI * u));   // a soft curl
+      uv.setX(i, sx > 0 ? 0.5 + u * 0.5 : 0.5 - u * 0.5);
+    }
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, mat);
+  };
+  g.add(page(-1));
+  const hinge = new THREE.Group(); hinge.add(page(1)); g.add(hinge);
+  g.userData.hinge = hinge;
+  ink(g, 'fine');
+  return g;
+}
+// reading on a bench: the paper held up in front of the face in both hands, head bowed
+// over it; every few seconds a page turns (the right hand carries it over); when you
+// talk, the paper comes down to the lap and he looks up
+const _pl = new THREE.Vector3(), _pr = new THREE.Vector3();
+function readPose(inst, t, talk) {
+  const { J, paper } = inst;
+  if (!paper) return;
+  const down = talk;
+  paper.position.set(0, 0.27 - 0.17 * down, 0.2 + 0.03 * down);
+  paper.rotation.set(-0.12 - 0.95 * down, 0, 0);
+  const cyc = t % 11, turn = THREE.MathUtils.smoothstep(cyc, 9.6, 10.6) * (1 - down);
+  paper.userData.hinge.rotation.y = -Math.PI * 0.97 * turn;
+  paper.updateMatrix(); paper.userData.hinge.updateMatrix();
+  // the fists at the pages' outer edges, a little in from the corners
+  _pl.set(-PW + 0.012, -0.02, 0.0).applyMatrix4(paper.matrix);
+  _pr.set(PW - 0.012, -0.02, 0.0).applyMatrix4(paper.userData.hinge.matrix).applyMatrix4(paper.matrix);
+  ikArm(J, 'L', _pl, new THREE.Vector3(-0.8, -0.6, -0.2));
+  ikArm(J, 'R', _pr, new THREE.Vector3(0.8, -0.6, -0.2));
+  J.handL.rotation.set(-0.3, 0, 0.5); J.handR.rotation.set(-0.3, 0, -0.5);
+  gripHand(J.gripL, 0.75); gripHand(J.gripR, 0.75);
+  J.neck.rotation.x = 0.12 * (1 - down);
+  J.head.rotation.x = 0.22 * (1 - down) + J.head.rotation.x * down;
+  J.head.rotation.y *= down;
+}
+
 export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   const J = inst.J;
   inst.t += dt; inst.wc += dt * 5.6 * (0.35 + 0.9 * k);
@@ -575,6 +643,10 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   J.thighL.rotation.x = -legA * s; J.thighR.rotation.x = legA * s;
   // the knee folds on the forward swing (the left thigh travels forward while c > 0)
   J.shinL.rotation.x = 0.9 * k * Math.max(0, c); J.shinR.rotation.x = 0.9 * k * Math.max(0, -c);
+  if (inst.stance?.seated) {                                  // thighs out along the seat, shins down, knees a touch apart
+    J.thighL.rotation.set(-1.52, 0, -0.06); J.thighR.rotation.set(-1.52, 0, 0.06);
+    J.shinL.rotation.x = J.shinR.rotation.x = 1.5;
+  }
   // arms: each side follows the person's stance (what they're doing), else a relaxed hang;
   // walking swings them; talking lifts the free hand into a gesture
   const st = inst.stance;
@@ -607,5 +679,6 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
     J.pony.rotation.x = 0.05 * Math.sin(t * 1.15) - 0.1 * k;
   }
   if (st?.ik) writePose(inst, t, talk);
+  if (st?.read) readPose(inst, t, talk);
   return Math.abs(c) * 0.03 * k;
 }
