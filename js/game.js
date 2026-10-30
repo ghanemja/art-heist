@@ -233,17 +233,18 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const _cv = new THREE.Vector3();
   // where the talk camera sits: off to one side of the pair, swung round by `sw` radians
   const _rc = new THREE.Raycaster(); _rc.camera = camera;
-  function convoSpot(mid, up, ab, dist, sg, sw) {
+  // (k < 1 pulls the camera in toward the pair, when nothing further out has a clear view)
+  function convoSpot(mid, up, ab, dist, sg, sw, k = 1) {
     const side = new THREE.Vector3().crossVectors(up, ab).normalize().multiplyScalar(sg);
-    const off = side.multiplyScalar(2.5 + dist * 0.6).addScaledVector(ab, -0.45).applyAxisAngle(up, sw * sg);
-    return mid.clone().add(off).addScaledVector(up, 1.05);
+    const off = side.multiplyScalar(2.5 + dist * 0.6).addScaledVector(ab, -0.45).applyAxisAngle(up, sw * sg).multiplyScalar(k);
+    return mid.clone().add(off).addScaledVector(up, 0.72 + 0.33 * k);
   }
   function convoCam(cam, root) {
     const it = items.find(i => i.id === G.talkWho?.id); if (!it) return;
     const a = root.position, b = it.obj.position;
     const mid = a.clone().add(b).multiplyScalar(0.5), up = mid.clone().normalize();
     const ab = b.clone().sub(a).projectOnPlane(up); const dist = ab.length(); ab.normalize();
-    const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing || 0);
+    const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing || 0, conv.k ?? 1);
     const look = mid.clone().addScaledVector(up, 0.72);
     const now = performance.now() / 1000, dt = conv.init ? Math.min(0.1, now - conv.t) : 0; conv.t = now;
     if (!conv.init) { conv.pos.copy(conv.cut ? want : cam.position); conv.look.copy(look); conv.init = true; }
@@ -264,22 +265,76 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const pa = player.root.position, pb = it.obj.position;
     const at = (p, h) => p.clone().addScaledVector(up, h);
     const targets = [look, at(pa, 1.1), at(pb, 1.1), at(pa, 0.2), at(pb, 0.2), look.clone().addScaledVector(ab, 1.7), look.clone().addScaledVector(ab, -1.7), at(mid, 1.6), at(mid, 0.05)];
-    const blocked = (from, to) => {
+    // what can stand in the way: the solid things near the pair. Raycasting the whole scene for
+    // each candidate froze the game for a second or more — the town is baked into big meshes (a
+    // block per material, up to ~30k triangles each) and every person's skin is re-posed per ray.
+    // So, once: take the triangles of the solid things near the pair, in world space, into small
+    // stand-in meshes, one per metre cell (each ray then skips every cell it doesn't pass near).
+    // Anyone else standing nearby counts as two spheres (body, head) — their skinned meshes are
+    // far too slow to cast at. The ground never blocks (the big un-inked surfaces: lawns, roads,
+    // plazas), and nor do ink hulls or glass.
+    const people = new Set([...items.filter(i => i.kind === 'person').map(i => i.obj), ...walkers.map(w => w.obj), player.root]);
+    const reach = 4.5 + dist * 0.6, near = [], _bs = new THREE.Sphere();
+    const others = [...people].filter(o => !skip.has(o) && o.visible && o.position.distanceTo(mid) < reach + 1)
+      .flatMap(o => { const u = o.position.clone().normalize(); return [new THREE.Sphere(o.position.clone().addScaledVector(u, 0.45), 0.3), new THREE.Sphere(o.position.clone().addScaledVector(u, 1.0), 0.22)]; });
+    const _sp = new THREE.Vector3();
+    const a3 = new THREE.Vector3(), b3 = new THREE.Vector3(), c3 = new THREE.Vector3(), cen = new THREE.Vector3();
+    const cells = new Map();                                             // stand-in triangles, by cell + material side
+    scene.traverse(o => {
+      if (!o.isMesh || o.isSkinnedMesh || !o.visible || o.userData.isInk || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return;
+      for (let q = o; q; q = q.parent) { if (skip.has(q) || people.has(q) || !q.visible) return; }
+      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+      _bs.copy(o.isInstancedMesh ? (o.boundingSphere || (o.computeBoundingSphere(), o.boundingSphere)) : g.boundingSphere).applyMatrix4(o.matrixWorld);
+      if (o.userData.noInk && _bs.radius > 6 || _bs.center.distanceTo(mid) > reach + _bs.radius) return;
+      if (o.isInstancedMesh) { near.push(o); return; }
+      const pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      for (let i = 0; i < n; i += 3) {
+        a3.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(o.matrixWorld);
+        b3.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(o.matrixWorld);
+        c3.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2).applyMatrix4(o.matrixWorld);
+        cen.copy(a3).add(b3).add(c3).divideScalar(3);
+        const rad = Math.max(cen.distanceTo(a3), cen.distanceTo(b3), cen.distanceTo(c3));
+        if (cen.distanceTo(mid) > reach + rad) continue;
+        const key = `${mat.side}|${Math.floor(cen.x)},${Math.floor(cen.y)},${Math.floor(cen.z)}`;
+        let out = cells.get(key); if (!out) cells.set(key, out = []);
+        out.push(a3.x, a3.y, a3.z, b3.x, b3.y, b3.z, c3.x, c3.y, c3.z);
+      }
+    });
+    const sideMat = [0, 1, 2].map(side => new THREE.MeshBasicMaterial({ side }));
+    for (const [key, tri] of cells) {
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(tri, 3));
+      near.push(new THREE.Mesh(g, sideMat[+key.split('|')[0]]));
+    }
+    const hit = (from, to) => {
       const dv = to.clone().sub(from), L = dv.length();
       _rc.set(from, dv.normalize()); _rc.far = Math.max(0.01, L - 0.15);
-      return _rc.intersectObjects(scene.children, true).some(h => { const o = h.object; if (!o.visible || o.userData.isInk || o.isSprite || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return false;
-        for (let q = o; q; q = q.parent) if (skip.has(q)) return false; return true; });
+      if (others.some(sp => _rc.ray.intersectSphere(sp, _sp) && _sp.distanceTo(from) < _rc.far)) return true;
+      return _rc.intersectObjects(near, false).length > 0;
     };
-    const clear = (p) => !targets.some(t => blocked(p, t));
+    // cast both ways: a ray only meets the faces turned toward it, so one leaving a spot that is
+    // inside something (the van), or passing behind a one-sided wall, would see nothing at all
+    const blocked = (a, b) => hit(a, b) || hit(b, a);
+    // a spot's cost: how much of the shot is hidden (the look point counts triple); stop counting
+    // as soon as it can't beat the best spot so far
+    const cost = (p, cap) => { let n = 0; for (const t of targets) { if (blocked(p, t)) n += t === look ? 3 : 1; if (n >= cap) break; } return n; };
     const sides = it.id === 'otto' ? [-1, 1] : [1, -1];                  // Otto: from the road side, away from the easels
-    conv.side = sides[0]; conv.swing = 0;
+    conv.side = sides[0]; conv.swing = 0; conv.k = 1;
+    let best = 1e9;
     outer: for (const sw of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]) for (const sg of sides) {
-      if (clear(convoSpot(mid, up, ab, dist, sg, sw))) { conv.side = sg; conv.swing = sw; break outer; }
+      const c = cost(convoSpot(mid, up, ab, dist, sg, sw), best);
+      if (c < best) { best = c; conv.side = sg; conv.swing = sw; }
+      if (!c) break outer;
+    }
+    // nothing fully clear: on the best side, come in toward the pair until they can be seen
+    if (best) for (const k of [0.8, 0.62, 0.46, 0.34]) {
+      const p = convoSpot(mid, up, ab, dist, conv.side, conv.swing, k);
+      conv.k = k;
+      if (!blocked(p, look)) break;
     }
     // if gliding there would pass through something (an easel, a wall), cut straight to it
-    { const want = convoSpot(mid, up, ab, dist, conv.side, conv.swing), dv = want.clone().sub(camera.position), L = dv.length();
-      _rc.set(camera.position, dv.normalize()); _rc.far = L;
-      conv.cut = _rc.intersectObjects(scene.children, true).some(h => h.object.visible && !h.object.userData.isInk && !h.object.isSprite && h.object.name !== 'planet' && h.object.name !== 'sea'); }
+    conv.cut = hit(camera.position, convoSpot(mid, up, ab, dist, conv.side, conv.swing, conv.k));
+    for (const m of near) if (!m.parent) m.geometry.dispose();
+    sideMat.forEach(m => m.dispose());
     conv.init = false;
     player.st.camHook = convoCam;
   }
