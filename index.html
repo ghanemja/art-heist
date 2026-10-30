@@ -228,6 +228,10 @@
   body.touch #prompt kbd { display: none; }
   body.touch #caseTog { width: 40px; height: 40px; font-size: 24px; right: 4px; top: 4px; }
   body.touch #hud.min { padding-right: 52px; }
+  /* touch: lift the small targets toward 44px */
+  body.touch #bagBtn { padding: 7px 14px 4px; } body.touch .sk.x, body.touch #phClose, body.touch #cardOk, body.touch #endOk { min-height: 44px; }
+  body.touch #screen .chip { padding: 9px 14px; } body.touch #screen .back { padding: 10px 12px; } body.touch #screen .send { width: 40px; height: 40px; }
+  body.touch #handset .homebtn { width: 36px; height: 36px; margin-left: -18px; bottom: 2px; }
   /* short (landscape phone) screens: the drawn keypad would leave no room for the texts; panels scroll */
   @media (max-height: 500px) { #screen .kb { display: none; } #handset { height: calc(100dvh - 70px); bottom: 12px; padding: 22px 10px 30px; }
     #handset .homebtn { bottom: 5px; } #handset .ear { top: 8px; }
