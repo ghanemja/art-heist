@@ -5,7 +5,7 @@
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir } from './world.js';
+import { R, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir, LOTS } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
 import { loadHuman, makeHuman, pose, sit, LOOKS, HUMAN_SCALE } from './human.js';
@@ -318,6 +318,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
   // always turn off at a junction — the assist never pulls more than ~50°.
   // (Get in off-road and it's free until it finds a road, then it's held.)
   function keepOnRoad(dt) {
+    if (LOTS.some(inLot => inLot(st.dir))) { st.roadLock = false; return; }   // in a car park: free to manoeuvre
     const nr = nearestRoad(st.dir);
     if (!nr) { st.roadLock = false; return; }
     const lim = nr.half * 0.75 + 0.1;
