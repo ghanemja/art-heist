@@ -80,12 +80,28 @@ function ladderProp(L = 4.3) {
   lean.rotation.x = 0.22; g.add(lean);
   return ink(g, 'fine');
 }
-function ruts() {
-  const g = new THREE.Group(), mud = paint(0x8a6a52, { hatch: 0 });
-  for (const x of [-0.9, -0.62, 0.62, 0.9]) {
-    const r = new THREE.Mesh(rbox(0.22, 0.03, 3.4, 0.01), mud); r.position.set(x, 0.02, 0); g.add(r);
+// each rut a thin strip draped over the ground point by point once it's placed (dropRuts):
+// laid flat as one long box it sank into the slope behind the museum and only stubs showed
+function ruts() { const g = new THREE.Group(); g.userData.rutXs = [-0.9, -0.62, 0.62, 0.9]; return g; }
+const RUT_MAT = paint(0x8a6a52, { hatch: 0 });
+RUT_MAT.side = THREE.DoubleSide; RUT_MAT.polygonOffset = true; RUT_MAT.polygonOffsetFactor = -6; RUT_MAT.polygonOffsetUnits = -6;
+function dropRuts(g, L = 3.4, W = 0.22, N = 48) {
+  g.updateWorldMatrix(true, true);
+  const inv = g.matrixWorld.clone().invert(), p = new THREE.Vector3();
+  for (const x of g.userData.rutXs) {
+    const pos = [], idx = [];
+    for (let k = 0; k <= N; k++) {
+      const z = -L / 2 + L * k / N, taper = Math.min(1, k / 2, (N - k) / 2) * 0.35 + 0.65;   // soft ends
+      for (const sx of [-1, 1]) {
+        p.set(x + sx * W / 2 * taper, 0, z).applyMatrix4(g.matrixWorld);
+        const d = p.clone().normalize();
+        pos.push(...d.multiplyScalar(standAt(d) + 0.03).applyMatrix4(inv).toArray());
+      }
+      if (k < N) { const a = k * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, RUT_MAT); m.userData.noInk = true; m.userData.noGround = true; g.add(m);
   }
-  return g;
 }
 function van() {
   const g = new THREE.Group(), white = paint(0xf4f1ea), dark = paint(PAL.ink, { hatch: 0 });
@@ -324,7 +340,7 @@ export function buildCase(scene, W) {
   { const d = mF(-2.2, 0.6), gd = mF(-2.2, 0.85);                                          // sparkle just over the easel's top (the frame fills 1.1–2.1 above the paving, the legs reach 2.4)
     items.push({ kind: 'clue', id: 'frames', dir: d, glintAt: gd.clone().multiplyScalar(groundAt(gd) + 2.25) }); }          // the easel's empty frame (museum +x is the town frame's -x: +2.2 was the sculpture)
   { const d = mF(0, -15.7); const r = ruts();   // from the foot of the loading ramp out to the verge
-    place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
+    place(r, d, yawToFace(d, mF(0, -20))); dropRuts(r); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
   { const d = mF(-7.1, -2.0); const b = booth(); place(b, d, yawToFace(d, mF(-7.1, 4)));   // window toward town: you see it as you walk up
     b.updateWorldMatrix(true, true); const L = (x, y, z) => b.localToWorld(new THREE.Vector3(x, y, z));
     items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.32, 0.95) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction

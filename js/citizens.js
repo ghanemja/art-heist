@@ -32,8 +32,52 @@ const CAST = [
   { id: 'iris', role: 'stand', act: 'phone', pitch: 390, line: 'I was MID-TEXT!' },
 ];
 
+// ── the body under the clothes is never seen — but on a bent hip or knee (pedalling, a
+// stride) it pushed out through the trousers/shirt in skin-coloured patches, like a second
+// person showing through. Drop every skin triangle that lies just under a clothing layer
+// (checked in the bind pose against a hash of the cloth's vertices) ──
+function cullHiddenSkin(root) {
+  const cloth = [], skin = [];
+  root.traverse((o) => { if (o.isSkinnedMesh) (o.userData.role === 'cloth' ? cloth : o.userData.role === 'skin' ? skin : []).push(o); });
+  if (!cloth.length || !skin.length) return;
+  const CELL = 0.08, R2 = 0.08 * 0.08, grid = new Map(), v = new THREE.Vector3();
+  const key = (x, y, z) => `${Math.floor(x / CELL)},${Math.floor(y / CELL)},${Math.floor(z / CELL)}`;
+  for (const m of cloth) {
+    const P = m.geometry.attributes.position;
+    for (let i = 0; i < P.count; i++) {
+      v.fromBufferAttribute(P, i).applyMatrix4(m.bindMatrix);
+      const k = key(v.x, v.y, v.z); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(v.x, v.y, v.z);
+    }
+  }
+  const covered = (x, y, z) => {
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL), cz = Math.floor(z / CELL);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+      const a = grid.get(`${cx + i},${cy + j},${cz + k}`); if (!a) continue;
+      for (let n = 0; n < a.length; n += 3) { const dx = a[n] - x, dy = a[n + 1] - y, dz = a[n + 2] - z; if (dx * dx + dy * dy + dz * dz < R2) return true; }
+    }
+    return false;
+  };
+  // only the trunk and legs (the clothing there is coarse after simplifying, so the search is
+  // wider): arms, hands, neck and head keep all their skin — near a cuff or collar a hole would show
+  const TRUNK = /spine|pelvis|root|upperleg|lowerleg|breast|clavicle/i;
+  for (const m of skin) {
+    const g = m.geometry, P = g.attributes.position, idx = g.index; if (!idx) continue;
+    const SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, bones = m.skeleton.bones;
+    const hid = new Uint8Array(P.count);
+    for (let i = 0; i < P.count; i++) {
+      let best = 0, bw = -1; if (SI) for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; best = SI.getComponent(i, k); } }
+      if (!SI || !TRUNK.test(bones[best]?.name || '')) continue;
+      v.fromBufferAttribute(P, i).applyMatrix4(m.bindMatrix); hid[i] = covered(v.x, v.y, v.z) ? 1 : 0;
+    }
+    const keep = [];
+    for (let t = 0; t < idx.count; t += 3) { const a = idx.getX(t), b = idx.getX(t + 1), c = idx.getX(t + 2); if (!(hid[a] && hid[b] && hid[c])) keep.push(a, b, c); }
+    if (keep.length < idx.count) g.setIndex(keep);
+  }
+}
+
 // ── the materials: the town's gouache paint, by the part's role ──
 function restyle(root) {
+  cullHiddenSkin(root);
   root.traverse((o) => {
     if (!o.isMesh) return;
     const role = o.userData.role, m = o.material;
