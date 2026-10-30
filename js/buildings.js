@@ -980,10 +980,18 @@ export function stripMall() {
   K.box(W + tower * 2, 0.08, 1.6, paint(0xe2d6bd), 0, 0.04, 0.75, 0.02);
   // parking lot: asphalt, painted bays, wheel stops, planted islands, lamps
   const LD = 4.6, lotZ = 1.55;
-  const lot = rb(W + tower * 2 + 0.6, 0.05, LD, 0.02, 2);
-  K.put(lot, paint(0x8a8392, { hatch: 0 }), 0, 0.025, lotZ + LD / 2).userData.noInk = true;   // asphalt meets asphalt: no drawn edge
-  // the drive out to the boulevard: it runs onto the road, so no ink either (its outline drew a box on the road)
-  K.put(rb(3.6, 0.045, 3.6, 0.02, 2), paint(0x8a8392, { hatch: 0 }), 0, 0.022, lotZ + LD + 1.75).userData.noInk = true;
+  // the asphalt, its two front corners cut back on the diagonal: the roads either side bend in
+  // there and their kerbs used to run over the lot's square corners
+  const lotHalf = (W + tower * 2 + 0.6) / 2, CUT = 1.0, lotEnd = lotZ + LD;
+  {
+    const sh = new THREE.Shape();
+    sh.moveTo(-lotHalf, lotZ); sh.lineTo(lotHalf, lotZ); sh.lineTo(lotHalf, lotEnd - CUT); sh.lineTo(lotHalf - CUT, lotEnd);
+    sh.lineTo(-lotHalf + CUT, lotEnd); sh.lineTo(-lotHalf, lotEnd - CUT); sh.closePath();
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: false });
+    geo.rotateX(Math.PI / 2); geo.translate(0, 0.05, 0);
+    K.put(geo, paint(0x8a8392, { hatch: 0 }), 0, 0, 0).userData.noInk = true;   // asphalt meets asphalt: no drawn edge
+  }
+  // (the drive out to the boulevard is mallDrive(), built to the road's real edge once it's placed)
   // one row of car-sized bays along the shops (nose in, a wheel stop at the kerb end); the
   // front row is gone, so the drive from the boulevard opens straight into the aisle
   const line = paint(0xf6eedb, { hatch: 0 }), span = W + tower * 2 - 0.6;
@@ -994,13 +1002,6 @@ export function stripMall() {
     const bx = bayX0 + (k + 0.5) * bayW;
     K.box(0.6, 0.08, 0.1, paint(0xd8cab0), bx, 0.09, bayZ0 + 0.2, 0.02);
     bays.push({ x: bx, z: bayZ0 + bayD / 2, stopZ: bayZ0 + 0.2 });
-  }
-  // lane arrows on the drive: in on the left, out on the right
-  const arrow = new THREE.Shape();
-  arrow.moveTo(-0.09, -0.45); arrow.lineTo(0.09, -0.45); arrow.lineTo(0.09, 0.1); arrow.lineTo(0.22, 0.1); arrow.lineTo(0, 0.42); arrow.lineTo(-0.22, 0.1); arrow.lineTo(-0.09, 0.1); arrow.closePath();
-  for (const [ax, dirn] of [[-0.85, -1], [0.85, 1]]) {
-    const a = K.put(new THREE.ShapeGeometry(arrow), line, ax, 0.052, lotZ + LD + 1.0, [-Math.PI / 2, 0, dirn > 0 ? Math.PI : 0]);
-    a.userData.noInk = true;
   }
   for (const s of [-1, 1]) {
     const ix = s * (span / 2 - 0.2);
@@ -1019,11 +1020,59 @@ export function stripMall() {
   py.put(extrude(leaf, 0.05, 0.015), paint(0xe8604c), 0, 3.05, -0.03);
   bench(K, -W * 0.18, 0.5, 0, PAL.bark, 0.08); bench(K, W * 0.3, 0.5, 0, PAL.bark, 0.08);
   const half = W / 2 + tower;
-  K.g.userData.floor = (x, z) => (z > -0.05 && z < 1.55 && Math.abs(x) < half) ? 0.08 : (z >= 1.55 && z < lotZ + LD && Math.abs(x) < half + 0.3) ? 0.05 : null;
+  K.g.userData.floor = (x, z) => (z > -0.05 && z < 1.55 && Math.abs(x) < half) ? 0.08
+    : (z >= 1.55 && z < lotEnd && Math.abs(x) < lotHalf && Math.abs(x) + z < lotHalf + lotEnd - CUT) ? 0.05 : null;
   // for the plaza's life (js/plaza.js): the shop doors, the bays, the aisle
   let ux = -W / 2;
-  K.g.userData.mall = { bays, aisleZ: lotZ + LD - 0.75, walkZ: 1.05, lotEnd: lotZ + LD, lotHalf: (W + tower * 2 + 0.6) / 2,
+  K.g.userData.mall = { bays, aisleZ: lotZ + LD - 0.75, walkZ: 1.05, lotEnd, lotHalf,
     doors: units.map(u => { const d = { name: u.name, x: ux + u.w / 2 + u.w * 0.25, z: 0.12 }; ux += u.w; return d; }) };
+  return K.g;
+}
+
+// Maple Plaza's drive: from the lot's front edge (z = lotEnd, in the mall's frame) out to the
+// boulevard, built to the road's real carriageway edge — edgeZ(x) gives it, in the same frame.
+// A bell-mouth: it flares as it meets the road, rises from the lot's height to just under the
+// road's surface (no step, no slab poking over the kerb or the verge), and a dropped kerb runs
+// down each side to meet the road's own kerb. Place it with the mall's d + yaw.
+export function mallDrive(edgeZ, lotEnd) {
+  const K = kit(), asph = paint(0x8a8392, { hatch: 0 }), kerb = paint(PAL.kerb, { hatch: 0 }), line = paint(0xf6eedb, { hatch: 0 });
+  const NU = 10, NV = 12, z0 = lotEnd - 0.03;
+  const halfW = (v) => 1.8 + 0.75 * v ** 2.5;
+  // lot (0.05) → over the road's kerb band (0.07) → just under the road's surface (≈0.10), which
+  // it runs a little way beneath (the road's edge is a chord between its samples: no gap to see)
+  const lift = (v) => { const r = Math.min(1, 1.2 * v); return 0.051 + 0.045 * r * r * (3 - 2 * r) - 0.01 * Math.max(0, (v - 0.9) / 0.1); };
+  const at = (u, v) => { const x = u * halfW(v); return [x, lift(v), z0 + v * (edgeZ(x) + 0.1 - z0)]; };
+  const strip = (pts, idx, mat, flatUp = false) => {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)); g.setIndex(idx); g.computeVertexNormals();
+    if (flatUp) { const n = g.attributes.normal; for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0); }   // shaded like the flat lot and road
+    K.put(g, mat, 0, 0, 0).userData.noInk = true;
+  };
+  { // the slab: a grid, so it lays onto the curve and the rise is smooth
+    const pts = [], idx = [];
+    for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) pts.push(...at(i / NU * 2 - 1, j / NV));
+    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) { const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
+    strip(pts, idx, asph, true);
+  }
+  for (const s of [-1, 1]) { // dropped kerbs down both sides: a top 0.15 wide, a skirt to below the verge (covers the slab's edge)
+    const pts = [], idx = [];
+    for (let j = 0; j <= NV; j++) {
+      const v = j / NV, [x, y, z] = at(s, v), o = 0.15 * s;
+      pts.push(x - 0.02 * s, y + 0.012, z, x + o, y + 0.012, z, x + o, 0.0, z);
+    }
+    for (let j = 0; j < NV; j++) {
+      const a = j * 3, b = a + 3;
+      const f = (p, q, r) => s > 0 ? idx.push(p, q, r) : idx.push(p, r, q);
+      f(a, b, a + 1); f(a + 1, b, b + 1); f(a + 1, b + 1, a + 2); f(a + 2, b + 1, b + 2);
+    }
+    strip(pts, idx, kerb);
+  }
+  // lane arrows: in on the left, out on the right
+  const arrow = new THREE.Shape();
+  arrow.moveTo(-0.09, -0.45); arrow.lineTo(0.09, -0.45); arrow.lineTo(0.09, 0.1); arrow.lineTo(0.22, 0.1); arrow.lineTo(0, 0.42); arrow.lineTo(-0.22, 0.1); arrow.lineTo(-0.09, 0.1); arrow.closePath();
+  for (const [ax, dirn] of [[-0.85, -1], [0.85, 1]]) {
+    const v = 0.4, [, y, z] = at(ax / halfW(v), v);
+    K.put(new THREE.ShapeGeometry(arrow), line, ax, y + 0.008, z, [-Math.PI / 2, 0, dirn > 0 ? Math.PI : 0]).userData.noInk = true;
+  }
   return K.g;
 }
 
