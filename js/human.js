@@ -448,7 +448,7 @@ function fixColors(root) {
 
 // the critic keeps her own colours; everyone else is their own person (folk.js)
 export const LOOKS = {
-  critic: {},
+  critic: { height: 0.9 },             // a touch under the townsfolk (they run 1.01–1.20 tall; she was 1.14 with her beret)
   vivi: { folk: true, skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', glasses: true, stance: 'writing', top: 0x8e2f3a, outfit: 'coat', accent: 0xf3ead7,
     bottom: 0x2a2230, shoes: 0x6e2a2e, height: 1.05, build: 0.94,
     // the director: an oval face, worried brows, a tight anxious mouth, lashes, glasses, a sleek bun with a centre part

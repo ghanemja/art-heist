@@ -223,7 +223,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       const bw = new THREE.Vector3(), bq = new THREE.Quaternion(), bs = new THREE.Vector3();
       spine.matrixWorld.decompose(bw, bq, bs);
       // (the pack and its straps were drawn for her at scale 0.13: they shrink with her)
-      const K = HUMAN_SCALE / 0.13;
+      const K = HUMAN_SCALE * (LOOKS.critic.height ?? 1) / 0.13;
       const at = bodies.walk.worldToLocal(bw.clone()).add(new THREE.Vector3(0, -0.02, -0.11).multiplyScalar(K));
       const world = bodies.walk.localToWorld(at);
       bp.position.copy(spine.worldToLocal(world));
@@ -239,7 +239,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     sit(rider);
     // (her hips sit 0.565·HUMAN_SCALE/0.13 above the rig's origin: lift the seat so they stay on the
     // cushion, and slide it a touch forward so her shorter arms reach the wheel)
-    const seat = new THREE.Group(); seat.position.set(0.3, 0.42 + 0.565 * (1 - HUMAN_SCALE / 0.13), -0.31); seat.add(rider.rig);
+    const seat = new THREE.Group(); seat.position.set(0.3, 0.42 + 0.565 * (1 - HUMAN_SCALE * (LOOKS.critic.height ?? 1) / 0.13), -0.31 + 0.04); seat.add(rider.rig);
     bodies.jeep.add(seat);
   });
 
