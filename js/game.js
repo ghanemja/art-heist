@@ -133,6 +133,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   function beginPlay() {
     G.state = 'play';
+    // start the game looking at the museum, whatever happened over the intro and the texts
+    Object.assign(player.st, { camYaw: 0, camPitch: 0, recenter: 0 });
+    player.st.camFwd.copy(player.st.heading);
     player.st.enabled = true; player.st.playing = true;
     show($('hud')); show($('nbBtn')); show($('bagBtn')); showKeys();
     phone.state.unread = 0;
