@@ -55,7 +55,7 @@ export function createPlaza({ scene, town, game, player }) {
   // box reaches over the road's edge, so turning in isn't held back at the kerb)
   { const inv = root.matrixWorld.clone().invert(), p = new THREE.Vector3(), r = root.position.length();
     LOTS.push((d) => { p.copy(d).multiplyScalar(r).applyMatrix4(inv);
-      return (p.z > 1.5 && p.z < info.lotEnd && Math.abs(p.x) < info.lotHalf) || (p.z >= info.lotEnd - 0.1 && p.z < info.lotEnd + 4.6 && Math.abs(p.x) < 1.9); }); }
+      return (p.z > 1.5 && p.z < info.lotEnd && Math.abs(p.x) < info.lotHalf) || (p.z >= info.lotEnd - 0.1 && p.z < info.lotEnd + 4.6 && Math.abs(p.x) < 2.6); }); }
 
   // ── parked cars ──
   const cars = CARS.map(([bi, col]) => {

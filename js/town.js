@@ -5,11 +5,11 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=10';
-import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -217,8 +217,21 @@ export function buildTown(scene) {
   }
   // Maple Plaza: the strip mall out past the boulevard, its lot opening onto it
   {
-    const d = fC(...MALL.at), g = add(placeOnPlanet(stripMall(), d, yawToFace(d, fC(MALL.at[0] - 10, MALL.at[1]))));
+    const d = fC(...MALL.at), yaw = yawToFace(d, fC(MALL.at[0] - 10, MALL.at[1]));
+    const g = add(placeOnPlanet(stripMall(), d, yaw));
     out.mall = { dir: d, root: g };
+    // the drive, built to the boulevard's real carriageway edge: for each x across it, walk out
+    // from the lot (in the mall's frame) to where the road's surface begins
+    { g.updateWorldMatrix(true, false);
+      const { lotEnd } = g.userData.mall, v = new THREE.Vector3();
+      const past = (x, z) => { const nr = nearestRoad(g.localToWorld(v.set(x, 0, z)).normalize()); return nr && nr.dist <= nr.half; };
+      const edgeZ = (x) => {
+        let lo = lotEnd, hi = lotEnd + 6;
+        if (!past(x, hi)) return lotEnd + 2.2;                    // no road found: a short apron
+        for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (past(x, m)) hi = m; else lo = m; }
+        return hi;
+      };
+      add(placeOnPlanet(mallDrive(edgeZ, lotEnd), d, yaw, { inked: false })); }
     addFloor(g, g.userData.floor); feet(g);
     for (let k = -2; k <= 2; k++) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 2.3), 1.3);
     for (const k of [-1, 1]) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 5.1), 0.8);
