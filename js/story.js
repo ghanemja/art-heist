@@ -4,6 +4,7 @@
 // you think you know, you name someone and back it with two things you found.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { HARBOUR } from './harbour.js';
 import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt, onRoad, nearestRoad } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe, bench, rnd } from './props.js';
@@ -339,7 +340,11 @@ export function buildCase(scene, W) {
     if ((W.toTown(b.localToWorld(new THREE.Vector3(1, 0, 0)).normalize())[0] - bx) * (wallX - bx) < 0) b.rotateY(Math.PI);
     items.push({ kind: 'clue', id: 'bike', dir: bd, obj: b }); }
   // the harbour crates and the station ticket
-  { const d = W.siteAt('harbour', [2.2, 0.5]); const c = crates(); place(c, d, yawToFace(d, W.sites.harbour.dir)); items.push({ kind: 'clue', id: 'crates', dir: d, obj: c }); W.solid(d, 1.2); }
+  // the crates stand on the quay's west end, clear of the boathouse and the walk to the pier, label to the road
+  { const d = W.siteAt('harbour', HARBOUR.crates), f = W.siteAt('harbour', HARBOUR.cratesFace); const c = crates(); place(c, d, yawToFace(d, f));
+    c.updateWorldMatrix(true, true);
+    items.push({ kind: 'clue', id: 'crates', dir: d, obj: c, glintAt: c.localToWorld(new THREE.Vector3(0, 2.5, 0.2)) });   // the sparkle over the stack, not inside it
+    for (const x of [-0.85, 0.85]) W.solid(c.localToWorld(new THREE.Vector3(x, 0, 0)).normalize(), 0.75); }
   { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); place(t, d); items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t }); }
   // people
   const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.1, 0.45), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: null };

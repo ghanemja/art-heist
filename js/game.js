@@ -6,7 +6,7 @@
 // Act 2 (once you've named the thief): the getaway to Cape Far Side, a launch
 // countdown, an ABORT button, the police, and a letterboxed epilogue.
 import * as THREE from 'three';
-import { R, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurface, slerpDir } from './world.js';
+import { R, SEA, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurface, slerpDir, isWater, groundAt } from './world.js';
 import { CAPE, cargoRocket, launchConsole, paintingCrate } from './buildings.js';
 import { buildCar } from './player.js';
 import { createPhone } from './phone.js';
@@ -61,6 +61,26 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   scene.add(parked);
   seatParked();
   let jeepDir = jeepSpot.clone();
+
+  // ── the little boat at the harbour: moored by the pier, yours to take out for fun ──
+  const moored = new THREE.Group(), mooredBody = player.bodies.boat.clone(true);
+  moored.add(mooredBody); mooredBody.visible = true;
+  moored.userData.noGround = true;
+  let boatDir = town.harbour.boat.clone();
+  const moor = (d, face) => { moored.position.copy(d).multiplyScalar(R + SEA); alignToSurface(moored, d, yawToFace(d, face)); };
+  moor(boatDir, town.harbour.boatFace);
+  scene.add(moored);
+  // where you can step off the boat: dry land or the pier, just over the side
+  function landingSpot() {
+    const here = player.st.dir, h = player.st.heading, side = new THREE.Vector3().crossVectors(h, here).normalize();
+    for (const dist of [1.2, 1.6, 2.1]) for (const a of [Math.PI / 2, -Math.PI / 2, 1.0, -1.0, 2.1, -2.1, 0, Math.PI]) {
+      const c = here.clone().multiplyScalar(R).addScaledVector(h, Math.cos(a) * dist).addScaledVector(side, Math.sin(a) * dist).normalize();
+      if (isWater(c, -0.1) && groundAt(c) < R + SEA + 0.2) continue;            // properly dry (not the waterline), or the pier
+      if (town.colliders.some(k => arc(c, k.dir) < k.r + 0.3)) continue;
+      return c;
+    }
+    return null;
+  }
 
   // ── townsfolk out walking, and what happens when the car meets anyone ──
   const walkers = buildWalkers(scene, town);
@@ -158,6 +178,8 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     const k = (t) => `<kbd>${t}</kbd>`;
     $('hint').innerHTML = player.st.mode === 'jeep'
       ? `${k('W')}${k('S')} drive · ${k('A')}${k('D')} steer · ${k('E')} get out · scroll to zoom · ${k('C')} camera behind · ${k('H')} hide`
+      : player.st.mode === 'boat'
+      ? `${k('W')}${k('S')} throttle · ${k('A')}${k('D')} steer · ${k('E')} get out (by the pier or the shore) · scroll to zoom · ${k('C')} camera behind · ${k('H')} hide`
       : `${k('WASD')} walk · ${k('Shift')} run · ${k('E')} look / talk · ${k('N')} notebook · ${k('B')} backpack · ${k('P')} phone · drag to look · scroll to zoom · ${k('C')} camera · ${k('H')} hide`;
     show($('hint'), keysOn && G.state === 'play');
   }
@@ -178,13 +200,16 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       }
       const dj = arc(here, jeepDir);
       if (dj < 2.6 && (!nearest || dj < best)) { best = dj; nearest = { kind: 'jeep' }; }
+      const db = arc(here, boatDir);
+      if (db < 2.4 && (!nearest || db < best)) { best = db; nearest = { kind: 'boat' }; }
       if (G.act === 3 && cape.console && arc(here, cape.consoleDir) < 1.9) nearest = { kind: 'console' };
       for (const lm of town.landmarks) { if (lm.decor) continue; const d = arc(here, lm.dir); if (d < 3.6 && d < best) { best = d; nearest = { kind: 'project', lm }; } }
-    } else nearest = { kind: 'exit' };
+    } else if (player.st.mode === 'boat') { const spot = landingSpot(); nearest = spot ? { kind: 'exit', spot } : null; }
+    else nearest = { kind: 'exit' };
     const pr = $('prompt');
     if (!nearest) { show(pr, false); return; }
     const label = nearest.kind === 'person' ? `talk to ${PEOPLE.find(p => p.id === nearest.id).name.split(',')[0]}`
-      : nearest.kind === 'jeep' ? 'get in the car' : nearest.kind === 'exit' ? 'get out'
+      : nearest.kind === 'jeep' ? 'get in the car' : nearest.kind === 'boat' ? 'get in the boat' : nearest.kind === 'exit' ? 'get out'
       : nearest.kind === 'console' ? 'ABORT THE LAUNCH' : nearest.kind === 'project' ? `visit ${nearest.lm.name}` : 'look closer';
     pr.innerHTML = `<kbd>E</kbd>${label}`;
     show(pr);
@@ -207,6 +232,21 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (nearest.kind === 'console') return abortLaunch();
     if (nearest.kind === 'project') return openProject(nearest.lm);
     if (nearest.kind === 'jeep') { parked.visible = false; player.setMode('jeep'); player.st.heading = new THREE.Vector3(0, 0, 1).applyQuaternion(parked.quaternion); player.st.camFwd.copy(player.st.heading); showKeys(); renderCase(); return; }
+    if (nearest.kind === 'boat') {
+      moored.visible = false; player.setMode('boat');
+      player.st.dir.copy(boatDir);
+      player.st.heading = new THREE.Vector3(0, 0, 1).applyQuaternion(moored.quaternion).projectOnPlane(boatDir).normalize();
+      player.st.camFwd.copy(player.st.heading); showKeys(); return;
+    }
+    if (nearest.kind === 'exit' && player.st.mode === 'boat') {
+      // leave the boat bobbing where you stopped, and step over the side onto the pier or the bank
+      boatDir = player.st.dir.clone();
+      moor(boatDir, boatDir.clone().multiplyScalar(R).addScaledVector(player.st.heading, 5).normalize());
+      moored.visible = true;
+      player.setMode('walk');
+      player.st.dir.copy(nearest.spot); player.st.gr = 0;
+      showKeys(); return;
+    }
     if (nearest.kind === 'exit') {
       player.setMode('walk');
       jeepDir = player.st.dir.clone();
@@ -857,6 +897,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     }
   }
   function update(dt, t) {
+    if (moored.visible) {                                   // the moored boat rides the swell
+      mooredBody.position.y = 0.035 * Math.sin(t * 1.7); mooredBody.rotation.z = 0.04 * Math.sin(t * 1.3); mooredBody.rotation.x = 0.02 * Math.sin(t * 1.1);
+    }
     tickPeople(dt);
     tickWalkers(walkers, dt);
     tickCape(dt, t);

@@ -5,7 +5,8 @@
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir } from './world.js';
+import { R, SEA, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir } from './world.js';
+import { buildBoat, createWake } from './harbour.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
 import { loadHuman, makeHuman, pose, sit, LOOKS, HUMAN_SCALE } from './human.js';
@@ -14,6 +15,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const MODES = {
   walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.88, radius: 0.3, follow: 1.4 },
   jeep: { max: 11, accel: 6, turn: 2.4, camD: 9.5, camH: 3.6, look: 1.2, radius: 0.8, follow: 3.0 },
+  boat: { max: 5.5, accel: 2.2, turn: 1.5, camD: 8.0, camH: 3.0, look: 0.9, radius: 0.7, follow: 2.2 },
 };
 
 // ── the car: a little vintage roadster. The body is its side silhouette —
@@ -203,7 +205,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
   root.add(squash);
   root.userData.noGround = true;
   scene.add(root);
-  const bodies = { walk: new THREE.Group(), jeep: buildCar() };
+  const bodies = { walk: new THREE.Group(), jeep: buildCar(), boat: buildBoat() };
   for (const b of Object.values(bodies)) { squash.add(b); b.visible = false; }
   const critic = { inst: null };
   // a simple stand-in until the model streams in (never visible for long)
@@ -241,7 +243,16 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // cushion, and slide it a touch forward so her shorter arms reach the wheel)
     const seat = new THREE.Group(); seat.position.set(0.3, 0.42 + 0.565 * (1 - HUMAN_SCALE / 0.13), -0.31); seat.add(rider.rig);
     bodies.jeep.add(seat);
+    // …and steers the boat, on its bench behind the wheel
+    const skipper = makeHuman(glb, LOOKS.critic);
+    sit(skipper);
+    const bench = new THREE.Group(); bench.position.set(0, 0, bodies.boat.userData.seatZ + 0.04); bench.add(skipper.rig);
+    bodies.boat.add(bench);
+    // set her hips on the bench: measured off the posed rig, not guessed
+    const hips = skipper.bones?.hips;
+    if (hips) { bodies.boat.updateMatrixWorld(true); const hy = bodies.boat.worldToLocal(hips.getWorldPosition(new THREE.Vector3())).y; bench.position.y = bodies.boat.userData.seatY + 0.06 - hy; }
   });
+  const wake = createWake(scene);
 
   const st = {
     mode: 'walk', dir: startDir.clone(), heading: null, speed: 0, steer: 0,
@@ -338,7 +349,18 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     st.roadLock = false;
     for (const [k, b] of Object.entries(bodies)) b.visible = k === m;
     st.speed *= 0.3;
+    st.grT = null;                           // a new footing: stepping out of the boat onto the pier isn't a wall
     st.camInit = false;                      // cut to the new framing rather than swinging over the roof
+  }
+
+  // the boat keeps to open water: deep enough under its middle and its bow (or stern, going
+  // astern), clear of the pier and the quay (floors over the water), its sides too
+  function afloat(d, dirn) {
+    const sd = new THREE.Vector3().crossVectors(st.heading, d).normalize();
+    const at = (fwd, side) => d.clone().multiplyScalar(R).addScaledVector(st.heading, fwd).addScaledVector(sd, side).normalize();
+    for (const p of [d, at(1.25 * dirn, 0), at(0.3, 0.6), at(0.3, -0.6), at(-0.9, 0.55), at(-0.9, -0.55)])
+      if (!isWater(p, 0.25) || groundAt(p) > R + SEA + 0.1) return false;
+    return true;
   }
 
   function update(dt, t) {
@@ -377,7 +399,8 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         st.steerIn = steer;
         target = thr * M.max;
         st.steer += (steer - st.steer) * (1 - Math.exp(-8 * dt));
-        const turnRate = M.turn * st.steer * Math.min(1, Math.abs(st.speed) / 3) * Math.sign(st.speed || 1);
+        // (a boat turns a little even when nearly still — it can always steer off the pier or the bank)
+        const turnRate = M.turn * st.steer * Math.min(1, (Math.abs(st.speed) + (st.mode === 'boat' ? 1.2 : 0)) / 3) * Math.sign(st.speed || 1);
         st.heading.applyAxisAngle(up, -turnRate * dt);
       }
     }
@@ -389,14 +412,14 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     if (step) {
       const was = st.dir.clone();
       const nd = st.dir.clone().multiplyScalar(R).addScaledVector(st.heading, step).normalize();
-      if (!isWater(nd, 0.1)) {
+      if (st.mode === 'boat' ? afloat(nd, Math.sign(step)) : !isWater(nd, 0.1) || groundAt(nd) > R + SEA + 0.2 && standAt(nd) > R + SEA + 0.2) {   // (a pier is a floor over the water: her footing must be on it too)
         st.dir.copy(nd);
       } else st.speed *= 0.3;
       if (st.mode === 'jeep') keepOnRoad(dt);
       // collide: slide out of every footprint (the car ploughs past lamps and
       // people — people get knocked flying instead, see bump.js)
       for (const c of colliders) {
-        if (st.mode === 'jeep' && c.r < 0.4) continue;
+        if (st.mode !== 'walk' && c.r < 0.4) continue;
         const a = arc(st.dir, c.dir), lim = c.r + M.radius;
         if (a >= lim || a < 1e-5) continue;
         const perp = st.dir.clone().sub(c.dir.clone().multiplyScalar(c.dir.dot(st.dir))).normalize();
@@ -434,7 +457,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // place + orient: on the terrain, or on whatever floor you're standing on
     // terrain, floors, or the road ribbon; on foot, under any of her feet (she steps up
     // as a shoe lands on the step, not once her middle is over it)
-    const gr = st.mode === 'walk' ? footing(st.dir, st.grT ?? null).r : standAt(st.dir);
+    const gr = st.mode === 'walk' ? footing(st.dir, st.grT ?? null).r : st.mode === 'boat' ? R + SEA : standAt(st.dir);
     st.grT = gr;
     if (!st.gr) st.gr = gr;
     st.gr += (gr - st.gr) * (1 - Math.exp(-16 * dt));         // step up/down, don't pop
@@ -456,6 +479,16 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       for (const w of bodies.jeep.userData.wheels) w.rotation.x += st.speed * dt / 0.35;
       fitToGround(bodies.jeep, root, 1 - Math.exp(-14 * dt));       // all four tyres on the road
     } else { bodies.jeep.position.y = 0; bodies.jeep.rotation.x = bodies.jeep.rotation.z = 0; }
+    // the boat bobs and rolls on the swell, leans into its turns, lifts its bow under power
+    if (st.mode === 'boat') {
+      const B = bodies.boat, k = Math.min(1, Math.abs(st.speed) / M.max);
+      B.position.y = 0.035 * Math.sin(t * 1.7) + 0.015 * Math.sin(t * 2.9 + 1);
+      B.rotation.z = 0.04 * Math.sin(t * 1.3) + st.steer * 0.07 * k;
+      B.rotation.x = 0.025 * Math.sin(t * 1.1 + 0.5) - 0.06 * k * Math.sign(st.speed);
+      B.userData.flag.rotation.y = 0.3 * Math.sin(t * 6) + 0.4 * k;
+    }
+    wake.update(dt, st.mode === 'boat' && Math.abs(st.speed) > 0.8,
+      st.dir.clone().multiplyScalar(R + SEA + 0.02).addScaledVector(st.heading, -1.3 * Math.sign(st.speed || 1)), st.dir, st.speed, st.heading);
 
     // ── camera ──
     // trails on a spring. On foot it only eases round behind you while you walk
@@ -464,7 +497,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // doesn't leave you facing the camera; backing up never swings it). C snaps behind you.
     const ang = Math.atan2(_w.crossVectors(st.camFwd, st.heading).dot(up), st.camFwd.dot(st.heading));
     const moving = Math.min(1, Math.abs(st.speed) / 2), ca = Math.cos(ang);
-    let follow = st.mode === 'jeep' ? M.follow * moving
+    let follow = st.mode !== 'walk' ? M.follow * moving
       : (st.dragT > 1.2 ? M.follow * moving * (ca > 0 ? 0.35 + 0.65 * ca : ca > -0.35 ? 0.25 : 0) : 0);
     if (st.recenter > 0) { st.recenter -= dt; follow = Math.max(follow, 7); }
     if (follow) st.camFwd.applyAxisAngle(up, ang * (1 - Math.exp(-follow * dt)));
@@ -506,8 +539,8 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     st.reachS += (f0 - st.reachS) * (1 - Math.exp(-(f0 < st.reachS ? 8 : 4) * dt));
     const f = st.reachS;
     if (f < 0.999) {
-      const keep = Math.max(f, st.mode === 'jeep' ? 0.6 : 0.4);
-      want.lerpVectors(head, want, keep).addScaledVector(up, (1 - f) * (st.mode === 'jeep' ? 4.5 : 2.4));
+      const keep = Math.max(f, st.mode !== 'walk' ? 0.6 : 0.4);
+      want.lerpVectors(head, want, keep).addScaledVector(up, (1 - f) * (st.mode !== 'walk' ? 4.5 : 2.4));
     }
     // look a little ahead of where you're going — the lead itself on a slow spring, so a
     // quick turn doesn't whip the view round
