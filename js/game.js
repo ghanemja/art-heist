@@ -6,7 +6,7 @@
 // Act 2 (once you've named the thief): the getaway to Cape Far Side, a launch
 // countdown, an ABORT button, the police, and a letterboxed epilogue.
 import * as THREE from 'three';
-import { R, SEA, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurface, slerpDir, isWater, groundAt } from './world.js';
+import { R, SEA, arc, radiusAt, settle, yawToFace, nearestRoad, standAt, alignToSurface, slerpDir, isWater, groundAt, ROADS } from './world.js';
 import { CAPE, cargoRocket, launchConsole, paintingCrate } from './buildings.js';
 import { buildCar } from './player.js';
 import { createPhone } from './phone.js';
@@ -765,14 +765,23 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (cape.policeT >= 0) {
       cape.policeT += dt;
       cape.police.forEach((P, i) => {
-        const k = THREE.MathUtils.clamp((cape.policeT - P.delay) / 2.5, 0, 1);
+        const k = THREE.MathUtils.clamp((cape.policeT - P.delay) / (P.path ? P.dur : 2.5), 0, 1);
         if (k <= 0) return;
         P.frame.visible = true;
         const [red, blue] = P.lights, f = Math.sin(t * 9 + i * 1.3) > 0;
         red.emissiveIntensity = f ? 2.2 : 0.2; blue.emissiveIntensity = f ? 0.2 : 2.2;
         if (P.done) return;
-        const e = Math.min(1 - (1 - k) ** 3, P.stopE ?? 1);
-        capeAttach(P.frame, P.x, P.z + 9 * (1 - e), P.ry);
+        if (P.path) {
+          // along the road in lane, then off it for the last few metres to the parking spot;
+          // easing out, and turning to the spot's own heading as it stops
+          const s = (1 - (1 - k) ** 2.2) * P.len, { d, ahead } = pathAt(P, s);
+          P.frame.position.copy(d).multiplyScalar(R);
+          alignToSurface(P.frame, d, yawToFace(d, ahead));
+          if (k >= 1) capeAttach(P.frame, P.x, P.z + 9 * (1 - P.stopE), P.ry);
+        } else {
+          const e = Math.min(1 - (1 - k) ** 3, P.stopE ?? 1);
+          capeAttach(P.frame, P.x, P.z + 9 * (1 - e), P.ry);
+        }
         P.frame.position.setLength(standAt(P.frame.position.clone().normalize()));    // on the ground…
         player.fitToGround(P.body, P.frame);                                           // …all four wheels down
         if (k >= 1) {
@@ -826,6 +835,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
         cars.push([capeDir(P.x, P.z + 9 * (1 - P.stopE)), 2.1]);
       }
     }
+    policeRoutes();
     cape.policeT = 0;
     updateGoal();
     // …and you SEE them come: a letterboxed shot from beside the pad, looking down the road
@@ -840,20 +850,53 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       audio.siren(5);
       const t0 = performance.now() / 1000, pos = new THREE.Vector3(), look = new THREE.Vector3();
       player.st.camHook = policeCam = (cam) => {
-        const k = Math.min(1, (performance.now() / 1000 - t0) / 5.5), e = k * k * (3 - 2 * k);
-        // the lead car's spot along its run in (what the shot keeps in frame)
-        const P = cape.police[0], pk = THREE.MathUtils.clamp((cape.policeT - P.delay) / 2.5, 0, 1);
-        const pe = Math.min(1 - (1 - pk) ** 3, P.stopE ?? 1), carZ = P.z + 9 * (1 - pe);
-        const want = CL(-3.6 + 1.0 * e, 4.4 - 0.9 * e, 1.6 + 1.0 * e);                 // up by the pad, easing down
-        const at = CL(1.6, 0.2, carZ * 0.6 + 6.6 * 0.4);
+        const k = Math.min(1, (performance.now() / 1000 - t0) / 6.5), e = k * k * (3 - 2 * k);
+        // look at the middle of the convoy (the cars on their way), from up behind the pad,
+        // high enough to see the road they come in on and all three arriving
+        const c = new THREE.Vector3(); let n = 0;
+        for (const P of cape.police) if (P.frame.visible) { c.add(P.frame.position); n++; }
+        const park = CL(1.7, 0.3, 6.6), at = n ? c.divideScalar(n).lerp(park, 0.35) : park;
+        const want = CL(-2.2 + 0.8 * e, 7.5 - 2.0 * e, -1.5 + 1.5 * e);
         if (!pos.lengthSq()) { pos.copy(want); look.copy(at); }
         pos.lerp(want, 0.08); look.lerp(at, 0.12);
         cam.position.copy(pos); cam.up.copy(cape.up); cam.lookAt(look);
       };
-      setTimeout(startEpilogue, 5600);
+      setTimeout(startEpilogue, 7400);
     }, 1400);
   }
   let policeCam = null;
+  // each police car's way in: back up the cape's access road ~18 units, then forward down it
+  // in the lane (right of the centre line), leaving it only for the last stretch to its spot
+  function policeRoutes() {
+    const pad = capeDir(0, 0);
+    let rd = null, ci = 0, best = 1e9;                        // the road that reaches the cape: its sample nearest the pad
+    for (const r of ROADS) r.pts.forEach((q, i) => { const a = arc(q, pad); if (a < best) { best = a; rd = r; ci = i; } });
+    if (!rd || best > 14) return;                              // no road out here: the old straight run-in
+    const P0 = rd.pts, away = ci > P0.length / 2 ? -1 : 1;     // walking the samples away from the cape
+    for (const P of cape.police) {
+      const spot = capeDir(P.x, P.z + 9 * (1 - P.stopE));
+      let j = ci, bj = 1e9;                                    // the road sample nearest its spot…
+      for (let i = 0; i < P0.length; i++) { const a = arc(P0[i], spot); if (a < bj) { bj = a; j = i; } }
+      const pts = []; let L = 0;                               // …and ~18 units of road back from there
+      for (let i = j; i >= 0 && i < P0.length; i += away) { pts.unshift(P0[i]); if (pts.length > 1) L += arc(pts[0], pts[1]); if (L > 18) break; }
+      const lane = pts.map((q, n) => {                         // shift into the right-hand lane
+        const a = pts[Math.max(0, n - 1)], b = pts[Math.min(pts.length - 1, n + 1)];
+        const tg = b.clone().sub(a).projectOnPlane(q).normalize(), right = new THREE.Vector3().crossVectors(tg, q).normalize();
+        return q.clone().multiplyScalar(R).addScaledVector(right, rd.half * 0.45).normalize();
+      });
+      lane.push(spot);
+      const cum = [0]; for (let n = 1; n < lane.length; n++) cum.push(cum[n - 1] + arc(lane[n - 1], lane[n]));
+      Object.assign(P, { path: lane, cum, len: cum[cum.length - 1], dur: 4.4, delay: [0, 1.4, 2.8][cape.police.indexOf(P)] });
+    }
+  }
+  function pathAt(P, s) {
+    const { path, cum } = P; let n = 1;
+    while (n < cum.length - 1 && cum[n] < s) n++;
+    const t = THREE.MathUtils.clamp((s - cum[n - 1]) / Math.max(1e-6, cum[n] - cum[n - 1]), 0, 1);
+    const d = slerpDir(path[n - 1], path[n], t);
+    const ahead = n < path.length - 1 || t < 0.98 ? slerpDir(path[n - 1], path[n], Math.min(1, t + 0.3)) : path[n].clone().multiplyScalar(2).sub(path[n - 1]).normalize();
+    return { d, ahead: arc(ahead, d) < 1e-4 ? path[n] : ahead };
+  }
 
   // ── the epilogue: three letterboxed shots, then the papers ──
   const ARTS = ['art_cows_in_storm.jpg', 'art_IMG_5262.jpg', 'art_IMG_7152.jpg'];
