@@ -51,7 +51,10 @@ export function surfH(d) {
       // a plane rises off the sphere as you leave its tangent point: past its edge it holds the
       // edge's height while it eases out (it used to keep climbing there, and threw up a ~5-high
       // ridge round the museum — the steep hill the project roads ran over)
-      const target = f.plane ? (R + f.h) / Math.max(0.5, Math.cos(Math.min(df, f.r) / R)) - R : f.h;
+      // (the plane's height is measured from ITS tangent point, not the flat's centre — they
+      // differ for the museum, and measuring from the centre lifted the forecourt's lawn over its paving)
+      const pd = df <= f.r || !f.plane ? d : slerpDir(f.d, d, f.r / df);
+      const target = f.plane ? (R + f.h) / Math.max(0.5, pd.dot(f.plane)) - R : f.h;
       h += (target - h) * (1 - ss(f.r, f.r + blend, df));
     }
   }
@@ -323,6 +326,15 @@ for (const m of [roadMat, kerbMat, dashMat]) { m.polygonOffset = true; m.side = 
 roadMat.polygonOffsetFactor = -2; roadMat.polygonOffsetUnits = -2;
 kerbMat.polygonOffsetFactor = -1; kerbMat.polygonOffsetUnits = -1;
 dashMat.polygonOffsetFactor = -3; dashMat.polygonOffsetUnits = -3;
+// the highest ground within a road sample's reach, + the carriageway's lift (as ribbon drapes it)
+const _rt1 = new THREE.Vector3(), _rt2 = new THREE.Vector3(), _rtq = new THREE.Vector3();
+function roadTop(dir) {
+  _rt1.crossVectors(dir, Math.abs(dir.y) < 0.9 ? UP : new THREE.Vector3(1, 0, 0)).normalize(); _rt2.crossVectors(dir, _rt1);
+  let r = radiusAt(dir);
+  for (const [u, v] of [[0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6], [0.42, 0.42], [-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42]])
+    r = Math.max(r, radiusAt(_rtq.copy(dir).multiplyScalar(R).addScaledVector(_rt1, u).addScaledVector(_rt2, v).normalize()));
+  return r + 0.06;
+}
 function ribbon(pts, half, lift, closed, mat, dashed = false) {
   // Draped ACROSS its width too: one height per cross-section tilted the strip
   // on a side-slope (the museum's levelled plane), so grass bit through one
@@ -415,14 +427,16 @@ export function paintRoadMarkings() {
       if (near(c, i, tang) || near(a, i, tang) || near(b, i, tang)) continue;
       const lat = new THREE.Vector3().crossVectors(c, tang).normalize();
       const base = pos.length / 3;
-      for (let u = 0; u <= 3; u++) {                           // a straight dash, draped in 3 steps along its length
-        const along = (u / 3 - 0.5) * DASH;
+      for (let u = 0; u <= 6; u++) {                           // a straight dash, draped in 6 steps along its length
+        const along = (u / 6 - 0.5) * DASH;
         for (const sx of [-1, 1]) {
           const d = c.clone().multiplyScalar(R).addScaledVector(tang, along).addScaledVector(lat, sx * W).normalize();
-          pos.push(...d.multiplyScalar(standAt(d) + 0.014).toArray());
+          // never below the road's own top (the ribbon's drape + its 0.06 lift): a ray slipping
+          // through a seam to the grass sank one corner and notched the dash
+          pos.push(...d.multiplyScalar(Math.max(standAt(d), roadTop(d)) + 0.016).toArray());
         }
       }
-      for (let u = 0; u < 3; u++) { const q = base + u * 2; idx.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
+      for (let u = 0; u < 6; u++) { const q = base + u * 2; idx.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
     }
     if (!idx.length) return;
     const g = new THREE.BufferGeometry();
