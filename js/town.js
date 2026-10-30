@@ -10,7 +10,7 @@ import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=10';
 import { planHarbour, buildHarbour } from './harbour.js';
-import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 
@@ -63,6 +63,7 @@ export function planTown() {
   reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
   // each project shop gets a wide level yard that eases out gently (its spur road arrives on the flat)
   for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, undefined, { blend: 7 }); }
+  reserve(llv(PLAN.park.at), PLAN.park.r, 'park'); flatten(llv(PLAN.park.at), PLAN.park.r + 1, undefined, { blend: 6 });
 }
 
 export function buildTown(scene) {
@@ -188,6 +189,7 @@ export function buildTown(scene) {
   for (const x of [-4.4, 4.4, -7.2, 7.2, 1.6, -1.6]) add(bunting(fC, x, SHOP_Y));
   // the story's shopfronts: the café (tables out front) and Frame & Co. (the van)
   // downtown behind Main Street: one building per block, towers in the middle
+  const cells = new Map();                                   // what got built where: for the gaps below
   for (let i = -K; i < K; i++) for (let j = -K; j < K; j++) {
     const x = (i + 0.5) * P, y = (j + 0.5) * P;
     if (!inTown(x, y) || j === 0 || j === -1) continue;   // Main Street's rows are the terraces
@@ -209,6 +211,29 @@ export function buildTown(scene) {
     const pb = add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5 * faceY)), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
     if (r >= 0.12) solid(d, room * 0.5);
     else feet(pb);                                            // a park: its tree and bench stop you
+    cells.set(i + ',' + j, { x, y, faceY, kind: r < 0.12 ? 'park' : rr < 0.8 ? 'block' : 'house', w: r < 0.12 ? 0 : room * 0.9, d: rr < 0.8 ? room * 0.85 : room * 0.76 });
+  }
+  // the gaps: where a side street is left out, two blocks' buildings stood ~2.8 apart along
+  // the frontage with bare lawn between (and the sides of the buildings behind showing). A
+  // narrow infill building closes the row between two blocks; next to a house or a little
+  // park, a pocket space instead — a bench, a tree and a planter
+  for (const [key, A] of cells) {
+    const [i, j] = key.split(',').map(Number), Bn = cells.get((i + 1) + ',' + j);
+    if (!Bn || Bn.faceY !== A.faceY) continue;
+    const mx = (A.x + Bn.x) / 2, my = A.y, md = fC(mx, my);
+    const gap = P - (A.w + Bn.w) / 2;
+    if (gap < 1.2 || onRoad(md, 0.5) || zoneHit(md, 0.9) || inShops(mx, my, 0.4)) continue;
+    const yaw = yawToFace(md, fC(mx, my + 5 * A.faceY));
+    if (A.kind === 'block' && Bn.kind === 'block') {
+      const w = Math.min(2.4, gap - 0.3), dd = Math.min(A.d, Bn.d) * 0.92;
+      if (onRoad(md, dd * 0.5)) continue;
+      add(placeOnPlanet(townBlock({ w, d: dd, h: 2.9 + rnd() * 1.2 }), md, yaw, { weight: 'mid' }));
+      solid(md, Math.min(w, dd) * 0.5);
+    } else {
+      if (onRoad(md, 0.9)) continue;
+      feet(add(placeOnPlanet(pocketPark(Math.min(2.2, gap - 0.3)), md, yaw, { weight: 'fine' })));
+    }
+    (out.infills ??= []).push({ dir: md, front: fC(mx, my + 3 * A.faceY), kind: A.kind === 'block' && Bn.kind === 'block' ? 'block' : 'pocket' });
   }
   // street lamps at junctions, trees along the boulevard verge
   for (let i = -K; i <= K; i++) for (let j = -K; j <= K; j++) {
@@ -272,6 +297,12 @@ export function buildTown(scene) {
     add(g);
     solid(d, 2.1);
     out.landmarks.push({ ...p, dir: d, root: g });
+  }
+  // Lantern Park: lawn, pond, paths, beds, trees, benches (its people are park.js)
+  {
+    const d = llv(PLAN.park.at), g = add(placeOnPlanet(parkGarden(), d, yawToFace(d, TOWN_C), { weight: 'fine' }));
+    feet(g);
+    out.park = { dir: d, root: g, ...g.userData.park };
   }
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const d = llv(s.at);
@@ -386,6 +417,26 @@ function park(r = 1.1) {
   const foot = (x, z, r) => { const o = new THREE.Object3D(); o.position.set(x, 0, z); o.userData.foot = r; g.add(o); };
   foot(-0.3 * k, -0.15 * k, 0.2);
   for (const fx of [-0.4, 0, 0.4]) foot(0.35 * k + fx, 0.35 * k, 0.2);
+  return ink(g, 'fine');
+}
+
+// a pocket space between two buildings: a strip of lawn, a tree at the back, a bench facing
+// the street (+z) and a planter of flowers beside it
+function pocketPark(w = 2.0) {
+  const g = new THREE.Group(), lawnD = 1.5;
+  const lawn = new THREE.Mesh(rbox(w, 0.1, lawnD, 0.04), paint(PAL.grass)); lawn.position.y = 0.05; g.add(lawn);
+  const t = tree({ s: 0.8 }); t.position.set(-w * 0.22, 0.08, -0.35); g.add(t);
+  const b = bench(); b.position.set(w * 0.12, 0.08, 0.3); g.add(b);
+  const pl = new THREE.Mesh(rbox(0.42, 0.3, 0.42, 0.04), paint(PAL.terracotta)); pl.position.set(w * 0.38, 0.23, -0.3); g.add(pl);
+  const soil = new THREE.Mesh(rbox(0.36, 0.04, 0.36, 0.01), paint(0x8a6a52, { hatch: 0 })); soil.position.set(w * 0.38, 0.38, -0.3); g.add(soil);
+  const bu = bush(0.24); bu.position.set(w * 0.38, 0.38, -0.3); g.add(bu);
+  for (let k = 0; k < 7; k++) {
+    const f = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), paint([PAL.accent, PAL.gold, 0xf6eedb, PAL.rose][k % 4], { hatch: 0 }));
+    f.position.set(w * 0.38 + Math.sin(k * 2.4) * 0.13, 0.5 + (k % 3) * 0.03, -0.3 + Math.cos(k * 2.4) * 0.13); g.add(f);
+  }
+  const foot = (x, z, r) => { const o = new THREE.Object3D(); o.position.set(x, 0, z); o.userData.foot = r; g.add(o); };
+  foot(-w * 0.22, -0.35, 0.22); foot(w * 0.38, -0.3, 0.26);
+  for (const fx of [-0.4, 0, 0.4]) foot(w * 0.12 + fx, 0.3, 0.2);
   return ink(g, 'fine');
 }
 

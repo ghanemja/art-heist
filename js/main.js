@@ -7,6 +7,7 @@ import { createPlayer } from './player.js';
 import { createGame } from './game.js';
 import { createCitizens } from './citizens.js';
 import { createPlaza } from './plaza.js';
+import { createPark } from './park.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -49,10 +50,11 @@ const game = createGame({ scene, camera, town, player, atmosphere, renderer });
 registerGround([scene]);          // again, now the case's props (café deck, booth…) are down too
 const citizens = createCitizens({ scene, town, game, player, camera });   // bystanders, streamed in after the title is up
 const plaza = createPlaza({ scene, town, game, player });                  // Maple Plaza: parked cars, shoppers in and out
+const park = createPark({ scene, town, game, player });                    // Lantern Park: strollers, a reader, a coffee
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
-window.__v2 = { scene, camera, renderer, town, player, game, citizens, plaza, ROADS, ZONES };
+window.__v2 = { scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES };
 
 const clock = new THREE.Clock();
 function loop() {
@@ -77,6 +79,7 @@ function loop() {
   }
   citizens.update(dt);
   plaza.update(dt);
+  park.update(dt);
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
