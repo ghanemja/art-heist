@@ -5,7 +5,7 @@
 // Clues get the same treatment from their actual props.
 import * as THREE from 'three';
 import { inkUniforms } from './style.js';
-import { makeFolk, poseFolk } from './folk.js';
+import { makeFolk, poseFolk, FOLK_SCALE } from './folk.js';
 
 const SIZE = 256;
 let _rt = null, _scene = null;
@@ -97,8 +97,10 @@ export function paintPeople(renderer, looks) {
     const head = inst.J.head.getWorldPosition(new THREE.Vector3());
     // frame the whole head (hair, hat) with a little shoulder, three-quarter view
     const cam = new THREE.PerspectiveCamera(30, 1, 0.05, 20);
-    const at = head.clone().add(new THREE.Vector3(0, 0.1 * (look.height ?? 1), 0));
-    cam.position.copy(at).add(new THREE.Vector3(0.3, 0.05, 0.74));
+    // (offsets drawn for a full-size folk body: they shrink with the town's scale)
+    const k = FOLK_SCALE * (look.height ?? 1);
+    const at = head.clone().add(new THREE.Vector3(0, 0.1 * k, 0));
+    cam.position.copy(at).add(new THREE.Vector3(0.3, 0.05, 0.74).multiplyScalar(k));
     cam.lookAt(at);
     out[id] = frame(snap(renderer, inst.rig, cam), WASH[id] || WASH.clue, seed++);
   }

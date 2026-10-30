@@ -1,15 +1,20 @@
 // ─── FOLK: the townspeople, each built as their own person ──────────────────
 // A tiny jointed body (groups for hips, spine, neck, arms, legs) dressed with
 // smooth toon shapes: their own build, face, hair and clothes. Sized to sit
-// beside the critic (≈1.2 units tall, about four heads high, same feet/hips/
-// shoulders), so the cast reads as one world without being clones of her.
+// beside the critic and the Citizen Maker bystanders (≈1.12 units tall, about four
+// heads high: see FOLK_SCALE), so the cast reads as one world without being clones of her.
 // Joints are plain groups facing +Z, so posing is just rotations.
 import * as THREE from 'three';
 import { paint, ink } from './style.js';
 import { lathe } from './props.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildHead, HC, sculpt, lineAt } from './faces.js';
+
+// every townsperson's overall size: the Citizen Maker bystanders (citizens.js) set the town's
+// scale (≈1.12 tall); this brings a folk body (≈1.27 at height 1) to it. Vary people with
+// their own `height` (±5%), never this.
+export const FOLK_SCALE = 0.88;
 
 const SKINS = { fair: 0xf0d2b6, rose: 0xe6b99a, olive: 0xcf9e74, tan: 0xb57b52, brown: 0x8d5a3b, deep: 0x5e3a28 };
 
@@ -69,31 +74,85 @@ export function shoeGeo() {
   return (_shoe = { upper, sole });
 }
 
-// ── a hand: a soft palm, four fingers that can curl round a grip, a thumb ──
-// hangs from the wrist (−Y); the palm faces the body (side s: −1 left, +1 right), thumb forward.
+// ── a hand: a palm, four three-jointed fingers that curl round a grip, a two-jointed thumb ──
+// hangs from the wrist (−Y); the palm faces the body (side s: −1 left, +1 right), thumb forward (+Z).
+// ONE skinned mesh (a bone per finger joint), so a curl bends each knuckle in turn and the
+// whole hand is a single draw, inked as one shape (lighter than the body, fading at the wrist).
+// Sizes are in the hand's own units (the group is scaled ×1.3: a hand is about as long as the face).
+const FINGERS = [   // [z across the palm, knuckle height, length, radius]: index → little finger
+  [0.0118, -0.0365, 0.031, 0.0059], [0.0039, -0.0372, 0.034, 0.006], [-0.004, -0.0368, 0.032, 0.0057], [-0.0115, -0.0352, 0.026, 0.0051]];
+const PHAL = [0.44, 0.31, 0.25];               // each finger's three bones, as shares of its length
+const CURL = [0.22, 0.9, 0.65];                // knuckle / middle / tip bend at grip 1: wraps a handle at the fist centre
+const THUMB = [[0.0165, 0.0068], [0.0135, 0.0058]];
+// the centre of a closed grip (hand units): a handle of radius ≈0.0085 here, running across the palm (∥Z)
+export const FIST = (s) => new THREE.Vector3(-s * 0.0135, -0.0414, 0);
 function makeHand(s, skin) {
   const g = new THREE.Group();
-  const palm = new THREE.Mesh(rbox(0.016, 0.036, 0.032, 0.007, 2), skin); palm.position.set(0, -0.02, 0.002); g.add(palm);
+  const hb = bone(g, 0, 0, 0), bones = [hb], parts = [];
+  // a palm a little narrower at the wrist than across the knuckles, softly rounded
+  // (its top runs up into the wrist, which is flattened to meet it: see limb's `flat`)
+  const palm = rbox(0.019, 0.042, 0.035, 0.0075, 2).translate(0, -0.017, 0.0005);
+  { const P = palm.attributes.position;
+    for (let i = 0; i < P.count; i++) { const k = THREE.MathUtils.smoothstep(-P.getY(i), 0.0, 0.03); P.setZ(i, P.getZ(i) * (0.88 + 0.12 * k)); P.setX(i, P.getX(i) * (0.95 + 0.05 * k)); } }
+  parts.push([palm, 0]);
   const fingers = [];
-  for (const [z, len] of [[0.011, 0.024], [0.0035, 0.027], [-0.0045, 0.025], [-0.012, 0.02]]) {
-    const knuckle = new THREE.Group(); knuckle.position.set(0, -0.037, z); g.add(knuckle);
-    const f = cap(0.0058, len - 0.012, skin, 8); f.position.y = -len / 2; knuckle.add(f);
-    const tip = new THREE.Group(); tip.position.y = -len * 0.55; knuckle.add(tip);   // a second joint so a curl looks like a curl
-    fingers.push(knuckle);
-  }
-  const thumb = new THREE.Group(); thumb.position.set(-s * 0.005, -0.01, 0.015); g.add(thumb);
-  const th = cap(0.0068, 0.014, skin, 8); th.position.y = -0.012; thumb.add(th);
-  thumb.rotation.x = 0.55; thumb.rotation.z = -s * 0.35;
-  for (const o of [palm, ...g.children]) o.userData.noInk = false;
-  g.userData = { fingers, thumb, s };
-  g.scale.setScalar(1.3);                 // a hand is about as long as the face
+  hb.updateMatrixWorld(true);
+  // (a capsule from this joint to the next; small enough on screen that 6–7 sides read round,
+  // keeping the whole hand under the old five-piece hand's ~2k triangles)
+  const seg = (b, len, r, tip, sides = 6) => {
+    const c = new THREE.CapsuleGeometry(r, Math.max(0.001, tip ? len - r : len), 2, sides).translate(0, tip ? -(len - r) / 2 : -len / 2, 0);
+    b.updateMatrixWorld(true);
+    parts.push([c.applyMatrix4(b.matrixWorld), bones.indexOf(b)]);
+  };
+  FINGERS.forEach(([z, y, L, r], i) => {
+    const chain = [];
+    let parent = hb, off = new THREE.Vector3(0, y, z);
+    for (let j = 0; j < 3; j++) {
+      const b = bone(parent, off.x, off.y, off.z); bones.push(b); chain.push(b);
+      if (!j) b.rotation.x = [-0.07, -0.02, 0.03, 0.09][i];         // fanned a touch
+      seg(b, L * PHAL[j], r * [1, 0.93, 0.86][j], j === 2);
+      parent = b; off = new THREE.Vector3(0, -L * PHAL[j], 0);
+    }
+    fingers.push(chain);
+  });
+  // the thumb grows from the heel of the palm on the front edge, toward the palm side
+  const t0 = bone(hb, -s * 0.0042, -0.0105, 0.0135); bones.push(t0);
+  t0.rotation.x = -0.5;                                              // splayed forward
+  seg(t0, THUMB[0][0], THUMB[0][1], false, 7);
+  const t1 = bone(t0, 0, -THUMB[0][0], 0); bones.push(t1);
+  seg(t1, THUMB[1][0], THUMB[1][1], true, 7);
+  // one geometry, each piece rigidly on its bone
+  const geo = mergeGeometries(parts.map(([p, bi]) => {
+    p.deleteAttribute('uv');
+    const n = p.attributes.position.count, si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) { si[i * 4] = bi; sw[i * 4] = 1; }
+    p.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+    p.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    return p.index ? p : p.setIndex([...Array(n).keys()]);
+  }));
+  const P = geo.attributes.position, iw = new Float32Array(P.count);
+  for (let i = 0; i < P.count; i++) iw[i] = 0.62 * THREE.MathUtils.smoothstep(-P.getY(i), 0.003, 0.014);   // no line where it meets the wrist
+  geo.setAttribute('inkW', new THREE.BufferAttribute(iw, 1));
+  const m = new THREE.SkinnedMesh(geo, skin);
+  m.frustumCulled = false;
+  m.userData.bones = bones;                                          // bound with the limbs (makeFolk)
+  g.add(m);
+  g.userData = { fingers, thumb: [t0, t1], s, mesh: m };
+  g.scale.setScalar(1.3);
   return g;
 }
-// curl the fingers toward the palm (0 open … 1 a fist round a handle)
+// curl the fingers toward the palm: 0 open … 1 wrapped round a handle at FIST … ~1.6 a tight fist
 function gripHand(h, k) {
   const { fingers, thumb, s } = h.userData;
-  fingers.forEach((f, i) => { f.rotation.z = -s * k * (1.25 + i * 0.08); });
-  thumb.rotation.z = -s * (0.35 + 0.5 * k);
+  const tight = Math.max(0, k - 1);
+  fingers.forEach((ch, i) => {
+    const kk = Math.min(k, 1) * (1 + i * 0.07);                     // the little finger curls a touch more
+    ch[0].rotation.z = -s * (kk * CURL[0] + 1.6 * tight);
+    ch[1].rotation.z = -s * (kk * CURL[1] + 0.4 * tight);
+    ch[2].rotation.z = -s * (kk * CURL[2] + 0.2 * tight);
+  });
+  thumb[0].rotation.z = -s * (0.12 + 0.7 * Math.min(k, 1.2));      // over the grip, on top of the index
+  thumb[1].rotation.z = -s * (0.08 + 0.8 * Math.min(k, 1.2));
 }
 const rbox = (w, h, d, r, seg = 2) => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4));
 
@@ -130,10 +189,10 @@ const PROPS = {
     const outer = new THREE.Group(); outer.add(g);
     return outer;
   },
-  torch() {                       // axis along +Y, lens at the top end
+  torch() {                       // axis along +Y, lens at the top end; the handle fits a closed grip (FIST)
     const g = new THREE.Group();
-    g.add(new THREE.Mesh(lathe([[0.001, -0.05], [0.011, -0.05], [0.011, 0.03], [0.016, 0.045], [0.016, 0.06], [0.001, 0.06]], 14), paint(0x2a2a30)));
-    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.013, 14), paint(0xfff1c8, { emissive: 0xffe2a0, hatch: 0 }));
+    g.add(new THREE.Mesh(lathe(smooth([[0.001, -0.052], [0.0075, -0.0515], [0.0085, -0.046], [0.0085, 0.022], [0.0125, 0.042], [0.0128, 0.06], [0.001, 0.061]], 20), 16), paint(0x2a2a30)));
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.0108, 16), paint(0xfff1c8, { emissive: 0xffe2a0, hatch: 0 }));
     lens.rotation.x = -Math.PI / 2; lens.position.y = 0.0612; lens.userData.noInk = true; g.add(lens);
     return g;
   },
@@ -146,12 +205,15 @@ const PROPS = {
 export const STANCES = {
   writing: { free: null, ik: true },   // the director: writing on a clipboard (solved by IK, see writePose)
   torch: { free: 'L',          // the guard: thumb in his belt, torch pointed at the ground
-    L: { fwd: 0.04, out: 0.42, twist: 1.5, bend: 0.8, wrist: 0.2, grip: 0.4 },   // hand on the belt at his hip
-    R: { fwd: 0.55, out: -0.04, twist: 0.1, bend: 0.55, wrist: 0.25, grip: 1, hold: ['torch', [0.0, -0.045, 0.0], [Math.PI - 0.7, 0, 0]] },
+    L: { fwd: -0.25, out: 0.42, twist: 0.75, bend: 1.45, wrist: -1.2, grip: 0.3 },   // elbow out, hand hooked over the front of his belt
+    // the torch lies across the fist the way a handle does (a little slanted toward the fingers,
+    // along the palm's crease), lens out of the thumb side; the arm hangs easy and the wrist tips
+    // the beam down at the ground ahead. Placed so its grip (y −0.012) sits at FIST(+1).
+    R: { fwd: 0.12, out: 0.05, twist: 0.1, bend: 0.22, wrist: -0.55, grip: 1, hold: ['torch', [-0.0135, -0.0466, 0.0108], [Math.PI / 2 + 0.45, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { p.twist += 0.3 * Math.sin(t * 0.6); p.fwd += 0.12 * Math.sin(t * 0.43); } } },
   coffee: { free: 'L',         // the courier: a coffee from the café, other hand on her hip
     L: { fwd: -0.12, out: 0.56, twist: 1.6, bend: 1.35, wrist: 0.2, grip: 0.3 },
-    R: { fwd: 0.3, out: -0.14, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 1, hold: ['cup', [-0.026, -0.04, 0.01], [2.2, 0, 0]] },
+    R: { fwd: 0.3, out: -0.14, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 0.62, hold: ['cup', [-0.033, -0.046, 0.004], [2.2, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { const sip = Math.max(0, Math.sin(t * 0.55)) ** 10; p.bend += 0.5 * sip; p.fwd += 0.25 * sip; } } },
   crossed: { free: 'R',        // the framer: arms crossed, defensive
     L: { fwd: 0.62, out: -0.2, twist: 1.35, bend: 2.0, wrist: 0, grip: 0.6 },
@@ -194,7 +256,7 @@ function smooth(pts, n = 28) {
 // a whole limb as ONE skinned tube (thigh→calf→ankle, or upper arm→forearm→wrist):
 // weights blend across the knee/elbow so it bends in a soft curve, not a hinge.
 // prof: [depth below the joint, radius] top to bottom; colAt(depth) → hex (sleeves, cuffs)
-function limb(parent, x, y, bones, l1, l2, prof, colAt, { hem = null, inkFrom = 0.02, inkTo = 0.09 } = {}) {
+function limb(parent, x, y, bones, l1, l2, prof, colAt, { hem = null, inkFrom = 0.02, inkTo = 0.09, flat = null } = {}) {
   let pts = smooth(prof.map(([d, r]) => [r, -d]).reverse(), 40);
   if (hem != null) {
     // a sleeve hem: a tiny lip, and two rings 1mm apart so the colour changes crisply
@@ -214,6 +276,9 @@ function limb(parent, x, y, bones, l1, l2, prof, colAt, { hem = null, inkFrom = 
     si.set([0, 1, 2, 0], i * 4); sw.set([1 - w1, Math.max(0, w1 - w2), w2, 0], i * 4);
     c.setHex(colAt(d)); col.set([c.r, c.g, c.b], i * 3);
     iw[i] = ss(d, inkFrom, inkTo);              // no outline where the limb grows out of the body
+    // flat: [from, k] — from this depth down, the tube flattens across X to k (a wrist is an
+    // oval, palm-thick, so it runs into the hand instead of ending in a round stump)
+    if (flat) pos.setX(i, pos.getX(i) * (1 - (1 - flat[1]) * ss(d, flat[0], l1 + l2)));
   }
   geo.translate(x, y, 0);
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
@@ -246,7 +311,7 @@ export function makeFolk(spec) {
   const root = new THREE.Group();
   const body = new THREE.Group(); root.add(body);
   const H = S.height, B = S.build;
-  body.scale.setScalar(H);
+  body.scale.setScalar(H * FOLK_SCALE);
   const J = {};
 
   // ── hips + legs ──
@@ -388,9 +453,10 @@ export function makeFolk(spec) {
     const cuff = S.sleeve === 'short' ? 0.085 : 0.285;
     limbs.push(limb(J.spine, x, y, [sh, fa, hd], 0.16, 0.15, [
       [-0.04, 0.001], [-0.025, 0.038 * rB], [0, 0.046 * rB], [0.07, 0.044 * rB], [0.15, 0.036], [0.17, 0.035],
-      [0.22, 0.035], [0.28, 0.028], [0.3, 0.026], [0.312, 0.001]], (d) => d < cuff ? S.top : skinHex,
-      { hem: cuff, inkFrom: 0.03, inkTo: 0.1 }));
+      [0.22, 0.034], [0.27, 0.026], [0.3, 0.0205], [0.312, 0.001]], (d) => d < cuff ? S.top : skinHex,
+      { hem: cuff, inkFrom: 0.03, inkTo: 0.1, flat: [Math.max(cuff + 0.004, 0.2), 0.72] }));
     J['hand' + k].add(J['grip' + k] = makeHand(s, skin));
+    limbs.push(J['grip' + k].userData.mesh);                   // the hand's skinned mesh binds with the limbs
   }
   // bind the limbs in this rest pose
   root.updateMatrixWorld(true);

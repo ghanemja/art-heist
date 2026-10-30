@@ -307,6 +307,23 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     }
   }
 
+  // the service door, round the back: a plain steel door for deliveries (the thieves'
+  // way out — the tyre ruts in the verge behind it are a clue in the main app)
+  if (openDoor) {
+    const dz = BACK - 0.02, DY = 0.44;                                         // sill on the second step
+    const STEEL = S(0x6f7d78, { roughness: 0.5, metalness: 0.35 });
+    add(rbox(1.36, 2.28, 0.14, 0.04), TRIM, 0, DY + 1.14, dz);                  // surround
+    add(rbox(1.08, 2.06, 0.1, 0.03), STEEL, 0, DY + 1.03, dz - 0.05);          // the door
+    add(rbox(1.0, 0.3, 0.03, 0.01), STEEL, 0, DY + 0.22, dz - 0.11);           // kick plate
+    add(rbox(0.78, 0.05, 0.05, 0.02), DARK, 0, DY + 1.0, dz - 0.15);           // push bar
+    for (const s of [-1, 1]) add(rbox(0.05, 0.12, 0.08, 0.02), DARK, s * 0.36, DY + 1.0, dz - 0.12);
+    add(rbox(0.46, 0.16, 0.02, 0.01), TRIM, 0, DY + 1.7, dz - 0.11);           // DELIVERIES plate
+    add(rbox(1.6, 0.08, 0.6, 0.03), STONE_D, 0, DY + 2.42, dz - 0.3);          // a little canopy
+    for (const s of [-1, 1]) add(rbox(0.05, 0.05, 0.56, 0.02), TRIM, s * 0.72, DY + 2.34, dz - 0.3);
+    add(new THREE.SphereGeometry(0.09, 14, 10), LAMP, 0, DY + 2.3, dz - 0.5);  // the light over it
+    add(rbox(1.5, 0.22, 0.5, 0.04), STONE_D, 0, 0.11, dz - 0.25);              // a step down to the verge
+  }
+
   // ── the two gallery wings: lower, flat-roofed, balustraded, arched windows ──
   const WING_W = 2.5, WING_H = 2.9, WING_X = CW / 2 + WING_W / 2 - 0.05;
   for (const s of [-1, 1]) {
@@ -332,13 +349,19 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
       surround.absarc(0, 0.55, hw, 0, Math.PI, false); surround.lineTo(-hw, yb);
     }
     const surroundGeo = extrude(surround, 0.08 - 2 * SURR_B, SURR_B); surroundGeo.translate(0, 0, -(0.08 - 2 * SURR_B) / 2);
+    const archGeo = new THREE.TorusGeometry(0.38, 0.05, 8, 24, Math.PI), jambGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8);
     for (let k = 0; k < 3; k++) {
       const z = BACK + 1.6 + k * 2.1;
       const grp = new THREE.Group(); grp.position.set(sideX, Y0 + 1.25, z); grp.rotation.y = s * Math.PI / 2; g.add(grp);
       add(surroundGeo, TRIM, 0, 0, 0, grp);
       add(new THREE.PlaneGeometry(0.66, 1.2), WIN, 0, -0.05, 0.05, grp);
       add(new THREE.CircleGeometry(0.33, 20, 0, Math.PI), WIN, 0, 0.55, 0.05, grp);
-      add(new THREE.TorusGeometry(0.38, 0.05, 6, 12, Math.PI), TRIM, 0, 0.55, 0.05, grp);
+      // one frame all the way round: the arch trim carries on down both jambs to a sill,
+      // a transom bar across the springline, and the mullion runs sill to transom
+      add(archGeo, TRIM, 0, 0.55, 0.05, grp);
+      for (const sx of [-1, 1]) add(jambGeo, TRIM, sx * 0.38, -0.05, 0.05, grp);
+      add(rbox(0.9, 0.07, 0.12, 0.025), TRIM, 0, -0.67, 0.05, grp);             // sill
+      add(rbox(0.7, 0.05, 0.07, 0.015), TRIM, 0, 0.55, 0.08, grp);              // transom
       add(rbox(0.04, 1.2, 0.06, 0.01), TRIM, 0, -0.05, 0.08, grp);            // mullion
     }
   }

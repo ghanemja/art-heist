@@ -71,11 +71,13 @@ export const PEOPLE = [
 ];
 
 // ── props for the case ──
-function ladderProp() {
-  const g = new THREE.Group(), alu = paint(0xc7ccd2);
-  for (const s of [-1, 1]) g.add(new THREE.Mesh(rbox(0.07, 3.6, 0.07, 0.03), alu).translateX(s * 0.24).translateY(1.8));
-  for (let k = 0; k < 10; k++) g.add(new THREE.Mesh(rbox(0.5, 0.05, 0.05, 0.02), alu).translateY(0.25 + k * 0.34));
-  g.rotation.x = -0.22;
+// stood on the lawn, its top resting on the wing's parapet: it leans toward +z (the wall
+// it is turned to face), long enough to reach the balustrade rail
+function ladderProp(L = 4.3) {
+  const g = new THREE.Group(), lean = new THREE.Group(), alu = paint(0xc7ccd2);
+  for (const s of [-1, 1]) lean.add(new THREE.Mesh(rbox(0.07, L, 0.07, 0.03), alu).translateX(s * 0.24).translateY(L / 2));
+  for (let y = 0.25; y < L - 0.1; y += 0.34) lean.add(new THREE.Mesh(rbox(0.5, 0.05, 0.05, 0.02), alu).translateY(y));
+  lean.rotation.x = 0.22; g.add(lean);
   return ink(g, 'fine');
 }
 function ruts() {
@@ -318,15 +320,15 @@ export function buildCase(scene, W) {
   const place = (obj, d, yaw = 0) => { settle(obj, d, 0.6, 0.03, yaw); scene.add(obj); return obj; };
   const mF = W.museumFrame;
   // at the museum
-  { const d = mF(7.9, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.8, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
-  { const d = mF(2.2, 0.6); items.push({ kind: 'clue', id: 'frames', dir: d }); }          // the easel's empty frame
-  { const d = mF(0, -13.2); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
+  { const d = mF(7.4, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.0, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }
+  { const d = mF(-2.2, 0.6); items.push({ kind: 'clue', id: 'frames', dir: d }); }          // the easel's empty frame (museum +x is the town frame's -x: +2.2 was the sculpture)
+  { const d = mF(0, -14.0); const r = ruts(); place(r, d, yawToFace(d, mF(0, -20))); items.push({ kind: 'clue', id: 'ruts', dir: d, obj: r }); }
   { const d = mF(-7.1, -2.0); const b = booth(); place(b, d, yawToFace(d, mF(-7.1, 4)));   // window toward town: you see it as you walk up
     b.updateWorldMatrix(true, true); const L = (x, y, z) => b.localToWorld(new THREE.Vector3(x, y, z));
     items.push({ kind: 'clue', id: 'log', dir: L(0, 0, 1.25).normalize(), obj: b, glintAt: L(0.05, 1.32, 0.95) }); W.solid(d, 0.8); }   // the sparkle sits over the logbook   // on the lawn beside the steps, clear of the junction
   // downtown: the van outside Frame & Co., the café with Pia's bike
   let vanObj = null;
-  { const d = W.townAt(W.vanSpot); const v = van(); vanObj = v; place(v, d, W.vanYaw + Math.PI);   /* turned round: the open back faces the way you walk up */ v.updateWorldMatrix(true, true); items.push({ kind: 'clue', id: 'van', dir: d, obj: v, glintAt: v.localToWorld(new THREE.Vector3(0, 2.3, -1.3)) }); W.solid(d, 1.1); }   // sparkle above the roof over the open back, not inside the van
+  { const d = W.townAt(W.vanSpot); const v = van(); vanObj = v; place(v, d, W.vanYaw + Math.PI);   /* turned round: the open back faces the way you walk up */ v.updateWorldMatrix(true, true); items.push({ kind: 'clue', id: 'van', at: d.clone(), dir: v.localToWorld(new THREE.Vector3(0, 0, -2.2)).normalize(), reach: 1.5, obj: v, glintAt: v.localToWorld(new THREE.Vector3(0, 1.15, -1.8)) }); W.solid(d, 1.1); }   // looked at from behind its open back doors (the sparkle there too), well clear of Rex at its side
   { const d = W.townAt(W.cafeSpot); const c = cafe(); place(c, d, yawToFace(d, W.townAt([W.cafeSpot[0], 0]))); W.solid(d, 0.55);
     // leaning on the café's end wall, at the corner, along the side of the building
     const cafeShop = W.shops.find(sp => sp.kind === 'cafe'), [cx] = W.toTown(cafeShop.dir), wallX = cx + cafeShop.w / 2, sY = Math.sign(W.cafeSpot[1]);

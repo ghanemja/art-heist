@@ -11,9 +11,12 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
 1. **Never a clone of the main character.** The critic (`models/critic.glb`) is the
    player only. Recolouring her rig is not a new person. Build townspeople with
    `makeFolk(spec)` (or a new model of their own) with their own build, face, hair and outfit.
-2. **Same scale as the critic.** ≈1.2 units tall, about four heads high; hips ≈0.565,
-   shoulders ≈0.86 above the soles. Vary with `height` (±5%) and `build`, never by
-   scaling the whole figure up. Check side-by-side with the critic before shipping.
+2. **Same scale as the critic — and the town.** The Citizen Maker bystanders
+   (`citizens.js`, ≈1.03–1.21 tall) set the scale: the critic is ≈1.12 units tall
+   (`HUMAN_SCALE` 0.12), folk bodies are sized by `FOLK_SCALE` (≈1.12 at `height` 1, about
+   four heads high; hips ≈0.5, shoulders ≈0.76 above the soles). Vary with `height` (±5%)
+   and `build`, never by scaling the whole figure up. Check side-by-side with the critic and a
+   bystander before shipping (measure the skinned extent along up, not the bind pose).
 3. **Feet on the ground, always.** Every person has shoes (a rounded upper + a sole)
    that sit exactly on the floor: place people with `settle(..., sink = 0)`, never the
    prop sink. Raised floors (forecourt, platforms) must be registered with `addFloor`.
@@ -31,8 +34,10 @@ than props. Every new person — townsfolk, crowd, a one-off character — must 
    the deltoid. No bolt-on shoulder balls or pads. Limbs fade their outline out where
    they join the body (`inkW` via `limb(..., { inkFrom, inkTo })`) so no seam line is
    drawn round the shoulder or hip. Sleeves end in a crisp hem (`hem:`), never a colour smear.
-6. **Real hands.** A palm facing the thigh, four fingers that curl to grip (`gripHand`),
-   a thumb forward — skin-coloured, sized to the wrist (≈0.03). Never a ball or a blob.
+6. **Real hands.** A palm facing the thigh, four three-jointed fingers that curl to grip
+   (`gripHand`), a two-jointed thumb forward — one skinned mesh, skin-coloured, sized to the
+   wrist (≈0.03, the wrist flattened into the palm). Never a ball or a blob. Held things sit
+   at the fist centre (`FIST`) with the handle across the palm, so the fingers wrap it.
 7. **A head, not a ball — and a face.** Heads use `headShape` (skull back, nape tucked in,
    flat face with brow ridge and eye sockets, jaw narrowing to a chin, neck behind the
    jaw). Check the SIDE PROFILE. Features and hair are placed on that surface (`headPt`,

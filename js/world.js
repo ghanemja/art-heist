@@ -212,8 +212,43 @@ export function standAt(d) {
   if (!_ground.meshes.length) return groundAt(d) + roadLift(d);
   const k = Math.round(d.x * R / CELL) + ',' + Math.round(d.y * R / CELL) + ',' + Math.round(d.z * R / CELL);
   let v = _standCache.get(k);
-  if (v === undefined) { v = measureStand(d); _standCache.set(k, v); }
+  if (v === undefined) {                                // measured at the cell's centre, so a cell that
+    _cc.set(Math.round(d.x * R / CELL), Math.round(d.y * R / CELL), Math.round(d.z * R / CELL)).normalize();
+    v = measureStand(_cc); _standCache.set(k, v);       // straddles a step reads the same whoever asks first
+  }
   return v;
+}
+const _cc = new THREE.Vector3();
+// ── footing: where a walker's FEET are, not just her centre ──
+// Her shoes stride ~0.25 past her centre, so sampling only the centre leaves a
+// foot inside a step's riser while she still stands on the ground below it.
+// footing() reads a small ring round her. A raised FLOOR (addFloor: the museum
+// forecourt, a platform, a pavement) that a foot reaches lifts her as soon as the
+// shoe lands on it, if it is within a step of `ref` (her current height); one
+// higher than that is a riser she can't climb, returned as `wall` (unit tangent
+// toward it) so the walker stops at it instead of standing inside it. Small rises
+// (kerbs, road ribbons) count too; other drawn bits (a window sill, a bench seat,
+// a buffer stop) only count under her centre, as before.
+export const STEP_CLIMB = STEP_UP + 0.1;               // a little slack: a 0.46 platform edge is still a step
+const SMALL_RISE = 0.12;
+const _fa = new THREE.Vector3(), _fb = new THREE.Vector3(), _fp2 = new THREE.Vector3(), _fo = new THREE.Vector3();
+export function footing(d, ref = null, reach = 0.26, N = 8) {
+  const c = standAt(d), gc = groundAt(d);
+  if (ref == null) ref = c;
+  _fa.set(0, 1, 0); if (Math.abs(d.y) > 0.9) _fa.set(1, 0, 0);
+  _fa.cross(d).normalize(); _fb.crossVectors(d, _fa);
+  let top = c, wall = null;
+  for (let k = 0; k < N; k++) {
+    const a = k / N * Math.PI * 2;
+    _fo.copy(_fa).multiplyScalar(Math.cos(a)).addScaledVector(_fb, Math.sin(a));
+    _fp2.copy(d).multiplyScalar(R).addScaledVector(_fo, reach).normalize();
+    const g = groundAt(_fp2);
+    if (g > ref + STEP_CLIMB) { (wall ??= new THREE.Vector3()).add(_fo); continue; }
+    const h = standAt(_fp2);
+    if (h > top && (g > gc + SMALL_RISE || h < c + SMALL_RISE)) top = h;
+  }
+  if (wall && wall.lengthSq() < 1e-8) wall.copy(_fo);   // walled in all round: any direction will do
+  return { r: top, wall: wall && wall.normalize() };
 }
 function measureStand(d) {
   const base = groundAt(d) + roadLift(d);

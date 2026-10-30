@@ -5,14 +5,14 @@
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R, radiusAt, groundAt, standAt, isWater, arc, nearestRoad, slerpDir } from './world.js';
+import { R, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { rbox, lathe } from './props.js';
-import { loadHuman, makeHuman, pose, sit, LOOKS } from './human.js';
+import { loadHuman, makeHuman, pose, sit, LOOKS, HUMAN_SCALE } from './human.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const MODES = {
-  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.95, radius: 0.3, follow: 1.4 },
+  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.88, radius: 0.3, follow: 1.4 },
   jeep: { max: 11, accel: 6, turn: 2.4, camD: 9.5, camH: 3.6, look: 1.2, radius: 0.8, follow: 3.0 },
 };
 
@@ -222,12 +222,14 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       const bp = buildBackpack();
       const bw = new THREE.Vector3(), bq = new THREE.Quaternion(), bs = new THREE.Vector3();
       spine.matrixWorld.decompose(bw, bq, bs);
-      const at = bodies.walk.worldToLocal(bw.clone()).add(new THREE.Vector3(0, -0.02, -0.11));
+      // (the pack and its straps were drawn for her at scale 0.13: they shrink with her)
+      const K = HUMAN_SCALE / 0.13;
+      const at = bodies.walk.worldToLocal(bw.clone()).add(new THREE.Vector3(0, -0.02, -0.11).multiplyScalar(K));
       const world = bodies.walk.localToWorld(at);
       bp.position.copy(spine.worldToLocal(world));
       const wq = new THREE.Quaternion(); bodies.walk.getWorldQuaternion(wq);
       bp.quaternion.copy(bq.clone().invert().multiply(wq));
-      bp.scale.setScalar(1 / bs.x);
+      bp.scale.setScalar(K / bs.x);
       spine.add(bp);
       critic.backpack = bp;
       fitStraps(bp, critic.inst.rig);
@@ -235,7 +237,9 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // the critic also drives the jeep
     const rider = makeHuman(glb, LOOKS.critic);
     sit(rider);
-    const seat = new THREE.Group(); seat.position.set(0.3, 0.42, -0.36); seat.add(rider.rig);
+    // (her hips sit 0.565·HUMAN_SCALE/0.13 above the rig's origin: lift the seat so they stay on the
+    // cushion, and slide it a touch forward so her shorter arms reach the wheel)
+    const seat = new THREE.Group(); seat.position.set(0.3, 0.42 + 0.565 * (1 - HUMAN_SCALE / 0.13), -0.31); seat.add(rider.rig);
     bodies.jeep.add(seat);
   });
 
@@ -383,6 +387,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // move along the great circle
     const step = st.speed * dt;
     if (step) {
+      const was = st.dir.clone();
       const nd = st.dir.clone().multiplyScalar(R).addScaledVector(st.heading, step).normalize();
       if (!isWater(nd, 0.1)) {
         st.dir.copy(nd);
@@ -409,10 +414,28 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         st.dir.multiplyScalar(R).add(push).normalize();
         st.speed *= 0.5;
       }
+      // a riser taller than a step (a forecourt edge on a slope, a plinth) stops her
+      // feet like a wall: she slides along it, and never stands with a shoe inside it
+      if (st.mode === 'walk' && st.grT != null) {
+        const f = footing(st.dir, st.grT);
+        if (f.wall) {
+          const mv = st.dir.clone().sub(was).multiplyScalar(R), into = mv.dot(f.wall);
+          if (into > 0) {
+            mv.addScaledVector(f.wall, -into);
+            const slid = was.clone().multiplyScalar(R).add(mv).normalize();
+            const wasWalled = footing(was, st.grT).wall;
+            st.dir.copy(footing(slid, st.grT).wall && !wasWalled ? was : slid);
+            st.speed *= 0.9;
+          }
+        }
+      }
     }
     st.heading.sub(st.dir.clone().multiplyScalar(st.heading.dot(st.dir))).normalize();
     // place + orient: on the terrain, or on whatever floor you're standing on
-    const gr = standAt(st.dir);                                // terrain, floors, or the road ribbon
+    // terrain, floors, or the road ribbon; on foot, under any of her feet (she steps up
+    // as a shoe lands on the step, not once her middle is over it)
+    const gr = st.mode === 'walk' ? footing(st.dir, st.grT ?? null).r : standAt(st.dir);
+    st.grT = gr;
     if (!st.gr) st.gr = gr;
     st.gr += (gr - st.gr) * (1 - Math.exp(-16 * dt));         // step up/down, don't pop
     root.position.copy(st.dir).multiplyScalar(st.gr);
@@ -480,7 +503,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // the blocked-view pull-in eases (the check works in 10% steps: snapping to them popped)
     const f0 = reach(want);
     if (st.reachS == null || !st.camInit) st.reachS = f0;
-    st.reachS += (f0 - st.reachS) * (1 - Math.exp(-(f0 < st.reachS ? 6 : 2.5) * dt));
+    st.reachS += (f0 - st.reachS) * (1 - Math.exp(-(f0 < st.reachS ? 8 : 4) * dt));
     const f = st.reachS;
     if (f < 0.999) {
       const keep = Math.max(f, st.mode === 'jeep' ? 0.6 : 0.4);
@@ -489,12 +512,14 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     // look a little ahead of where you're going — the lead itself on a slow spring, so a
     // quick turn doesn't whip the view round
     if (!st.leadV) st.leadV = new THREE.Vector3();
-    st.leadV.lerp(st.heading.clone().multiplyScalar((st.mode === 'jeep' ? 1.6 : 0.9) * lead), 1 - Math.exp(-2.5 * dt));
+    st.leadV.lerp(st.heading.clone().multiplyScalar(1.6 * lead), 1 - Math.exp(-4 * dt));
     const look = head.clone().add(st.leadV);
     if (!st.camInit) { st.camPos.copy(want); st.camLook.copy(look); st.camInit = true; }
     const pullIn = want.distanceTo(head) < st.camPos.distanceTo(head) - 0.3;
-    st.camPos.lerp(want, 1 - Math.exp(-(pullIn ? 6 : 4) * dt));
-    st.camLook.lerp(look, 1 - Math.exp(-5 * dt));
+    // while you drag the view it answers your hand straight away; otherwise it trails softly
+    const dragging = st.dragT < 0.25;
+    st.camPos.lerp(want, 1 - Math.exp(-(dragging ? 14 : pullIn ? 10 : 5) * dt));
+    st.camLook.lerp(look, 1 - Math.exp(-(dragging ? 14 : 8) * dt));
     // keep the eye above ground
     const cr = st.camPos.length(), cg = groundAt(st.camPos.clone().normalize()) + 0.8;
     if (cr < cg) st.camPos.setLength(cg);

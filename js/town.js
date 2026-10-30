@@ -8,7 +8,7 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js?v=6';
+import { buildMuseum } from '../museum.js?v=7';
 import { MAIN_STREET, buildShop, stripMall, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary } from './buildings.js';
 
 export const TOWN_C = llv(PLAN.town.center);
@@ -63,6 +63,9 @@ export function planTown() {
 export function buildTown(scene) {
   const out = { landmarks: [], sites: {}, museum: null, statics: [], colliders: [] };
   const solid = (d, r) => out.colliders.push({ dir: d.clone(), r });
+  // street furniture baked into a placed building (benches, lamp posts, planters,
+  // post boxes…) left [x, z, r] footprints in its userData.foots (buildings.js `foot`)
+  const feet = (g) => { g.updateWorldMatrix(true, false); for (const [x, z, r] of g.userData.foots || []) solid(g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r); };
   const add = (obj) => { scene.add(obj); out.statics.push(obj); return obj; };
 
   // ── 2. ROADS ───────────────────────────────────────────────────────────────
@@ -112,6 +115,12 @@ export function buildTown(scene) {
     deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: z => z.key === key, clear: 1.8 });
     return buildRoad(scene, sm, { half: 0.85, dashed: false });
   };
+  // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
+  // everything built after (blocks, lamps, the verge trees and bushes) see them —
+  // laid later, a spur ran straight over the verge planting it crossed
+  for (const p of PLAN.projects) spur(llv(p.at), 4.6, 'lm:' + p.key);
+  for (const [k, s] of Object.entries(PLAN.sites))
+    if (k !== 'airport') spur(llv(s.at), s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
 
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
@@ -147,6 +156,7 @@ export function buildTown(scene) {
       const d = fC(x, Y);
       const g = placeOnPlanet(buildShop({ ...spec, w, pave }), d, yawToFace(d, fC(x, 0)), { inked: false });
       out.shops.push({ ...spec, dir: d, root: g });
+      feet(g);
       addFloor(g, (lx, lz) => lz > -0.05 && lz < 1.42 && lx > -w / 2 - pave[0] && lx < w / 2 + pave[1] ? 0.07 : null);
       const depth = spec.special === 'library' ? 3.0 : 2.4, n = Math.max(1, Math.round(w / 2));
       for (let c = 0; c < n; c++) solid(fC(x - w / 2 + (c + 0.5) * w / n, side * (SHOP_Y + depth / 2)), Math.min(1.2, Math.max(w / n, depth) / 2 + 0.05));
@@ -182,7 +192,7 @@ export function buildTown(scene) {
     const rr = Math.hypot(x, y) / CAP;
     const r = rnd();
     let b;
-    if (r < 0.12) { b = park(); }
+    if (r < 0.12) { b = park(P / 2 - ROAD_MAJOR - 0.15); }   // clear of the road on every side
     else if (rr < 0.45) b = townBlock({ w: room * 0.9, d: room * 0.9, h: 6 + rnd() * 4 });
     else if (rr < 0.8) b = townBlock({ w: room * 0.9, d: room * 0.85, h: 3.1 + rnd() * 1.7 });
     else b = house({ w: room * 0.92, d: room * 0.76, h: 1.7 });
@@ -191,8 +201,9 @@ export function buildTown(scene) {
     // them, and so on — fronts face fronts across each street, backs face backs
     const n = j > 0 ? j : -1 - j, away = Math.sign(y) || 1;
     const faceY = n % 2 ? away : -away;
-    add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5 * faceY)), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
+    const pb = add(placeOnPlanet(b, d, yawToFace(d, fC(x, y + 5 * faceY)), { weight: rr < 0.45 ? 'heavy' : 'mid' }));
     if (r >= 0.12) solid(d, room * 0.5);
+    else feet(pb);                                            // a park: its tree and bench stop you
   }
   // street lamps at junctions, trees along the boulevard verge
   for (let i = -K; i <= K; i++) for (let j = -K; j <= K; j++) {
@@ -202,12 +213,13 @@ export function buildTown(scene) {
     const d = fC(x, y);
     if (zoneHit(d, 0.4) || onRoad(d, 0.35)) continue;
     add(settle(lamp(), d, 0.2, 0.02));
+    solid(d, 0.15);
   }
   // Maple Plaza: the strip mall out past the boulevard, its lot opening onto it
   {
     const d = fC(...MALL.at), g = add(placeOnPlanet(stripMall(), d, yawToFace(d, fC(MALL.at[0] - 10, MALL.at[1]))));
     out.mall = { dir: d, root: g };
-    addFloor(g, g.userData.floor);
+    addFloor(g, g.userData.floor); feet(g);
     for (let k = -2; k <= 2; k++) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 2.3), 1.3);
     for (const k of [-1, 1]) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 5.1), 0.8);
   }
@@ -216,8 +228,10 @@ export function buildTown(scene) {
     const side = new THREE.Vector3().crossVectors(p, q.clone().sub(p)).normalize();
     for (const s of [-1, 1]) {
       const d = p.clone().multiplyScalar(R).addScaledVector(side, s * 2.3).normalize();
-      if (zoneHit(d, 0.8) || onRoad(d, 0.7) || isWater(d) || inShops(...toTown(d), 0.6)) continue;
-      add(settle(rnd() > 0.35 ? tree() : bush(0.55), d, 0.5, 0.05, rnd() * 6));
+      // a tree's crown reaches ~1.1 from its trunk: keep it from hanging over any carriageway
+      const isTree = rnd() > 0.35;
+      if (zoneHit(d, 0.8) || onRoad(d, isTree ? 1.15 : 0.7) || isWater(d) || inShops(...toTown(d), 0.6)) continue;
+      add(settle(isTree ? tree() : bush(0.55), d, 0.5, 0.05, rnd() * 6));
       solid(d, 0.35);
     }
   }
@@ -229,15 +243,13 @@ export function buildTown(scene) {
     add(g);
     solid(d, 2.1);
     out.landmarks.push({ ...p, dir: d, root: g });
-    spur(d, 4.6, 'lm:' + p.key);
   }
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const d = llv(s.at);
     out.sites[k] = { ...s, dir: d, frame: frame(d, TOWN_C) };
-    if (k !== 'airport') spur(d, s.stop ?? s.r + 0.6, 'site:' + k);      // Cape Far Side: the long road round the planet
     if (k === 'launchpad') {
       const g = add(placeOnPlanet(capeFarSide(), d, yawToFace(d, TOWN_C), { weight: 'mid' }));
-      addFloor(g, g.userData.floor);
+      addFloor(g, g.userData.floor); feet(g);
       for (const [[x, z], r] of g.userData.solids) solid(g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
       // the story places its moving parts in the site's own frame
       out.cape = { dir: d, root: g, at: (x, z) => g.localToWorld(new THREE.Vector3(x, 0, z)).normalize() };
@@ -245,7 +257,7 @@ export function buildTown(scene) {
     }
     if (k === 'station') {
       const g = add(placeOnPlanet(station(), d, yawToFace(d, TOWN_C)));
-      addFloor(g, g.userData.floor);
+      addFloor(g, g.userData.floor); feet(g);
       // the station's footprint is in its own local frame (x is mirrored in the site frame)
       for (const [[x, z], r] of g.userData.solids) solid(out.sites[k].frame(-x, z), r);
       continue;
@@ -313,15 +325,20 @@ function bunting(fC, x, Y) {
   return g;
 }
 
-// a small park: lawn, a tree, a bench
-function park() {
-  const g = new THREE.Group();
-  const lawn = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.55, 0.12, 24), paint(PAL.grass));
+// a small park: lawn, a tree, a bench, all of it inside r (the block's clear radius:
+// a 1.55 lawn and a full-size tree spilled half a unit onto the streets round a 4.4 block)
+function park(r = 1.1) {
+  const g = new THREE.Group(), k = r / 1.1;
+  const lawn = new THREE.Mesh(new THREE.CylinderGeometry(r - 0.05, r, 0.12, 24), paint(PAL.grass));
   lawn.position.y = 0.06; g.add(lawn);
   // seen from the street (the park's front, +z): the tree on the left, the bench to its right,
   // facing the street
-  const t = tree({ s: 1.0 }); t.position.set(-0.55, 0.1, -0.25); g.add(t);
-  const b = bench(); b.position.set(0.55, 0.1, 0.2); b.rotation.y = 0; g.add(b);
+  const t = tree({ s: 0.85 * k }); t.position.set(-0.3 * k, 0.1, -0.15 * k); g.add(t);
+  const b = bench(); b.position.set(0.35 * k, 0.1, 0.35 * k); b.rotation.y = 0; g.add(b);
+  // footprints the walker can't pass (collected by bake into userData.foots)
+  const foot = (x, z, r) => { const o = new THREE.Object3D(); o.position.set(x, 0, z); o.userData.foot = r; g.add(o); };
+  foot(-0.3 * k, -0.15 * k, 0.2);
+  for (const fx of [-0.4, 0, 0.4]) foot(0.35 * k + fx, 0.35 * k, 0.2);
   return ink(g, 'fine');
 }
 
