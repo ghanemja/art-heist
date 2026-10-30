@@ -5,6 +5,7 @@ import { styleTick } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
 import { createGame } from './game.js';
+import { createCitizens } from './citizens.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
@@ -45,10 +46,11 @@ const mf = town.museum.frame;
 const player = createPlayer(scene, camera, town.colliders, mf(0.8, 3.4), mf(0, -6));
 const game = createGame({ scene, camera, town, player, atmosphere, renderer });
 registerGround([scene]);          // again, now the case's props (café deck, booth…) are down too
+const citizens = createCitizens({ scene, town, game, player, camera });   // bystanders, streamed in after the title is up
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
-window.__v2 = { scene, camera, renderer, town, player, game, ROADS, ZONES };
+window.__v2 = { scene, camera, renderer, town, player, game, citizens, ROADS, ZONES };
 
 const clock = new THREE.Clock();
 function loop() {
@@ -63,6 +65,7 @@ function loop() {
   }
   town.museum.tick(t, 1 - atm.k);
   if (!game.update(dt, t)) player.update(dt, t);
+  citizens.update(dt);
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
