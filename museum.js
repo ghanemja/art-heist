@@ -530,8 +530,8 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
       for (let k = 1; k <= 4; k++) { const x = drumX + (CW / 2 - drumX) * k / 4, z = drumZ + (zEnd - drumZ) * k / 4; pts.push(new THREE.Vector3(x, roofAt(x), z)); }
       const wingTop = Y0 + WING_H + 0.28, outer = WING_X + WING_W / 2 + 0.05;
       pts.push(new THREE.Vector3(CW / 2 + 0.25, wingTop + 0.25, zEnd), new THREE.Vector3(CW / 2 + 0.7, wingTop, zEnd),
-        new THREE.Vector3(outer - 0.3, wingTop, zEnd), new THREE.Vector3(outer, wingTop + 0.52, zEnd + 0.05),
-        new THREE.Vector3(outer + 0.14, wingTop + 0.2, zEnd + 0.08), new THREE.Vector3(outer + 0.16, wingTop - 0.9, zEnd + 0.1));
+        new THREE.Vector3(outer - 0.3, wingTop, zEnd), new THREE.Vector3(outer, wingTop + 0.52, zEnd + 0.15),
+        new THREE.Vector3(outer + 0.2, wingTop + 0.2, zEnd + 0.3), new THREE.Vector3(outer + 0.26, wingTop - 0.9, zEnd + 0.4));   // hangs beside the ladder, clear of the ledge
       const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
       const ROPE = S(0xc9a46a, { roughness: 0.95 });
       add(new THREE.TubeGeometry(curve, 160, 0.05, 7), ROPE);
@@ -683,12 +683,16 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   // ── the ladder: someone propped it to the east wing roof ──
   {
     const lad = new THREE.Group();
-    lad.position.set(WING_X + WING_W / 2 + 0.55, Y0, -8.6);
-    lad.rotation.z = 0.2;
+    // its feet on the lawn (~0.08), its top resting just outside the wing's cornice ledge
+    // (which sticks out to WING_X + WING_W/2 + 0.15) — it used to lean into the ledge
+    const LT = 0.2, ledge = WING_X + (WING_W + 0.3) / 2, topY = Y0 + WING_H + 0.3, footY = 0.08;
+    const LL = (topY - footY) / Math.cos(LT);
+    lad.position.set(ledge + 0.08 + LL * Math.sin(LT), footY, -8.6);
+    lad.rotation.z = LT;
     g.add(lad);
     const ALU = S(0xb8c0c8, { roughness: 0.35, metalness: 0.7 });
-    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.035, 0.035, 3.5, 8), ALU, 0, 1.75, s * 0.24, lad);
-    for (let k = 0; k < 10; k++) {
+    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.035, 0.035, LL, 8), ALU, 0, LL / 2, s * 0.24, lad);
+    for (let k = 0; k < Math.floor((LL - 0.35) / 0.33); k++) {
       const r = add(new THREE.CylinderGeometry(0.022, 0.022, 0.48, 6), ALU, 0, 0.25 + k * 0.33, 0, lad);
       r.rotation.x = Math.PI / 2;
     }
