@@ -17,7 +17,7 @@
   }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #f3ead7; font-family: 'Patrick Hand', 'Comic Sans MS', cursive; color: var(--ink); }
   canvas { display: block; touch-action: none; }
-  body { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }   /* no double-tap zoom / text selection on phones */
+  body.touch { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }   /* no double-tap zoom / text selection on phones */
   .ui { position: fixed; z-index: 10; }
   .sk { background: var(--paper); border: 2.5px solid var(--ink); border-radius: var(--sketch); box-shadow: 3px 4px 0 rgba(42,34,48,0.85); }
   button.sk { font: inherit; font-size: 20px; color: var(--ink); padding: 8px 22px; cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
@@ -233,13 +233,13 @@
   body.touch #screen .chip { padding: 9px 14px; } body.touch #screen .back { padding: 10px 12px; } body.touch #screen .send { width: 40px; height: 40px; }
   body.touch #handset .homebtn { width: 36px; height: 36px; margin-left: -18px; bottom: 2px; }
   /* short (landscape phone) screens: the drawn keypad would leave no room for the texts; panels scroll */
-  @media (max-height: 500px) { #screen .kb { display: none; } #handset { height: calc(100dvh - 124px); bottom: 12px; padding: 22px 10px 30px; }
-    #handset .homebtn { bottom: 5px; } #handset .ear { top: 8px; }
-    #bag, #nb, #card, #endcard { max-height: 88dvh; overflow: auto; } #talk { bottom: 8px; padding: 10px 16px; } #talk p { font-size: 18px; } }
-  #bag { max-height: 86vh; max-height: 86dvh; overflow: auto; }
+  @media (max-height: 500px) { body.touch #screen .kb { display: none; } body.touch #handset { height: calc(100dvh - 124px); bottom: 12px; padding: 22px 10px 30px; }
+    body.touch #handset .homebtn { bottom: 5px; } body.touch #handset .ear { top: 8px; }
+    body.touch :is(#bag, #nb, #card, #endcard) { max-height: 88dvh; overflow: auto; } body.touch #talk { bottom: 8px; padding: 10px 16px; } body.touch #talk p { font-size: 18px; } }
+  body.touch #bag { max-height: 86vh; max-height: 86dvh; overflow: auto; }
   /* narrow touch screens: a smaller driving map, the prompt above it, the countdown below the board + toasts */
   @media (max-width: 640px) { body.touch #minimapBox { width: 124px; right: 10px; bottom: 74px; } body.touch #minimap { width: 110px; height: 110px; }
-    body.touch #prompt { bottom: 220px; } #timer { top: 160px; } }
+    body.touch #prompt { bottom: 220px; } body.touch #timer { top: 160px; } }
   @media (max-width: 640px) { #hint { display: none; } #nbBtn { top: auto; bottom: 16px; } #bagBtn { top: auto; bottom: 16px; right: 150px; } }
 </style>
 </head>
@@ -282,6 +282,6 @@
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=81"></script>
+<script type="module" src="./js/main.js?cb=82"></script>
 </body>
 </html>
