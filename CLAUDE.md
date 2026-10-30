@@ -99,6 +99,6 @@ terrain under it — the curve, and any levelled plane or slope — then inks). 
 - **Redeploy to Netlify after every finished feature request.** Run `./deploy.sh`
   (validates the main character, then `netlify deploy --prod`). A feature isn't
   done until it's live.
-- **Bump the cache token** on every edit, or the browser ships stale JS: `js/main.js?cb=NN`
+- **Bump the cache token** on every edit, or the browser ships stale JS: `js/main.js?cb=NN` (index.html's import map gives every `js/` module the same token; `deploy.sh` syncs them to main.js's)
   in `index.html` (the main app), `planet.js?cb=pNN` in `classic.html` (the classic game).
 - Deploy is manual — `git push` does NOT publish.
