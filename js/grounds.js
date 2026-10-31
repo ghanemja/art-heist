@@ -520,7 +520,8 @@ function mouthKerb(K, outline, { seed, skip, mouth, z1 }) {
 // its own props outside ──
 export const APPROACH_STOP = 6.2;          // (old: the spur stopped this far from the shop's centre — still the stop for a shop with its own car park)
 export const APPROACH_Z1 = 5.1;            // the forecourt's front edge (shop z): its spur runs onto it here, at x 0
-export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [], seed = 1 } = {}) {
+// (lot: the side, ±1, a car park lies on — the forecourt stops short of it there)
+export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [], seed = 1, lot = 0 } = {}) {
   const K = kit(), M = mats(), R = rng(7919 * seed + 11);
   // the shop's own outside props, as occupied half-metre cells
   const busy = new Set(), v = new THREE.Vector3();
@@ -549,9 +550,10 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
 
   // the forecourt: a cobbled apron across the shopfront, rounded at its outer corners
   const FX = 3.45, Z0 = 2.3, Z1 = APPROACH_Z1, CR = 1.5;
+  const FP = lot > 0 ? 2.75 : FX, FN = lot < 0 ? 2.75 : FX;   // its +x / −x reach (short of a car park)
   const sh = new THREE.Shape();                    // drawn in (x, -z): lay() turns it flat
-  sh.moveTo(-FX, -Z0); sh.lineTo(FX, -Z0); sh.lineTo(FX, -(Z1 - CR)); sh.quadraticCurveTo(FX, -Z1, FX - CR, -Z1);
-  sh.lineTo(-FX + CR, -Z1); sh.quadraticCurveTo(-FX, -Z1, -FX, -(Z1 - CR)); sh.closePath();
+  sh.moveTo(-FN, -Z0); sh.lineTo(FP, -Z0); sh.lineTo(FP, -(Z1 - CR)); sh.quadraticCurveTo(FP, -Z1, FP - CR, -Z1);
+  sh.lineTo(-FN + CR, -Z1); sh.quadraticCurveTo(-FN, -Z1, -FN, -(Z1 - CR)); sh.closePath();
   const outline = sh.getSpacedPoints(80).map(p => [p.x, -p.y]);
   cobbleSlab(K, sh, 12);
   // the mouth: the spur (town.js) now runs right onto the forecourt's front edge, centred, and
@@ -560,7 +562,7 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
   // the forecourt). The lane (mapped like the forecourt, kerbed) is only a fallback now
   const LH = 0.98;
   const { mouth, lane } = roadMouth(K, outline, ex, ez, { zMin: Z0 + 0.4, laneHalf: LH, mid: 0.35, seed: seed * 3,
-    inSlab: (x, z) => Math.abs(x) < FX + 0.1 && z < Z1 + 0.1 });
+    inSlab: (x, z) => x < FP + 0.1 && x > -FN - 0.1 && z < Z1 + 0.1 });
   const nearLane = (x, z, r) => {
     if (!lane) return false;
     const qx = lane.ex - lane.ax, qz = lane.ez - lane.az, t = Math.max(0, Math.min(1, ((x - lane.ax) * qx + (z - lane.az) * qz) / (qx * qx + qz * qz)));
@@ -568,7 +570,7 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
   };
   // paving test (forecourt or lane), for keeping plants off it
   function inPaving(x, z, r) {
-    if (Math.abs(x) < FX + r && z > Z0 - r && z < Z1 + r) return true;
+    if (x < FP + r && x > -FN - r && z > Z0 - r && z < Z1 + r) return true;
     if (lane) {
       const qx = lane.ex - lane.ax, qz = lane.ez - lane.az, t = Math.max(0, Math.min(1, ((x - lane.ax) * qx + (z - lane.az) * qz) / (qx * qx + qz * qz)));
       if (Math.hypot(x - lane.ax - qx * t, z - lane.az - qz * t) < 1.05 + r) return true;

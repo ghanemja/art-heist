@@ -356,6 +356,7 @@ export function pruneDeco(root) {
 }
 const isAncestor = (a, o) => { for (let q = o.parent; q; q = q.parent) if (q === a) return true; return false; };
 export function onRoad(d, pad = 0) {
+  for (const P of PADS) if (padDist(P, d) < pad) return true;
   for (const rd of ROADS) {
     if (rd.disc) { if (arc(d, rd.disc.c) < rd.disc.r + pad) return true; continue; }
     for (const p of rd.pts) if (arc(d, p) < rd.half + pad) return true;
@@ -417,7 +418,18 @@ const dashMat = paint(PAL.dash, { hatch: 0, side: THREE.DoubleSide, unique: true
 // the sheet draws in front of any paving it meets flush (a car park's bell-mouth), the dashes in front of the sheet
 roadMat.polygonOffset = true; roadMat.polygonOffsetFactor = -2; roadMat.polygonOffsetUnits = -2;
 dashMat.polygonOffset = true; dashMat.polygonOffsetFactor = -3; dashMat.polygonOffsetUnits = -3;
-export const JUNCTIONS = [];          // { d, a, b, kind: 'T' (a's end `end` meets b) | 'C' (end to end) | 'X' (crossing) }
+export const JUNCTIONS = [];
+// PADS: paved rectangles drawn into the same sheet (a car park and its apron): centre c (unit
+// dir), tangent axes e1/e2 (unit), half-sizes hx/hz along them, corner radius r. Each blends into
+// any road (or pad) it touches with the same kerb return as a junction — one surface, one kerb
+export const PADS = [];
+export function addPad(c, e1, e2, hx, hz, r = 0.3) { PADS.push({ c: c.clone().normalize(), e1: e1.clone().normalize(), e2: e2.clone().normalize(), hx, hz, r }); }
+const _pq = new THREE.Vector3();
+export function padDist(P, d) {                    // world units outside the pad (negative inside)
+  _pq.copy(d).multiplyScalar(R).addScaledVector(P.c, -R);
+  const qx = Math.abs(_pq.dot(P.e1)) - P.hx + P.r, qz = Math.abs(_pq.dot(P.e2)) - P.hz + P.r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - P.r;
+}          // { d, a, b, kind: 'T' (a's end `end` meets b) | 'C' (end to end) | 'X' (crossing) }
 const RMIN = 2.6;                     // the tightest bend a centre line may take (world units)
 const KERB = 0.28;                    // the kerb band's width outside the carriageway
 const FILLET = 1.7;                   // the smooth-min blend at junctions: kerb returns of ~1.4 radius
@@ -722,7 +734,19 @@ export function buildRoadSurface(scene) {
     for (let k = 0; k < m; k++) { const a = P[k], b = P[(k + 1) % n]; addSeg({ road: i, h: rd.half, ax: a.x * R, ay: a.y * R, az: a.z * R, bx: b.x * R, by: b.y * R, bz: b.z * R,
       fa: !rd.closed && k === 0 && rd.square === 'start', fb: !rd.closed && k === m - 1 && rd.square === 'end' }); }
   });
-  const dRoad = new Float64Array(ROADS.length).fill(1e9), touched = [];
+  // the pads: each its own piece, blended with every road and pad it touches
+  PADS.forEach((P, k) => {
+    const c = P.c.clone().multiplyScalar(R), i = ROADS.length + k;
+    addSeg({ road: i, h: Math.hypot(P.hx, P.hz), ax: c.x, ay: c.y, az: c.z, bx: c.x, by: c.y, bz: c.z, pad: P });
+    const reach = Math.cos((Math.hypot(P.hx, P.hz) + 1.2 + FILLET + 1.5) / R);
+    ROADS.forEach((rd, j) => {
+      if (rd.deck) return;
+      const touches = rd.disc ? padDist(P, rd.disc.c) < rd.disc.r + 0.3 : rd.pts.some(q => padDist(P, q) < rd.half + 0.3);
+      if (touches) blends.push({ d: P.c, a: j, b: i, reach });
+    });
+    PADS.forEach((Q, m) => { if (m < k && padDist(P, Q.c) < Math.hypot(Q.hx, Q.hz) + 0.3) blends.push({ d: P.c, a: ROADS.length + m, b: i, reach }); });
+  });
+  const dRoad = new Float64Array(ROADS.length + PADS.length).fill(1e9), touched = [];
   const field = (v) => {                                              // v: unit dir → signed distance to the carriageway's edge
     const x = v.x * R, y = v.y * R, z = v.z * R, list = hash.get(hk(x, y, z));
     if (!list) return 1e9;
@@ -732,7 +756,8 @@ export function buildRoadSurface(scene) {
       const t0 = l2 > 1e-12 ? ((x - s.ax) * abx + (y - s.ay) * aby + (z - s.az) * abz) / l2 : 0, t = t0 < 0 ? 0 : t0 > 1 ? 1 : t0;
       const dx = x - s.ax - abx * t, dy = y - s.ay - aby * t, dz = z - s.az - abz * t;
       let d = Math.sqrt(dx * dx + dy * dy + dz * dz) - s.h;
-      if ((s.fb && t0 > 1) || (s.fa && t0 < 0)) {                     // a square end: a box past it, not a round cap
+      if (s.pad) d = padDist(s.pad, v);
+      else if ((s.fb && t0 > 1) || (s.fa && t0 < 0)) {                     // a square end: a box past it, not a round cap
         const over = (t0 > 1 ? t0 - 1 : -t0) * Math.sqrt(l2), ex = x - s.ax - abx * t0, ey = y - s.ay - aby * t0, ez = z - s.az - abz * t0;
         d = Math.max(Math.sqrt(ex * ex + ey * ey + ez * ez) - s.h, over);
       }

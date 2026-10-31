@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked, addPad } from './world.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=15';
@@ -106,8 +106,9 @@ function rowPlace() {
   const RW = resolveRow(), hub = RW.L(0, 0);
   return placeFrame(hub, yawToFace(hub, RW.L(0, 40)));
 }
-// a project shop's cobbled forecourt (shopApproach, below), where it has one: not in the row, no car park
-const hasForecourt = (p) => isProjectShop(p.style) && !ROW_KEYS.includes(p.key) && !p.lot;
+// a project shop's cobbled forecourt (shopApproach, below): every shop but the row's (a shop with
+// its own car park has one too, narrowed on the lot's side — YarnFlow's door stood on the grass)
+const hasForecourt = (p) => isProjectShop(p.style) && !ROW_KEYS.includes(p.key);
 const shopPlace = (p) => placeFrame(PDIR[p.key], yawToFace(PDIR[p.key], TOWN_C));
 
 // ── the museum's sculpture garden (landscaping) sits on its OWN level terrace: behind the museum
@@ -620,20 +621,21 @@ export function buildTown(scene) {
       for (const [x, z, r] of S.walls) solid(base.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
       const lm = { ...p, lot: null, dir: d, root: base, upper, inside: S.inside };   // (lot: set below only where a car park is built — Makers' Row shares one)
       if (p.lot && !inRow) {
-        // the car park: its apron runs in to the spur's real edge (walk out from the lot, in the
-        // shop's frame, until the road's surface begins)
-        const v = new THREE.Vector3(), s = p.lot;
-        const onIt = (x, z) => { const nr = nearestRoad(base.localToWorld(v.set(s * x, 0, z)).normalize()); return nr && nr.dist <= nr.half; };
-        const roadX = (z) => { let lo = SHOP_LOT.x0, hi = -0.5; if (onIt(lo, z)) return lo; if (!onIt(hi, z)) return 0.9;
-          for (let k = 0; k < 16; k++) { const m = (lo + hi) / 2; if (onIt(m, z)) hi = m; else lo = m; } return lo; };
-        const g = add(placeOnPlanet(shopLot(s, roadX), d, yaw, { weight: 'fine' }));
+        // the car park: its markings here, its asphalt two pads in the road sheet (the lot, and an
+        // apron across the front into the spur's last straight) — flush, kerbed, kerb returns curved
+        const s = p.lot, F = shopPlace(p);
+        const g = add(placeOnPlanet(shopLot(s), d, yaw, { weight: 'fine' }));
         feet(g);
+        for (const [cx, cz, hx, hz, r] of SHOP_LOT.pads) {
+          const c = F.toDir(s * cx, cz), ex = F.toDir(s * cx + 1, cz).sub(c), ez = F.toDir(s * cx, cz + 1).sub(c);
+          addPad(c, ex.projectOnPlane(c), ez.projectOnPlane(c), hx, hz, r);
+        }
         lm.lot = { side: s, root: g };
       }
       out.landmarks.push(lm);
       // ── landscaping (grounds.js): a cobbled forecourt the spur runs onto,
       // edging stones, planters, a lamp, a bench, and planting round the shop ──
-      if (!inRow && !lm.lot) {                          // (a shop with its own car park beside it has that instead)
+      if (!inRow) {                                     // (one with a car park: the forecourt stops short of it)
         const L = shopPlace(p).toLocal;                  // (exact: the mouth is built to the spur's end)
         let end = spurEnds[p.key] ? L(spurEnds[p.key]) : null;
         if (!end) {                                     // no spur of its own: run the lane to the nearest road
@@ -643,7 +645,7 @@ export function buildTown(scene) {
         const W = (x, z) => base.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
         const solids = out.colliders.slice();
         const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r) && !groundsKeep.some(c => arc(w, c.dir) < c.r + r); };
-        const g = add(placeOnPlanet(shopApproach({ ex: end?.x ?? null, ez: end?.z ?? null, ok, shop: [S.base, S.upper], seed: out.landmarks.length }), d, yaw, { weight: 'fine', sink: 0, drawn: true }));
+        const g = add(placeOnPlanet(shopApproach({ ex: end?.x ?? null, ez: end?.z ?? null, ok, shop: [S.base, S.upper], seed: out.landmarks.length, lot: lm.lot ? lm.lot.side : 0 }), d, yaw, { weight: 'fine', sink: 0, drawn: true }));
         feet(g);
         growPlants(scene, g, { seed: (out.grounds?.length || 0) + 1 });   // its planting, on the ground as drawn, in the breeze
         (out.grounds ||= []).push(g);
