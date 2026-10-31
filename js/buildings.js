@@ -15,7 +15,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
-import { settle, radiusAt } from './world.js';
+import { settle, radiusAt, drawnGroundAt } from './world.js';
 import { windowWall, pick, rnd, tree, bush, bench as parkBench, lamp } from './props.js';
 
 // ── geometry kit ─────────────────────────────────────────────────────────────
@@ -1404,17 +1404,31 @@ function bake(g, roots = [g]) {
 // Long faces (a platform top, a parking lot) are split first: this only
 // moves vertices, and a slab with none in its middle would stay flat there.
 const _tess = new TessellateModifier(1.6, 6);
-function conform(g, sink) {
+// (landscaping laid on the drawn ground: fine enough that its paving bends with every facet of the
+// planet mesh — ~0.75 between vertices — or the ground pokes up through a long flat triangle)
+const _tessFine = new TessellateModifier(0.35, 12);
+function conform(g, sink, groundAt = radiusAt) {
   g.updateMatrixWorld(true);
   const box = new THREE.Box3();
   for (const m of g.children) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox); }
-  const S = 0.3, x0 = box.min.x - S, z0 = box.min.z - S;
+  const exact = groundAt !== radiusAt;
+  const S = exact ? 0.15 : 0.3, x0 = box.min.x - S, z0 = box.min.z - S;
   const nx = Math.ceil((box.max.x - x0) / S) + 2, nz = Math.ceil((box.max.z - z0) / S) + 2;
   const grid = new Float32Array(nx * nz), v = new THREE.Vector3(), inv = g.matrixWorld.clone().invert();
   for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) {
     v.set(x0 + i * S, 0, z0 + k * S).applyMatrix4(g.matrixWorld).normalize();
-    v.multiplyScalar(radiusAt(v)).applyMatrix4(inv);
-    grid[i * nz + k] = v.y;
+    v.multiplyScalar(groundAt(v)).applyMatrix4(inv);
+    let y = v.y;
+    // (exact: find the ground straight below the grid point along the group's OWN up — the
+    // radial line through it leans away from the group's up further out, and on a slope the
+    // height it reads belongs to a point beside this one)
+    if (exact) for (let it = 0; it < 3; it++) {
+      v.set(x0 + i * S, y, z0 + k * S).applyMatrix4(g.matrixWorld);
+      const r = v.length(), dg = groundAt(v.clone().normalize()) - r;
+      v.applyMatrix4(inv);
+      y += dg / Math.max(0.5, Math.cos(Math.atan2(Math.hypot(x0 + i * S, z0 + k * S), r)));
+    }
+    grid[i * nz + k] = y;
   }
   const at = (x, z) => {
     const fx = Math.min(nx - 1.001, Math.max(0, (x - x0) / S)), fz = Math.min(nz - 1.001, Math.max(0, (z - z0) / S));
@@ -1422,7 +1436,7 @@ function conform(g, sink) {
     return (grid[i * nz + k] * (1 - u) + grid[(i + 1) * nz + k] * u) * (1 - w) + (grid[i * nz + k + 1] * (1 - u) + grid[(i + 1) * nz + k + 1] * u) * w;
   };
   for (const m of g.children) {
-    m.geometry = _tess.modify(m.geometry);
+    m.geometry = (exact ? _tessFine : _tess).modify(m.geometry);
     const p = m.geometry.attributes.position;
     for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) + at(p.getX(i), p.getZ(i)) - sink);
     p.needsUpdate = true;
@@ -1432,10 +1446,12 @@ function conform(g, sink) {
 }
 // set a built group down at direction d facing `yaw`, bent and (unless it'll be
 // batched with its neighbours) inked; returns the placed group
-export function placeOnPlanet(raw, d, yaw, { weight = 'mid', sink = 0.04, inked = true } = {}) {
+// (drawn: lay it onto the planet mesh as drawn rather than the exact terrain — landscaping, so
+// paving and planting never hover where the ground curves between the mesh's vertices)
+export function placeOnPlanet(raw, d, yaw, { weight = 'mid', sink = 0.04, inked = true, drawn = false } = {}) {
   const g = bake(raw);
   settle(g, d, 0.25, sink, yaw);
-  conform(g, sink);
+  conform(g, sink, drawn ? drawnGroundAt : radiusAt);
   g.userData.conform = sink;                   // floors on it read heights above the terrain
   return inked ? ink(g, weight) : g;
 }
