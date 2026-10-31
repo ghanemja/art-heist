@@ -185,23 +185,26 @@ function mergeHulls(parent) {
   const byMat = new Map();
   for (const o of fills) for (const h of hullsOf(o)) { let b = byMat.get(h.material); if (!b) byMat.set(h.material, b = []); b.push(o); }
   if (![...byMat.values()].some(b => b.length > 1)) return;
-  const withUv = fills.some(o => o.geometry.attributes.uv);
+  const withUv = fills.some(o => o.geometry.attributes.uv), withCol = fills.some(o => o.geometry.attributes.color);
   let nv = 0; for (const o of fills) nv += o.geometry.attributes.position.count;
   const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = withUv ? new Float32Array(nv * 2) : null;
+  const col = withCol ? new Float32Array(nv * 3).fill(1) : null;
   const IDX = nv > 65535 ? Uint32Array : Uint16Array, base = new Map();
   let vb = 0;
   for (const o of fills) {
-    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, n = P.count;
+    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, C = g.attributes.color, n = P.count;
     for (let i = 0; i < n; i++) {
       const j = (vb + i) * 3;
       pos[j] = P.getX(i); pos[j + 1] = P.getY(i); pos[j + 2] = P.getZ(i);
       nor[j] = N.getX(i); nor[j + 1] = N.getY(i); nor[j + 2] = N.getZ(i);
       if (uv && U) { uv[(vb + i) * 2] = U.getX(i); uv[(vb + i) * 2 + 1] = U.getY(i); }
+      if (col && C) { col[j] = C.getX(i); col[j + 1] = C.getY(i); col[j + 2] = C.getZ(i); }
     }
     base.set(o, vb); vb += n;
   }
   const A = { position: new THREE.BufferAttribute(pos, 3), normal: new THREE.BufferAttribute(nor, 3) };
   if (uv) A.uv = new THREE.BufferAttribute(uv, 2);
+  if (col) A.color = new THREE.BufferAttribute(col, 3);
   const indexOf = (o) => { const g = o.geometry, b = base.get(o); if (g.index) { const I = g.index, out = new Array(I.count); for (let k = 0; k < I.count; k++) out[k] = b + I.getX(k); return out; } const out = new Array(g.attributes.position.count); for (let k = 0; k < out.length; k++) out[k] = b + k; return out; };
   const shared = (idx) => { const g = new THREE.BufferGeometry(); for (const [k, a] of Object.entries(A)) g.setAttribute(k, a); g.setIndex(new THREE.BufferAttribute(new IDX(idx), 1));
     // bounds from just the vertices this index uses (the shared buffer spans the whole thing)
@@ -220,6 +223,25 @@ function mergeHulls(parent) {
   for (const o of fills) { const old = o.geometry; o.geometry = shared(own.get(o)); old.dispose(); }
 }
 const _ID = new THREE.Matrix4();
+// a person's rigid parts (eyes, brows, lids, hair tufts, glasses, buttons…) each rode their
+// bone as their own mesh + hull: a face alone was a dozen draws. Under each bone they're baked
+// together, one mesh per material in the bone's frame (mergeStatic), so they still move with
+// it. Anything the person's code keeps a handle on (a held pen, a newspaper, a board) is left
+// alone, and so are the bones below.
+function mergeOnBones(root) {
+  const keep = new Set();
+  const hold = (v) => { if (v && v.isObject3D) keep.add(v); else if (Array.isArray(v)) v.forEach(hold); };
+  for (const ud of [root.userData, root.userData.human].filter(Boolean)) for (const v of Object.values(ud)) hold(v);
+  const held = (o) => { for (let q = o; q; q = q.parent) if (keep.has(q)) return true; return false; };
+  const bones = []; root.traverse(o => { if (o.isBone) bones.push(o); });
+  for (const b of bones) {
+    const kids = b.children.filter(c => c.isMesh && !c.isSkinnedMesh && !c.userData.isInk);
+    if (kids.length < 2 || kids.some(held)) continue;
+    let animated = false; for (const k of kids) k.traverse(q => { if (keep.has(q) || q.isBone || q.isSkinnedMesh || Object.keys(q.userData).some(x => x !== 'isInk' && x !== 'noInk' && x !== 'part')) animated = true; });
+    if (animated) continue;
+    mergeStatic(b, b.children.filter(c => c.isBone || c.isSkinnedMesh || !kids.includes(c) && !c.userData.isInk));
+  }
+}
 // a person's skinned hulls — one per body part, drawn in the same ink weight — become one
 // skinned hull (a body was up to ~12 hull draws; now 1). Each part's own bind matrix is baked
 // into its vertices and the parts' bones gathered into one skeleton (an "attached" skinned mesh
@@ -322,6 +344,7 @@ export function ink(root, weight = 'mid', { merge = false } = {}) {
   }
   if (merge) { const parents = new Set(list.filter(o => !o.isSkinnedMesh).map(o => o.parent)); for (const p of parents) mergeHulls(p); }
   if (skins.length > 1) mergeSkinnedHulls(skins);
+  if (skins.length) mergeOnBones(root);
   return root;
 }
 // mergeStatic(obj): bake a finished, inked thing that never moves (a parked car) into one
@@ -353,13 +376,15 @@ export function mergeStatic(root, keep = []) {
   const used_ = parts.map(({ o }) => { const g = o.geometry, I = g.index, n = g.attributes.position.count;
     if (!I) return null; const seen = new Int32Array(n).fill(-1); let k = 0; for (let t = 0; t < I.count; t++) { const x = I.getX(t); if (seen[x] < 0) seen[x] = k++; } return { seen, k }; });
   let nv = 0; parts.forEach((p, i) => { nv += used_[i] ? used_[i].k : p.o.geometry.attributes.position.count; });
+  const withCol = parts.some(p => p.o.geometry.attributes.color);
   const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = withUv ? new Float32Array(nv * 2) : null;
+  const col = withCol ? new Float32Array(nv * 3).fill(1) : null;      // (a part without colours: white — its material ignores them)
   const buckets = new Map();                                // material + order → triangle indices
   const into = (mat, order, ink, tris) => { const k = mat.uuid + ':' + order; let b = buckets.get(k); if (!b) buckets.set(k, b = { mat, order, ink, idx: [] }); for (const t of tris) b.idx.push(t); };
   const v = new THREE.Vector3();
   let base = 0;
   parts.forEach(({ o, inks }, pi) => {
-    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, n = P.count, I = g.index, map = used_[pi];
+    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, C = g.attributes.color && g.attributes.color.itemSize >= 3 ? g.attributes.color : null, n = P.count, I = g.index, map = used_[pi];
     m4.multiplyMatrices(inv, o.matrixWorld); nm.getNormalMatrix(m4);
     for (let i = 0; i < n; i++) {
       const at = map ? map.seen[i] : i; if (at < 0) continue;
@@ -367,6 +392,7 @@ export function mergeStatic(root, keep = []) {
       v.fromBufferAttribute(P, i).applyMatrix4(m4); pos[j] = v.x; pos[j + 1] = v.y; pos[j + 2] = v.z;
       if (N) { v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); nor[j] = v.x; nor[j + 1] = v.y; nor[j + 2] = v.z; }
       if (uv && U && o.material.map) { uv[(base + at) * 2] = U.getX(i); uv[(base + at) * 2 + 1] = U.getY(i); }
+      if (col && C) { col[j] = C.getX(i); col[j + 1] = C.getY(i); col[j + 2] = C.getZ(i); }
     }
     const tris = [];
     if (I) for (let k = 0; k < I.count; k++) tris.push(base + map.seen[I.getX(k)]); else for (let k = 0; k < n; k++) tris.push(base + k);
@@ -377,6 +403,7 @@ export function mergeStatic(root, keep = []) {
   });
   const A = { position: new THREE.BufferAttribute(pos, 3), normal: new THREE.BufferAttribute(nor, 3) };
   if (uv) A.uv = new THREE.BufferAttribute(uv, 2);
+  if (col) A.color = new THREE.BufferAttribute(col, 3);
   // out with the old: the merged parts and their hulls, then any group left empty
   for (const o of used) o.removeFromParent();
   const prune = (o) => { for (const c of [...o.children]) prune(c); if (o !== root && !skip.has(o) && o.type === 'Group' && !o.children.length) o.removeFromParent(); };

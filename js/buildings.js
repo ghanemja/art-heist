@@ -1412,18 +1412,32 @@ export function paintingCrate(i) {
 // ── finishing: merge per material, bend onto the planet, ink ─────────────────
 // Bake every mesh into the group's frame and merge by material, so a shop
 // costs a handful of draws instead of hundreds.
+// plain gouache (paint() with a flat colour — no texture, no glow, opaque) differs from part to
+// part only by its colour: those parts bake together, the colour carried per vertex, into one
+// mesh per kind of paint (hatch, side, ramp) instead of one per colour. A shop that was ~20
+// draws is ~3, and it looks the same (the toon shader multiplies the vertex colour in exactly
+// where the material's colour went). Materials some code still reaches for afterwards (the
+// train's roofs, which lift off) keep their own mesh.
+const _SOFT = () => paint(0xffffff, { soft: true }).gradientMap;
+function plainPaint(m, keep) {
+  return m && m.isMeshToonMaterial && m.userData.hatch != null && !m.map && !m.vertexColors && !m.transparent && (m.opacity ?? 1) === 1 &&
+    !(m.emissive && (m.emissive.r || m.emissive.g || m.emissive.b)) && !keep.has(m);
+}
 function bake(g, roots = [g]) {
   g.updateMatrixWorld(true);
   const inv = g.matrixWorld.clone().invert(), buckets = new Map(), m4 = new THREE.Matrix4();
+  const keepMats = new Set([g, ...roots].flatMap(r => r.userData?.roofMats || []));
   for (const r of roots) r.updateMatrixWorld(true);
   const foots = [], fp = new THREE.Vector3();
   for (const r of roots) r.traverse(o => {
     if (o.userData.foot) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); foots.push([fp.x, fp.z, o.userData.foot]); return; }
     if (!o.isMesh || o.userData.isInk) return;
     const geo = o.geometry.clone().applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
-    const noInk = !!o.userData.noInk, key = o.material.uuid + (noInk ? ':n' : '');
-    if (!buckets.has(key)) buckets.set(key, { mat: o.material, noInk, geos: [] });
-    for (const n of Object.keys(geo.attributes)) if (n !== 'position' && n !== 'normal' && !(n === 'uv' && o.material.map)) geo.deleteAttribute(n);
+    const noInk = !!o.userData.noInk, M = o.material, vc = plainPaint(M, keepMats);
+    const key = (vc ? `vc|${M.side}|${M.userData.hatch}|${M.gradientMap === _SOFT() ? 's' : ''}` : M.uuid) + (noInk ? ':n' : '');
+    if (!buckets.has(key)) buckets.set(key, { mat: vc ? paint(0xffffff, { vertexColors: true, hatch: M.userData.hatch, side: M.side, soft: M.gradientMap === _SOFT() }) : M, noInk, geos: [] });
+    for (const n of Object.keys(geo.attributes)) if (n !== 'position' && n !== 'normal' && !(n === 'uv' && M.map) && !(n === 'color' && M.vertexColors)) geo.deleteAttribute(n);
+    if (vc) { const c = M.color, n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } geo.setAttribute('color', new THREE.BufferAttribute(a, 3)); }
     if (o.material.map && !geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
     if (!geo.index) geo.setIndex([...Array(geo.attributes.position.count).keys()]);
     for (const k of Object.keys(geo.morphAttributes)) delete geo.morphAttributes[k];
