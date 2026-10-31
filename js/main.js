@@ -105,14 +105,16 @@ function loop() {
     if (inT) { if (st.prePitch == null) st.prePitch = st.camPitch; st.camPitch += (0.85 - st.camPitch) * (1 - Math.exp(-3 * dt)); }
     else if (st.prePitch != null) { st.camPitch += (st.prePitch - st.camPitch) * (1 - Math.exp(-3 * dt)); if (Math.abs(st.camPitch - st.prePitch) < 0.01) st.prePitch = null; }
   }
-  citizens.update(dt);
-  plaza.update(dt);
-  park.update(dt);
-  shopInside.update(dt, t, player);
+  if (!rooms.inside) {                           // (inside a room the street isn't drawn: its crowds wait)
+    citizens.update(dt);
+    plaza.update(dt);
+    park.update(dt);
+    shopInside.update(dt, t, player);
+  }
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
-  culler.update();                                // people and cars round the far side of the planet aren't drawn
+  if (!rooms.inside) culler.update();                                // people and cars round the far side of the planet aren't drawn
   renderer.render(scene, camera);
   game.afterRender?.();                              // the phone's camera grabs the frame here
 }

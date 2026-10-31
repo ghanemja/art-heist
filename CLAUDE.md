@@ -1,6 +1,6 @@
 # art-heist — a tiny planet (live at https://art-heist.netlify.app)
 
-A browser 3D scene (three.js r160, plain ES modules, no build step). Deploy is manual Netlify.
+A browser 3D scene (three.js r160, plain ES modules, no build step). Netlify publishes `main` automatically (git-connected).
 
 **The main app** — "The Vanishing Gallery": `index.html` at the site root loads
 `js/main.js`; its code is in `js/`, its fonts in `fonts/` (it used to live under `v2/`;
@@ -96,9 +96,10 @@ terrain under it — the curve, and any levelled plane or slope — then inks). 
 - **Log every feature request** the user makes for this project in
   [`FEATURE_LOG.md`](FEATURE_LOG.md) — append each one as it arrives, with a
   status marker. Keep it current across chats.
-- **Redeploy to Netlify after every finished feature request.** Run `./deploy.sh`
-  (validates the main character, then `netlify deploy --prod`). A feature isn't
-  done until it's live.
-- **Bump the cache token** on every edit, or the browser ships stale JS: `js/main.js?cb=NN` (index.html's import map gives every `js/` module the same token; `deploy.sh` syncs them to main.js's)
+- **Ship every finished feature request.** Netlify is connected to github.com/ghanemja/art-heist
+  and publishes `main` automatically (its build step, `node scripts/validate-critic.mjs`, fails the
+  deploy if the main character is missing). A feature isn't live until it's merged to `main`.
+  `./deploy.sh` still works as a manual push from a machine with the Netlify CLI.
+- **Bump the cache token** on every edit, or the browser ships stale JS: `js/main.js?cb=NN` (index.html's import map gives every `js/` module the same token — bump them all together, and give a new module its own entry; git deploys don't run `deploy.sh`'s sync)
   in `index.html` (the main app), `planet.js?cb=pNN` in `classic.html` (the classic game).
-- Deploy is manual — `git push` does NOT publish.
+- Pushing a branch does NOT publish; merging to `main` does.
