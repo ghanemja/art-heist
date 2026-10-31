@@ -5,6 +5,10 @@ Append each new request here as it comes in (see the rule in CLAUDE.md). Format:
 `- [status] request — short note`. Status: ✅ done+verified · 🟡 done, needs live
 check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
+## Session 2026-10-31 (test harness)
+
+- 🟡 **"Make a test harness for the site — the story line, the user interactions, the model constructions — so we don't get regressions."** Done on branch `claude/funny-hypatia-73fakw`: `tests/` (see `tests/README.md`), run with `node tests/run.mjs`. Four suites: static (imports/exports, import map + cache tokens, asset paths, build gates), story (data invariants, every judge() verdict, a full scripted playthrough title → "Case closed"), interactions (walk/run, N/B/P/M/H/Esc, car, boat, museum door, project card, phone layout), models (NaN geometry, people's scale + feet, critic's rig, scene baseline in `tests/baseline/scene.json`, review screenshots). Every browser suite fails on page errors, console errors and 404s. Proven by breaking things on purpose (a bad import, the getaway not starting) and watching the suites go red. Found: every story person is ~84k–127k tris against the 6k budget (reported as a TODO). Not yet: running in CI / the Netlify build.
+
 ## Session 2026-10-25 (v2: a new planet, hand-drawn, discovery-based)
 
 - 🟡 **"Just put a line for her chin."** Done: a short, rounded chin curve under her lower lip, traced onto her face and riding her head bone, in a darker shade of her skin (softer than the mouth). Checked front, three-quarter and at game distance.

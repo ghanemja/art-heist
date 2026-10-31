@@ -1030,5 +1030,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     return false;
   }
   const afterRender = () => phone.afterRender(renderer, placeName());
-  return { G, update, closeUI, items, doors, FACE, SKETCH, bumps, walkers, phone, afterRender, startGetaway, startCountdown, abortLaunch, jeepSpot: () => jeepDir.clone() };
+  return { G, update, closeUI, items, doors, FACE, SKETCH, bumps, walkers, phone, afterRender, startGetaway, startCountdown, abortLaunch, jeepSpot: () => jeepDir.clone(),
+    // read-only peeks for the test harness (tests/): where the act-3 console and the moored boat are, the countdown
+    consoleDir: () => cape.consoleDir?.clone(), boatSpot: () => boatDir.clone(), countdown: () => cape.count };
 }
