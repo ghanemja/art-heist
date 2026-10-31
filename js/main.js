@@ -10,6 +10,8 @@ import { createCuller } from './cull.js';
 import { createPlaza } from './plaza.js';
 import { createPark } from './park.js';
 import { createShopInteriors } from './shopinterior.js';
+import { createRooms, ROOM_STYLES } from './rooms.js';
+import { createCarParks } from './carparks.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -53,12 +55,34 @@ registerGround([scene]);          // again, now the case's props (café deck, bo
 const citizens = createCitizens({ scene, town, game, player, camera });   // bystanders, streamed in after the title is up
 const plaza = createPlaza({ scene, town, game, player });                  // Maple Plaza: parked cars, shoppers in and out
 const park = createPark({ scene, town, game, player });                    // Lantern Park: strollers, a reader, a coffee
-const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper));   // the project shops' living rooms
+createCarParks({ scene, town });                                         // the project shops' car parks: a parked car each
+const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper && !ROOM_STYLES.has(l.style)));   // the project shops' living rooms
+// YarnFlow, Borrowed Eyes and QR Compass open into whole rooms (rooms.js): walk in at the door.
+// The museum's front door is an E prompt on the forecourt: inside is the crime scene.
+const rooms = createRooms({ scene, camera, player, game });
+for (const o of [lights.hemi, lights.sun, sky]) o.layers.enable(2);       // the rooms are drawn on layer 2
+const roomDoors = town.landmarks.filter((l) => ROOM_STYLES.has(l.style)).map((lm) => {
+  lm.noLift = true;                                                    // (no cutaway: you go through to the room)
+  const _p = new THREE.Vector3();
+  return {
+    key: lm.style,
+    inside: (dir) => { lm.root.worldToLocal(_p.copy(dir).multiplyScalar(40)); return lm.inside(_p.x, _p.z) && _p.z < 2.0; },
+    out: () => {                                                        // back on the stoop, facing the street
+      const a = lm.root.localToWorld(new THREE.Vector3(0, 0, 3.2)), b = lm.root.localToWorld(new THREE.Vector3(0, 0, 6));
+      const dir = a.clone().normalize();
+      return { dir, heading: b.sub(a).projectOnPlane(dir).normalize() };
+    },
+  };
+});
+game.doors.push({ dir: mf(0, -1.75), r: 1.3, label: 'go inside the museum', act: () => rooms.enter({ key: 'museum', out: () => {
+  const dir = mf(0, -1.0);
+  return { dir, heading: mf(0, 2).sub(dir).projectOnPlane(dir).normalize() };
+} }) });
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera);
-window.__v2 = { culler, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES };
+window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES };
 
 const clock = new THREE.Clock();
 function loop() {
@@ -72,7 +96,7 @@ function loop() {
     if (atm.t >= 1) atm.dur = 0;
   }
   town.museum.tick(t, 1 - atm.k);
-  if (!game.update(dt, t)) player.update(dt, t);
+  if (!game.update(dt, t)) { rooms.watch(roomDoors); if (!rooms.update(dt, t)) player.update(dt, t); }
   town.tickShops(player.st.dir);                 // inside a project shop: its upper walls lift away
   // inside a carriage of the parked train: its roof lifts off and the camera rises to look in
   if (town.train) {

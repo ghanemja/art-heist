@@ -1095,6 +1095,52 @@ export function mallDrive(edgeZ, lotEnd) {
   return K.g;
 }
 
+// ── a little car park beside a project shop, in the SHOP's frame (front +z, toward town) ──
+// On side `s` (±1): an aisle along the shop's flank, three nose-in bays beyond it, and an
+// apron at the front that runs in to the spur road's edge — roadX(z) gives where the road's
+// surface begins (from the shop's middle line), so the apron tucks just under it, no gap.
+// Asphalt with painted bays, wheel stops, a kerb round the outside, a lamp and a P sign.
+export const SHOP_LOT = { x0: 3.15, x1: 8.3, z0: -2.1, z1: 6.4, aisle: 5.15, apron: [3.3, 6.4], bays: [-0.9, 1.3, 3.5], bayW: 2.2 };   // (the apron's wide enough to turn in off the spur)
+export function shopLot(s, roadX) {
+  const K = kit(), L = SHOP_LOT, asph = paint(PAL.road, { hatch: 0 }), line = paint(0xf6eedb, { hatch: 0 }), kerb = paint(PAL.kerb);
+  const TOP = 0.085;
+  // the asphalt: one outline (lot + apron), extruded thin and laid flat (+x is side s)
+  const [a0, a1] = L.apron, N = 6, sh = new THREE.Shape();
+  const P = (x, z) => new THREE.Vector2(s * x, -z);            // shape y = −z, so rotateX(−π/2) lays it flat
+  const pts = [P(L.x0, L.z0), P(L.x1, L.z0), P(L.x1, L.z1)];
+  for (let k = 0; k <= N; k++) { const z = a1 - (a1 - a0) * k / N; pts.push(P(Math.min(L.x0, roadX(z) - 0.15), z)); }
+  pts.push(P(L.x0, a0));
+  if (s < 0) pts.reverse();
+  sh.setFromPoints(pts);
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.06, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2); geo.translate(0, TOP - 0.06, 0);
+  { const n = geo.attributes.normal; for (let i = 0; i < n.count; i++) if (n.getY(i) > 0.5) n.setXYZ(i, 0, 1, 0); }
+  K.put(geo, asph, 0, 0, 0).userData.noInk = true;
+  // the bays: lines between them, a wheel stop at the head of each
+  const bx0 = L.aisle, bx1 = L.x1 - 0.2, bayD = bx1 - bx0;
+  for (let k = 0; k <= L.bays.length; k++) {
+    const z = L.bays[0] - L.bayW / 2 + k * L.bayW;
+    K.box(bayD, 0.012, 0.06, line, s * (bx0 + bayD / 2), TOP + 0.004, z, 0.004).userData.noInk = true;
+  }
+  for (const z of L.bays) K.box(0.12, 0.08, 0.7, kerb, s * (bx1 - 0.35), TOP + 0.04, z, 0.02);
+  // an arrow down the aisle, in from the apron
+  const ar = new THREE.Shape();
+  ar.moveTo(-0.09, -0.45); ar.lineTo(0.09, -0.45); ar.lineTo(0.09, 0.1); ar.lineTo(0.22, 0.1); ar.lineTo(0, 0.42); ar.lineTo(-0.22, 0.1); ar.lineTo(-0.09, 0.1); ar.closePath();
+  K.put(new THREE.ShapeGeometry(ar), line, s * (L.x0 + L.aisle) / 2, TOP + 0.006, 1.6, [-Math.PI / 2, 0, 0]).userData.noInk = true;
+  // a kerb round the outside (not across the aisle's mouth or the apron)
+  K.box(0.16, 0.1, L.z1 - L.z0, kerb, s * (L.x1 + 0.02), TOP + 0.02, (L.z0 + L.z1) / 2, 0.03);
+  K.box(L.x1 - L.x0 + 0.18, 0.1, 0.16, kerb, s * (L.x0 + L.x1) / 2, TOP + 0.02, L.z0 - 0.02, 0.03);
+  K.box(L.x1 - L.aisle, 0.1, 0.16, kerb, s * (L.aisle + L.x1) / 2, TOP + 0.02, L.z1 + 0.02, 0.03);
+  // a lamp at the far corner, and a P sign at the apron
+  lampPost(K, s * (L.x1 - 0.35), L.z0 + 0.35, 2.3);
+  const sg = K.sub(s * (L.x0 - 0.35), 0, L.z1 + 0.25, 0);
+  sg.foot(0, 0, 0.1);
+  sg.box(0.06, 1.5, 0.06, DARK(), 0, 0.75, 0, 0.02);
+  sg.box(0.46, 0.46, 0.05, paint(0x3f6fb0), 0, 1.6, 0, 0.04);
+  sg.flat(0.38, 0.38, signMat('P', { bg: '#3f6fb0', fg: '#f6eedb', w: 128, h: 128, font: '700 $px ' + HAND }), 0, 1.6, 0.027);
+  return K.g;
+}
+
 // the station's track in its own frame: along x at z, ±half (the loop in rail.js joins it there)
 export const STATION_TRACK = { z: -5.55, half: 7.0, platformEdge: -4.7, platformTop: 0.5 };
 // ── Central Station: a brick booking hall with a clock tower, a platform

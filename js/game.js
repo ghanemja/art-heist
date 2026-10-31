@@ -187,7 +187,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
 
   // ── what's near you, and what pressing E does ──
   let nearest = null;
+  const doors = [];                                   // doorways you press E at: { dir, r, label, act } (the museum's, rooms.js)
   function scan() {
+    if (G.room) { nearest = null; return; }           // inside a room: rooms.js has the prompt
     nearest = null;
     if (G.state !== 'play' || G.ui || phone.busy) { show($('prompt'), false); return; }
     const here = player.st.dir;
@@ -205,13 +207,15 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       if (db < 2.4 && (!nearest || db < best)) { best = db; nearest = { kind: 'boat' }; }
       if (G.act === 3 && cape.console && arc(here, cape.consoleDir) < 1.9) nearest = { kind: 'console' };
       for (const lm of town.landmarks) { if (lm.decor) continue; const d = arc(here, lm.dir); if (d < 3.6 && d < best) { best = d; nearest = { kind: 'project', lm }; } }
+      for (const dr of doors) { const d = arc(here, dr.dir); if (d < dr.r && d < best) { best = d; nearest = { kind: 'door', dr }; } }
     } else if (player.st.mode === 'boat') { const spot = landingSpot(); nearest = spot ? { kind: 'exit', spot } : null; }
     else nearest = { kind: 'exit' };
     const pr = $('prompt');
     if (!nearest) { show(pr, false); return; }
     const label = nearest.kind === 'person' ? `talk to ${PEOPLE.find(p => p.id === nearest.id).name.split(',')[0]}`
       : nearest.kind === 'jeep' ? 'get in the car' : nearest.kind === 'boat' ? 'get in the boat' : nearest.kind === 'exit' ? 'get out'
-      : nearest.kind === 'console' ? 'ABORT THE LAUNCH' : nearest.kind === 'project' ? `visit ${nearest.lm.name}` : 'look closer';
+      : nearest.kind === 'console' ? 'ABORT THE LAUNCH' : nearest.kind === 'project' ? `visit ${nearest.lm.name}`
+      : nearest.kind === 'door' ? nearest.dr.label : 'look closer';
     pr.innerHTML = `<kbd>E</kbd>${label}`;
     show(pr);
   }
@@ -227,7 +231,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (G.ui === 'card') { closeUI(); return; }
     if (G.ui === 'talk') { nextLine(); return; }
     if (G.ui) return;
+    if (G.room) return G.room.act();
     if (!nearest) return;
+    if (nearest.kind === 'door') return nearest.dr.act();
     if (nearest.kind === 'clue') return openClue(nearest);
     if (nearest.kind === 'person') return openTalk(nearest.id);
     if (nearest.kind === 'console') return abortLaunch();
@@ -560,7 +566,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const way = $('way'), _wp = new THREE.Vector3(), _pc = new THREE.Vector3();
   let wayKey = '';
   function updateWaypoint(dt = 0, time = 0) {
-    const t = G.state === 'play' && !G.ui ? currentTarget() : null;
+    const t = G.state === 'play' && !G.ui && !G.room ? currentTarget() : null;
     guide.update(dt, time, t);
     const dist = t ? arc(player.st.dir, t.dir) : 0;
     if (!t || dist < t.near) { show(way, false); return; }
@@ -1022,5 +1028,5 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     return false;
   }
   const afterRender = () => phone.afterRender(renderer, placeName());
-  return { G, update, items, FACE, SKETCH, bumps, walkers, phone, afterRender, startGetaway, startCountdown, abortLaunch, jeepSpot: () => jeepDir.clone() };
+  return { G, update, items, doors, FACE, SKETCH, bumps, walkers, phone, afterRender, startGetaway, startCountdown, abortLaunch, jeepSpot: () => jeepDir.clone() };
 }

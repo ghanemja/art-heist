@@ -10,7 +10,7 @@ import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=11';
 import { planHarbour, buildHarbour } from './harbour.js';
-import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 
@@ -63,6 +63,12 @@ export function planTown() {
   reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
   // each project shop gets a wide level yard that eases out gently (its spur road arrives on the flat)
   for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, undefined, { blend: 7 }); }
+  // …and the shops with a car park beside them keep its ground too (levelled; the shop's local x is
+  // the frame's −x: the shop faces town)
+  for (const p of PLAN.projects) if (p.lot) {
+    const c = frame(llv(p.at), TOWN_C)(-p.lot * 5.7, 2.15);
+    reserve(c, 5.0, 'lot:' + p.key); flatten(c, 4.9, undefined, { blend: 5 });
+  }
   reserve(llv(PLAN.park.at), PLAN.park.r, 'park'); flatten(llv(PLAN.park.at), PLAN.park.r + 1, undefined, { blend: 6 });
 }
 
@@ -116,10 +122,11 @@ export function buildTown(scene) {
     const pts = [];
     const n = Math.max(6, Math.round(total / 1.5));
     for (let k = 0; k <= n; k++) pts.push(slerpDir(best, target, (k / n) * (1 - stopShort / total)));
-    deflect(pts, { keep: i => i === 0 || i === pts.length - 1, except: z => z.key === key, clear: 1.8 });
+    const mine = z => z.key === key || z.key === key.replace('lm:', 'lot:');     // its own shop and car park
+    deflect(pts, { keep: i => i === 0 || i === pts.length - 1, except: mine, clear: 1.8 });
     // smoothing rounds corners back INTO reserved ground: push the smoothed line out again
     const sm = smooth(pts, 2);
-    deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: z => z.key === key, clear: 1.8 });
+    deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: mine, clear: 1.8 });
     return buildRoad(scene, sm, { half: 0.85, dashed: false });
   };
   // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
@@ -290,7 +297,19 @@ export function buildTown(scene) {
       const base = add(placeOnPlanet(S.base, d, yaw, { weight: 'mid' })), upper = add(placeOnPlanet(S.upper, d, yaw, { weight: 'mid' }));
       addFloor(base, S.floor);
       for (const [x, z, r] of S.walls) solid(base.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
-      out.landmarks.push({ ...p, dir: d, root: base, upper, inside: S.inside });
+      const lm = { ...p, dir: d, root: base, upper, inside: S.inside };
+      if (p.lot) {
+        // the car park: its apron runs in to the spur's real edge (walk out from the lot, in the
+        // shop's frame, until the road's surface begins)
+        const v = new THREE.Vector3(), s = p.lot;
+        const onIt = (x, z) => { const nr = nearestRoad(base.localToWorld(v.set(s * x, 0, z)).normalize()); return nr && nr.dist <= nr.half; };
+        const roadX = (z) => { let lo = SHOP_LOT.x0, hi = -0.5; if (onIt(lo, z)) return lo; if (!onIt(hi, z)) return 0.9;
+          for (let k = 0; k < 16; k++) { const m = (lo + hi) / 2; if (onIt(m, z)) hi = m; else lo = m; } return lo; };
+        const g = add(placeOnPlanet(shopLot(s, roadX), d, yaw, { weight: 'fine' }));
+        feet(g);
+        lm.lot = { side: s, root: g };
+      }
+      out.landmarks.push(lm);
       continue;
     }
     const g = landmark(p);
@@ -373,7 +392,7 @@ export function buildTown(scene) {
   const _sp = new THREE.Vector3();
   out.tickShops = (dir) => {
     for (const lm of out.landmarks) {
-      if (!lm.upper) continue;
+      if (!lm.upper || lm.noLift) continue;
       if (arc(dir, lm.dir) > 6) { lm.upper.visible = true; continue; }
       lm.root.worldToLocal(_sp.copy(dir).multiplyScalar(R));
       lm.upper.visible = !lm.inside(_sp.x, _sp.z);

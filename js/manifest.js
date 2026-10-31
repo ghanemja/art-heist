@@ -40,6 +40,7 @@ export default {
   // shop used to stand here with a spur road forking off to it; it moved round the planet
   park: { at: [20, -48], r: 4.9, name: 'Lantern Park' },
   // Janelle's projects: buildings around town, each a portfolio piece
+  // (lot: a little car park on that side of the shop, ±1 along its own x — see buildings.js shopLot)
   projects: [
     { key: 'library',   name: 'The Library', tag: 'the bookshelf', at: [44, 2], style: 'library', decor: true },   // scenery only: no portfolio link
     // the shops of ghanemja.github.io's Main Street, each a walk-in shop out here (style = its shop)
@@ -47,13 +48,13 @@ export default {
       desc: 'Search NVIDIA SimReady 3D objects by how they move, not how they look: all 2,166 rigid assets pushed, tilted and dropped in a physics simulator — 106,757 probe runs.', url: 'https://ghanemja.github.io/behaviors/' },
     { key: 'deckgpt',   name: 'DeckGPT', tag: 'picture palace · ai', at: [-12, 76], style: 'deckgpt',
       desc: 'Builds a presentation with you, step by step — Scope, Story, Visuals, then the Deck — in your house style.', url: 'https://pptgpt.netlify.app' },
-    { key: 'borrowed-eyes', name: 'Borrowed Eyes', tag: 'optics & menagerie · game', at: [-20, 40], style: 'eyes',
+    { key: 'borrowed-eyes', name: 'Borrowed Eyes', tag: 'optics & menagerie · game', at: [-20, 40], style: 'eyes', lot: 1,
       desc: 'A browser game about how other animals see: photograph 14 hidden animals and borrow their eyes — bee ultraviolet, snake heat pits, bat echolocation, owl night vision.', url: 'https://ghanemja.github.io/borrowed_eyes/' },
-    { key: 'yarnflow',  name: 'YarnFlow', tag: 'pattern haberdashery · crochet', at: [34, 53], style: 'yarn',
+    { key: 'yarnflow',  name: 'YarnFlow', tag: 'pattern haberdashery · crochet', at: [34, 53], style: 'yarn', lot: 1,
       desc: 'A crochet studio: watch a pattern get made stitch by stitch in 3D, learn the stitches, and share what you make.', url: 'https://ghanemja.github.io/crochet/' },
     { key: 'splatform', name: 'Splatform', tag: 'paint & supplies · ui library', at: [16, -110], style: 'splat',
       desc: 'Components, painted: a UI library where every button, card and input is made of a real art medium — watercolor, acrylic, charcoal, torn paper or marker.', url: 'https://ghanemja.github.io/art-asset/' },
-    { key: 'qr',        name: 'QR Compass', tag: 'the map room · 3d map', at: [-12, -64], style: 'qr',
+    { key: 'qr',        name: 'QR Compass', tag: 'the map room · 3d map', at: [-12, -64], style: 'qr', lot: 1,
       desc: "America's biggest companies on a 3D map, each drawn as its own little model — and every model turns into that company's scannable QR code.", url: 'https://ghanemja.github.io/qr/' },
   ],
 };
