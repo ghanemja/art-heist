@@ -84,12 +84,28 @@ const WASH = {
   editor: 'rgba(170,160,190,A)', clue: 'rgba(228,184,79,A)',
 };
 
+// painted when first asked for, not all at load (each is a render + a pixel read-back: together
+// they held the title up by a second or more). `lazy(make)` → an object whose [id] paints on use.
+// They're also painted one at a time in idle moments once the title is up, so opening the
+// notebook later doesn't hitch either.
+function lazy(ids, make) {
+  const done = {};
+  const queue = [...ids], idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 1500 }) : (f) => setTimeout(f, 200);
+  const next = () => { const id = queue.shift(); if (id == null) return; if (!(id in done)) done[id] = make(id); idle(next); };
+  setTimeout(() => idle(next), 4000);
+  return new Proxy({}, {
+    get: (_, id) => { if (typeof id !== 'string' || !ids.has(id)) return undefined; if (!(id in done)) done[id] = make(id); return done[id]; },
+    has: (_, id) => ids.has(id),
+    ownKeys: () => [...ids], getOwnPropertyDescriptor: (_, id) => ids.has(id) ? { enumerable: true, configurable: true } : undefined,
+  });
+}
 // people: build their own head fresh, pose it neutral, three-quarter view
 export function paintPeople(renderer, looks) {
-  const out = {};
-  let seed = 1;
-  for (const [id, look] of Object.entries(looks)) {
-    if (!look.folk) continue;
+  const ids = Object.keys(looks).filter(id => looks[id].folk), seeds = Object.fromEntries(ids.map((id, i) => [id, i + 1]));
+  return lazy(new Set(ids), (id) => paintPerson(renderer, id, looks[id], seeds[id]));
+}
+function paintPerson(renderer, id, look, seed) {
+  {
     const inst = makeFolk({ ...look, stance: null });
     poseFolk(inst, 0, 0, {});
     inst.J.head.rotation.set(0.04, 0.12, 0);
@@ -102,17 +118,17 @@ export function paintPeople(renderer, looks) {
     const at = head.clone().add(new THREE.Vector3(0, 0.1 * k, 0));
     cam.position.copy(at).add(new THREE.Vector3(0.3, 0.05, 0.74).multiplyScalar(k));
     cam.lookAt(at);
-    out[id] = frame(snap(renderer, inst.rig, cam), WASH[id] || WASH.clue, seed++);
+    return frame(snap(renderer, inst.rig, cam), WASH[id] || WASH.clue, seed);
   }
-  return out;
 }
 
 // clues: the prop itself, fitted and seen from a little above
 export function paintThings(renderer, things) {
-  const out = {};
-  let seed = 40;
-  for (const [id, obj] of Object.entries(things)) {
-    if (!obj) continue;
+  const ids = Object.keys(things).filter(id => things[id]), seeds = Object.fromEntries(ids.map((id, i) => [id, 40 + i]));
+  return lazy(new Set(ids), (id) => paintThing(renderer, things[id], seeds[id]));
+}
+function paintThing(renderer, obj, seed) {
+  {
     const o = obj.clone(true);
     o.position.set(0, 0, 0); o.quaternion.identity(); o.scale.setScalar(1);
     o.updateMatrixWorld(true);
@@ -123,7 +139,6 @@ export function paintThings(renderer, things) {
     const dir = new THREE.Vector3(0.75, 0.62, 1).normalize();
     cam.position.copy(sph.center).addScaledVector(dir, sph.radius / Math.sin(THREE.MathUtils.degToRad(15)) * 0.92);
     cam.lookAt(sph.center);
-    out[id] = frame(snap(renderer, o, cam), WASH.clue, seed++);
+    return frame(snap(renderer, o, cam), WASH.clue, seed);
   }
-  return out;
 }

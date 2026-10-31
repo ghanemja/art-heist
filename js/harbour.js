@@ -12,7 +12,7 @@
 // to the west, both clear of the walk from the road end down to the pier.
 import * as THREE from 'three';
 import { R, frame, flatten, reserve, alignToSurface, yawToFace, addFloor, SEA } from './world.js';
-import { PAL, paint, ink } from './style.js';
+import { PAL, paint, ink, mergeStatic } from './style.js';
 import { rbox, lathe, lamp } from './props.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -194,7 +194,8 @@ export function buildBoat() {
   const flag = m(fl, paint(PAL.gold, { side: THREE.DoubleSide }), 0, gun + 0.62, 1.08); flag.userData.noInk = true;
   g.userData.seatY = gun + 0.25; g.userData.seatZ = -0.45;
   g.userData.flag = flag;
-  return ink(g, 'mid');
+  ink(g, 'mid');
+  return mergeStatic(g, [flag], { vc: true });          // one mesh per kind of paint (the pennant flutters on its own)
 }
 
 // foam: a small pool of flat white rings left behind the boat (fade and spread)

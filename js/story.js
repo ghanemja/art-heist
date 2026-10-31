@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { HARBOUR } from './harbour.js';
 import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt, onRoad, nearestRoad } from './world.js';
-import { PAL, paint, ink, blobShadow } from './style.js';
+import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { rbox, lathe, bench, rnd } from './props.js';
 import { person, LOOKS } from './human.js';
 
@@ -349,7 +349,8 @@ function cafe() {
 // spots: { museum frame, town frame, sites } — resolved by main.js
 export function buildCase(scene, W) {
   const items = [];                                   // inspectables + people: {dir, radius, kind, id}
-  const place = (obj, d, yaw = 0) => { settle(obj, d, 0.6, 0.03, yaw); scene.add(obj); return obj; };
+  // (each prop baked to a mesh per kind of paint + its hull once it's set down: the van was ~60 draws)
+  const place = (obj, d, yaw = 0) => { settle(obj, d, 0.6, 0.03, yaw); mergeStatic(obj, [], { vc: true }); scene.add(obj); return obj; };
   const mF = W.museumFrame;
   // at the museum
   { const d = mF(7.4, -7.6); const l = ladderProp(); place(l, d, yawToFace(d, mF(6.0, -7.6))); items.push({ kind: 'clue', id: 'ladder', dir: d, obj: l }); }

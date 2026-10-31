@@ -86,9 +86,28 @@ export function fitToGround(body, frameObj, k = 1) {
   body.rotation.z += (roll - body.rotation.z) * k;
 }
 
+// every car is the same shape: it's built (and baked) once per kind — a plain car and a police
+// car — and each one after that is a clone sharing its geometry, with only the body paint
+// (and a police car's own flashing lamps) its own. Each car used to carry its own ~3 MB copy.
+const _carTpl = {};
 export function buildCar(o = {}) {
+  const key = o.police ? 'police' : 'car';
+  const tpl = _carTpl[key] || (_carTpl[key] = makeCar({ police: o.police }));
+  const ud = tpl.userData; tpl.userData = {};                        // (clone() would deep-copy it: it holds objects)
+  const g = tpl.clone(true); tpl.userData = ud;
+  g.userData.wheels = ud.wheels.map(w => g.children[tpl.children.indexOf(w)]);
+  const nb = paint(o.body ?? 0xd9573f);
+  g.traverse(m => { if (m.material === ud.bodyMat) m.material = nb; });
+  if (ud.lights) {                                                   // each police car flashes on its own beat
+    const own = new Map(ud.lights.map(m => [m, m.clone()]));
+    g.traverse(m => { if (own.has(m.material)) m.material = own.get(m.material); });
+    g.userData.lights = ud.lights.map(m => own.get(m));
+  }
+  return g;
+}
+function makeCar(o = {}) {
   const g = new THREE.Group();
-  const body = paint(o.body ?? 0xd9573f), cream = paint(0xf1e4c6), chrome = paint(0xe6e0d2, { hatch: 0 });
+  const body = paint(0xd9573f, { unique: true }), cream = paint(0xf1e4c6), chrome = paint(0xe6e0d2, { hatch: 0 });
   const dark = paint(0x2a2230, { hatch: 0 }), seatM = paint(0xb07a52), cab = paint(0x3b2f3a, { hatch: 0 });
   const m = (geo, mat, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
   const WR = 0.33, WZ = 0.86, AR = 0.47;                       // wheel radius, axle offset, arch radius (before bevel)
@@ -138,7 +157,7 @@ export function buildCar(o = {}) {
     wheels.push(w);
   }
   g.add(blobShadow(1.0, 1.6));
-  g.userData.wheels = wheels;
+  g.userData.wheels = wheels; g.userData.bodyMat = body;
   if (o.police) {                                     // a light bar over the windshield + a door badge
     const bar = new THREE.Group(); bar.position.set(0, 1.45, 0.3); g.add(bar);
     bar.add(new THREE.Mesh(rbox(0.9, 0.06, 0.18, 0.02), dark));
@@ -151,8 +170,9 @@ export function buildCar(o = {}) {
   ink(g, 'mid');
   // bake it down: one draw per material for the body, and per wheel (they turn), instead
   // of ~235 separate meshes and hulls per car
-  for (const w of wheels) mergeStatic(w);
-  return mergeStatic(g, wheels);
+  // (plain paints share a mesh, colour per vertex — all but the body's, which each car swaps)
+  for (const w of wheels) mergeStatic(w, [], { vc: true });
+  return mergeStatic(g, wheels, { vc: true, keepMats: [body] });
 }
 
 // ── the shoulder straps, traced over HER shoulders: for each strap, slice the
