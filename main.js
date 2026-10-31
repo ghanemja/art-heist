@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // cache-buster — bump on every asset change so the browser never serves a stale
 // GLB / JSON / image. (.glb especially caches hard across normal refreshes.)
-const ASSET_VERSION = 'v30';
+const ASSET_VERSION = 'v31';
 const bust = (url) => url + (url.includes('?') ? '&' : '?') + 'cb=' + ASSET_VERSION;
 
 // ─── config ──────────────────────────────────────────────────────────────────
@@ -1106,7 +1106,7 @@ function hangPainting(parent, a, wallSide, z) {
   };
   galleryPaintings.push(group);
 
-  texLoader.load(`./artworks/${a.image}`, (tex) => {
+  texLoader.load(bust(`./artworks/${a.image}`), (tex) => {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     const ar = (tex.image.width || 1) / (tex.image.height || 1);
