@@ -177,7 +177,11 @@ export function buildTown(scene) {
   // ── landscaping (grounds.js): the museum's grounds — gravel walks round both wings to the
   // back, hedges, a flower strip, low lamps, trees and benches, a sculpture garden round a pool
   // behind the east wing, a rose garden behind the west. Built in the museum's own frame ──
-  {
+  // (switched off for now: the road pass eased the ground round the museum and these were laid
+  // on the old ground, so beds, benches and the sculpture-garden pool floated. Being rebuilt to
+  // read the ground they stand on; ?grounds=1 shows them meanwhile)
+  out.grounds = [];
+  if (new URLSearchParams(location.search).get('grounds') === '1') {
     const g = add(placeOnPlanet(museumGrounds(), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0 }));
     feet(g);
     out.grounds = [g];
