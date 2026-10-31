@@ -239,6 +239,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (G.ui === 'card') { closeUI(); return; }
     if (G.ui === 'talk') { nextLine(); return; }
     if (G.ui === 'scope') { closeUI(); return; }      // (the overlook's telescope: E steps back)
+    if (G.ui === 'activity') return G.activity?.act();      // swimming, the driving range (club.js)
     if (G.ui) return;
     if (G.room) return G.room.act();
     if (!nearest) return;
@@ -275,6 +276,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   function closeUI() {
     if (!G.ui || G.ui === 'police') return;                 // the police shot plays out on its own
+    if (G.ui === 'activity') return G.activity?.exit();     // (club.js puts her back on her feet)
     if (player.st.camHook === convoCam) { player.st.camHook = null; player.st.camInit = false; }
     if (G.uiClose) { const f = G.uiClose; G.uiClose = null; f(); }   // an activity's own way out (the telescope)
     show($({ card: 'card', talk: 'talk', nb: 'nb', proj: 'card', scope: 'scopeView' }[G.ui]), false);

@@ -26,6 +26,7 @@ import { person } from './human.js';
 import { poseFolk, STANCES } from './folk.js';
 import { audio } from './audio.js';
 import { buildRiverWater, createRiverLife } from './riverlife.js';
+import { createClubPlay } from './club.js';
 
 const L2 = (a) => ll(a[0], a[1]);
 export const NORTH = {
@@ -81,19 +82,23 @@ function netMat(rx, ry) {
 
 // ── the club pool's shape, shared by the deck, the coping and the water's shader: a kidney —
 // an ellipse (POOL_A × POOL_B) whose radius wobbles with two slow waves ──
-const POOL_A = 1.3, POOL_B = 0.85;
+// (enlarged ×1.31 across — ×1.7 the water — so there's room to swim: POOL_S scales the
+// shader's levels and the mosaic with it)
+const POOL_S = 1.7 / 1.3, POOL_A = 1.3 * POOL_S, POOL_B = 0.85 * POOL_S;
 const poolR = (th) => 1 + 0.10 * Math.sin(2 * th + 0.5) + 0.08 * Math.sin(3 * th + 2.0);
 // the edge point at angle th, grown outward by `grow` world units
-function poolEdge(th, grow = 0) {
+export function poolEdge(th, grow = 0) {
   const r = poolR(th), x = Math.cos(th) * r * POOL_A, z = Math.sin(th) * r * POOL_B, L = Math.hypot(x, z);
   return [x * (1 + grow / L), z * (1 + grow / L)];
 }
-function poolIn(x, z, grow = 0) {
-  const th = Math.atan2(z / POOL_B, x / POOL_A), [ex, ez] = poolEdge(th, grow);
+export const poolTh = (x, z) => Math.atan2(z / POOL_B, x / POOL_A);
+export function poolIn(x, z, grow = 0) {
+  const th = poolTh(x, z), [ex, ez] = poolEdge(th, grow);
   return Math.hypot(x, z) < Math.hypot(ex, ez);
 }
 // footprints covering the water (so she walks round it, not across)
-const POOL_FEET = [[-0.85, 0, 0.5], [-0.35, 0, 0.62], [0.2, 0, 0.66], [0.75, 0, 0.6], [1.15, 0.05, 0.35], [-0.2, 0.5, 0.35], [0.4, -0.55, 0.35]];
+const POOL_FEET = [[-0.85, 0, 0.5], [-0.35, 0, 0.62], [0.2, 0, 0.66], [0.75, 0, 0.6], [1.15, 0.05, 0.35], [-0.2, 0.5, 0.35], [0.4, -0.55, 0.35]]
+  .map(([x, z, r]) => [x * POOL_S, z * POOL_S, r * POOL_S]);
 
 // ── the country club (local +z: toward the road it's entered from) ──
 function countryClub() {
@@ -104,7 +109,7 @@ function countryClub() {
   K.box(4.6, 0.05, 2.9, asphalt, -0.2, 0.025, 4.05, 0.02).userData.noInk = true;
   for (let i = 0; i <= 4; i++) K.flat(0.05, 1.3, white, -2.2 + i * 1.0, 0.055, 3.35, [-Math.PI / 2, 0, 0]);
   // the clubhouse: cream boards, a green hip roof, a veranda along the front
-  const CX = -0.8, CZ = -1.65, W = 4.6, D = 2.1, H = 1.55;
+  const CX = -0.8, CZ = -2.55, W = 4.6, D = 2.1, H = 1.55;       // (set back to the north: the bigger pool takes the lawn in front)
   K.box(W + 0.12, 0.16, D + 0.12, stone, CX, 0.08, CZ, 0.04);
   K.box(W, H, D, cream, CX, 0.16 + H / 2, CZ, 0.05);
   for (let y = 0.4; y < H; y += 0.22) K.box(W + 0.02, 0.025, D + 0.02, trim, CX, 0.16 + y, CZ, 0.01);   // clapboard lines
@@ -139,11 +144,11 @@ function countryClub() {
     const g = new THREE.ShapeGeometry(sh); const m = K.put(g, paint(PAL.accent, { side: THREE.DoubleSide }), 2.58, 2.98, 4.7); m.userData.noInk = true; }
   K.foot(2.55, 4.7, 0.12);
 
-  // ── the pool (west of the clubhouse): a free-form kidney of a pool with a mosaic floor —
-  // its outline is POOL_R (shared with the water's shader), a pale stone deck and an inked
-  // coping follow it; a sun terrace to the south with loungers and umbrellas; desert planters ──
-  const PX = -3.3, PZ = 1.55, deck = paint(0xe6dcc6), coping = paint(0xfaf6ec);
-  const ring = (grow, n = 72) => { const pts = []; for (let k = 0; k < n; k++) { const th = k / n * Math.PI * 2, [x, z] = poolEdge(th, grow); pts.push(new THREE.Vector2(PX + x, -(PZ + z))); } return pts; };
+  // ── the pool (south-west of the clubhouse): a free-form kidney of a pool with a mosaic floor —
+  // its outline is poolEdge (shared with the water's shader), a pale stone deck and an inked
+  // coping follow it; a sun terrace to the east with loungers and umbrellas facing it; desert planters ──
+  const PX = -2.95, PZ = 1.05, deck = paint(0xe6dcc6), coping = paint(0xfaf6ec);
+  const ring = (grow, n = 96) => { const pts = []; for (let k = 0; k < n; k++) { const th = k / n * Math.PI * 2, [x, z] = poolEdge(th, grow); pts.push(new THREE.Vector2(PX + x, -(PZ + z))); } return pts; };
   // (shapes are drawn in x, −z and laid down: a shape's +y becomes the world's −z)
   const slab = (outer, inner, y0, h, mat) => {
     const sh = new THREE.Shape(outer); sh.holes.push(new THREE.Path(inner));
@@ -152,18 +157,19 @@ function countryClub() {
   };
   slab(ring(0.5), ring(0.06), 0.0, 0.088, deck);
   slab(ring(0.14), ring(0.0), 0.088, 0.05, coping);
-  K.box(2.1, 0.088, 1.05, deck, PX - 0.3, 0.044, PZ + 1.45, 0.02);                    // the sun terrace
+  const SX = 0.55, SZ = 0.95;                                                          // the sun terrace, between the pool and the court
+  K.box(1.7, 0.088, 2.3, deck, SX, 0.044, SZ, 0.02);
   for (const [x, z, r] of POOL_FEET) K.foot(PX + x, PZ + z, r);                        // you can't walk on the water
-  // loungers on the terrace facing the pool, umbrellas between them
-  const LZ = PZ + 1.5;
-  for (let k = 0; k < 3; k++) {
-    const S = K.sub(PX - 0.9 + k * 0.6, 0.088, LZ, 0);
+  // loungers on the terrace facing the pool (west), umbrellas behind them
+  const LX = SX + 0.1, LZS = [SZ - 0.72, SZ, SZ + 0.72];
+  LZS.forEach((lz, k) => {
+    const S = K.sub(LX, 0.088, lz, -Math.PI / 2);
     S.box(0.34, 0.05, 0.72, paint([0xf6eedb, 0xe1b95c, 0x7fb3a8][k]), 0, 0.12, 0.06, 0.02);
     const back = S.box(0.34, 0.05, 0.36, paint([0xf6eedb, 0xe1b95c, 0x7fb3a8][k]), 0, 0.24, -0.38, 0.02); back.rotation.x = 0.85;
     for (const sx of [-1, 1]) for (const sz of [-0.28, 0.32]) S.box(0.03, 0.12, 0.03, paint(0xd8dde2), sx * 0.15, 0.06, sz, 0.01);
-  }
+  });
   for (const k of [0, 1]) {
-    const ux = PX - 0.6 + k * 0.6, uz = LZ + 0.42, cols = [PAL.accent, 0xf6eedb];
+    const ux = LX + 0.5, uz = (LZS[k] + LZS[k + 1]) / 2, cols = [PAL.accent, 0xf6eedb];
     K.put(lathe([[0.001, 0], [0.02, 0], [0.02, 1.25], [0.001, 1.26]], 6), DARK(), ux, 0.088, uz);
     for (let s = 0; s < 8; s++) {
       const g = new THREE.ConeGeometry(0.42, 0.2, 2, 1, true, s * Math.PI / 4, Math.PI / 4);
@@ -179,7 +185,7 @@ function countryClub() {
     S.put(new THREE.CapsuleGeometry(0.08, 0.55, 4, 10), g, x, 0.42, z);
     for (const [sx, h] of [[1, 0.42], [-1, 0.3]]) { S.put(new THREE.CapsuleGeometry(0.05, 0.16, 3, 8), g, x + sx * 0.14, h + 0.12, z); S.put(new THREE.CapsuleGeometry(0.045, 0.08, 3, 8), g, x + sx * 0.08, h, z).rotation.z = sx * Math.PI / 2; } };
   const boulder = (S, x, z, s) => { const m = S.put(new THREE.IcosahedronGeometry(0.16 * s, 1), paint(0xc9b79a), x, 0.06 * s, z); m.scale.set(1.2, 0.7, 1); m.rotation.y = x * 3; };
-  for (const [x, z, kind] of [[-5.0, 0.7, 0], [-5.05, 2.5, 1], [-4.75, 3.35, 2]]) {
+  for (const [x, z, kind] of [[-4.55, 2.95, 0], [-3.3, 3.35, 1], [-4.75, -1.0, 2]]) {
     const S = K.sub(x, 0, z); S.g.userData.deco = 0.45;
     S.put(lathe([[0.001, 0], [0.42, 0], [0.44, 0.16], [0.4, 0.18], [0.001, 0.17]], 24), paint(0xd8cab0), 0, 0, 0);
     S.put(new THREE.CircleGeometry(0.39, 20).rotateX(-Math.PI / 2), paint(0xe2d3b0, { hatch: 0 }), 0, 0.175, 0).userData.noInk = true;
@@ -211,23 +217,24 @@ function countryClub() {
     { const g = new THREE.PlaneGeometry(2 * FX, FH); const m = K.put(g, netMat(2 * FX * 5, FH * 5), TX, FH / 2, TZ + s * FZ); m.userData.noInk = true; }
   }
 
-  // ── a putting green between the pool and the court, its flag in the hole ──
-  { const g = new THREE.CircleGeometry(0.85, 28); g.rotateX(-Math.PI / 2); const m = K.put(g, paint(0x9cc276, { hatch: 0 }), -0.35, 0.05, 1.9); m.userData.noInk = true; }
-  { const g = new THREE.CircleGeometry(0.05, 12); g.rotateX(-Math.PI / 2); const m = K.put(g, DARK(), -0.15, 0.055, 1.75); m.userData.noInk = true; }
-  K.put(lathe([[0.001, 0], [0.012, 0], [0.012, 0.8], [0.001, 0.81]], 6), white, -0.15, 0.05, 1.75);
-  { const g = new THREE.PlaneGeometry(0.26, 0.17); g.translate(0.13, 0, 0); const m = K.put(g, paint(0xe8604c, { side: THREE.DoubleSide }), -0.15, 0.76, 1.75); m.userData.noInk = true; }
-  for (let k = 0; k < 3; k++) K.put(new THREE.SphereGeometry(0.035, 8, 6), white, -0.6 + k * 0.22, 0.085, 2.15 - k * 0.1);
+  // ── a putting green in the north-west corner, behind the pool, its flag in the hole ──
+  const GX = -4.05, GZ = -2.4;
+  { const g = new THREE.CircleGeometry(0.7, 28); g.rotateX(-Math.PI / 2); const m = K.put(g, paint(0x9cc276, { hatch: 0 }), GX, 0.05, GZ); m.userData.noInk = true; }
+  { const g = new THREE.CircleGeometry(0.05, 12); g.rotateX(-Math.PI / 2); const m = K.put(g, DARK(), GX + 0.2, 0.055, GZ - 0.15); m.userData.noInk = true; }
+  K.put(lathe([[0.001, 0], [0.012, 0], [0.012, 0.8], [0.001, 0.81]], 6), white, GX + 0.2, 0.05, GZ - 0.15);
+  { const g = new THREE.PlaneGeometry(0.26, 0.17); g.translate(0.13, 0, 0); const m = K.put(g, paint(0xe8604c, { side: THREE.DoubleSide }), GX + 0.2, 0.76, GZ - 0.15); m.userData.noInk = true; }
+  for (let k = 0; k < 3; k++) K.put(new THREE.SphereGeometry(0.035, 8, 6), white, GX - 0.25 + k * 0.2, 0.085, GZ + 0.25 - k * 0.1);
 
   // hedges, trees and lamps round the edge; benches by the green
-  for (const [x, z] of [[-4.6, -1.2], [4.6, -2.2], [4.6, 3.3], [-2.6, -3.9], [1.2, -3.9]]) { const t = tree({ s: 0.85 }); t.position.set(x, 0, z); K.g.add(t); K.foot(x, z, 0.3); }
+  for (const [x, z] of [[-3.9, -1.3], [4.6, -2.2], [4.6, 3.3], [-2.4, -4.45], [1.2, -4.25]]) { const t = tree({ s: 0.85 }); t.position.set(x, 0, z); K.g.add(t); K.foot(x, z, 0.3); }
   for (const x of [-4.4, -3.8, -3.2, 2.3, 2.9, 3.5]) { const b = bush(0.38); b.position.set(x, 0, 5.0); K.g.add(b); }   // a hedge either side of the way in
   for (const x of [2.35]) { const l = lamp(); l.position.set(x, 0, 2.9); K.g.add(l); K.foot(x, 2.9, 0.15); }
-  K.g.userData.club = { pool: { x: PX, z: PZ, swim: [PX - 0.15, PX + 0.85], swimZ: PZ + 0.22 }, court: { x: TX, z: TZ, w: tw, d: td },
-    loungers: [0, 1, 2].map(k => ({ x: PX - 0.9 + k * 0.6, z: LZ + 0.06 })), park: [{ x: -1.7, z: 4.05 }, { x: 0.3, z: 4.05 }] };
+  K.g.userData.club = { pool: { x: PX, z: PZ, swim: [PX - 0.2, PX + 1.1], swimZ: PZ + 0.32 }, court: { x: TX, z: TZ, w: tw, d: td },
+    loungers: LZS.map(z => ({ x: LX + 0.15, z, fx: LX - 3, fz: z })), park: [{ x: -1.7, z: 4.05 }, { x: 0.3, z: 4.05 }] };
   K.g.userData.floor = (x, z) => {
     if (Math.abs(x - CX) < W / 2 + 0.2 && z > fz - 0.02 && z < fz + 0.85) return 0.12;                 // the veranda
     if (poolIn(x - PX, z - PZ, 0.5) && !poolIn(x - PX, z - PZ, 0)) return 0.1;            // the pool deck
-    if (Math.abs(x - PX + 0.3) < 1.05 && Math.abs(z - PZ - 1.45) < 0.52) return 0.088;    // the sun terrace
+    if (Math.abs(x - SX) < 0.85 && Math.abs(z - SZ) < 1.15) return 0.088;                 // the sun terrace
     if (Math.abs(x + 0.2) < 2.3 && Math.abs(z - 4.05) < 1.45) return 0.05;                               // the car park
     return null;
   };
@@ -299,12 +306,13 @@ const POOL_VS = /* glsl */`
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }`;
 const POOL_FS = /* glsl */`
-  uniform float uTime, uLight, uSwimOn, uMos; uniform vec2 uAB; uniform vec3 uCam, uSwim;
+  uniform float uTime, uLight, uSwimOn, uMos, uS, uMeOn, uMeK; uniform vec2 uAB; uniform vec3 uCam, uSwim, uMeA, uMeB;
   uniform sampler2D tMos;
-  uniform vec3 cDeep, cTint, cFoam, cTop, cBottom, cSkin;
+  uniform vec3 cDeep, cTint, cFoam, cTop, cBottom, cSkin, cMeTop, cMeBottom;
   varying vec3 vP;
   float edgeR(vec2 p) { vec2 q = p / uAB; float th = atan(q.y, q.x); return (1.0 + 0.10 * sin(2.0 * th + 0.5) + 0.08 * sin(3.0 * th + 2.0)) - length(q); }
   float depthAt(vec2 p) {
+    p /= uS;                                        // (the levels were laid out for the smaller pool: they grew with it)
     float d = 0.56;
     if (p.x < -0.72) d = 0.12;                      // the sun ledge
     else if (p.x < -0.52) d = 0.25;                 // the entry steps
@@ -312,7 +320,7 @@ const POOL_FS = /* glsl */`
     if (length(p - vec2(0.72, -0.36)) < 0.27) d = 0.24;   // the round seat
     return d;
   }
-  vec3 mos(vec2 uv) { return texture2D(tMos, uv / (2.0 * uMos) + 0.5).rgb; }
+  vec3 mos(vec2 uv) { return texture2D(tMos, uv / (2.0 * uMos * uS) + 0.5).rgb; }
   float capsule(vec3 ro, vec3 rd, vec3 a, vec3 b, float r) {
     vec3 ba = b - a, oa = ro - a;
     float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
@@ -363,12 +371,22 @@ const POOL_FS = /* glsl */`
       float tb = capsule(ro, r, vec3(uSwim.x, uSwim.y + 0.1, uSwim.z), vec3(uSwim.x, -0.02, uSwim.z), 0.105);
       if (tb > 0.0 && tb < t) { float y = (ro + r * tb).y; col = (y > uSwim.y + 0.36 ? cTop : y > uSwim.y + 0.24 ? cBottom : cSkin) * 0.92; t = tb; }
     }
+    if (uMeOn > 0.5) {                              // the critic, swimming: her body under the surface, from her shoulders (A) back to her feet (B)
+      float tb = capsule(ro, r, uMeA, uMeB, 0.085);
+      if (tb > 0.0 && tb < t) { vec3 q = ro + r * tb; float u = clamp(dot(q - uMeA, uMeB - uMeA) / dot(uMeB - uMeA, uMeB - uMeA), 0.0, 1.0);
+        col = (u < 0.42 ? cMeTop : u < 0.9 ? cMeBottom : cSkin) * 0.92; t = tb; }
+    }
     float fres = pow(1.0 - abs(rd.y), 3.0);
     col = mix(col, cDeep, clamp(t * -r.y / 1.4, 0.0, 0.45));        // deeper water, bluer
     col = mix(col, cTint, 0.14 + 0.45 * fres);
     float w = sin(vP.x * 16.0 + 1.8 * sin(vP.z * 10.0 + uTime) + uTime * 1.7) * sin(vP.z * 13.0 - uTime * 1.3 + 1.5 * sin(vP.x * 8.0));
     float ring = 0.0;
     if (uSwimOn > 0.5) { float d = length(vP.xz - uSwim.xz); ring = smoothstep(0.08, 0.0, abs(fract(d * 5.0 - uTime * 0.9) - 0.5) - 0.38) * exp(-d * 3.5) * step(0.09, d); }
+    if (uMeOn > 0.5) {                              // rings round her, livelier with each stroke (uMeK), and a little froth at her shoulders
+      float d = length(vP.xz - uMeA.xz);
+      ring = max(ring, smoothstep(0.08, 0.0, abs(fract(d * 4.5 - uTime * 1.3) - 0.5) - 0.36) * exp(-d * (3.6 - 1.4 * uMeK)) * step(0.1, d) * (0.6 + 0.6 * uMeK));
+      ring = max(ring, (1.0 - smoothstep(0.1, 0.16, d)) * step(0.6, fract(sin(dot(floor(vP.xz * 60.0), vec2(12.9898, 78.233)) + floor(uTime * 7.0)) * 43758.5453)) * uMeK);
+    }
     col = mix(col, cFoam, clamp(smoothstep(0.88, 0.97, w) * 0.6 + ring * 0.8, 0.0, 1.0));
     col *= mix(0.55, 1.0, smoothstep(0.0, 0.03, edgeR(vP.xz)));       // the rim line
     gl_FragColor = vec4(col * uLight, 1.0);
@@ -379,14 +397,15 @@ function poolWater() {
   const mat = new THREE.ShaderMaterial({
     vertexShader: POOL_VS, fragmentShader: POOL_FS,
     uniforms: {
-      uTime: { value: 0 }, uLight: { value: 1 }, uSwimOn: { value: 0 }, uMos: { value: MOS },
+      uTime: { value: 0 }, uLight: { value: 1 }, uSwimOn: { value: 0 }, uMos: { value: MOS }, uS: { value: POOL_S },
+      uMeOn: { value: 0 }, uMeK: { value: 0 }, uMeA: { value: new THREE.Vector3() }, uMeB: { value: new THREE.Vector3() },
       uAB: { value: new THREE.Vector2(POOL_A, POOL_B) }, uCam: { value: new THREE.Vector3() }, uSwim: { value: new THREE.Vector3(0, -0.6, 0) },
       tMos: { value: mosaicTexture() },
-      cDeep: C(0x1f7fa6), cTint: C(0x8fd8e6), cFoam: C(0xf6fdff), cTop: C(0xe8604c), cBottom: C(0x3f5872), cSkin: C(0xdca78a),
+      cDeep: C(0x1f7fa6), cTint: C(0x8fd8e6), cFoam: C(0xf6fdff), cTop: C(0xe8604c), cBottom: C(0x3f5872), cSkin: C(0xdca78a), cMeTop: C(0xa898c4), cMeBottom: C(0x4d5f86),
     },
   });
   // the surface: the outline filled in rings round the centre (so the wobble has vertices to move)
-  const pos = [0, 0, 0], idx = [], NA = 72, NR = 6;
+  const pos = [0, 0, 0], idx = [], NA = 96, NR = 8;
   for (let r = 1; r <= NR; r++) for (let k = 0; k < NA; k++) { const [x, z] = poolEdge(k / NA * Math.PI * 2, 0); pos.push(x * r / NR, 0, z * r / NR); }
   for (let k = 0; k < NA; k++) idx.push(0, 1 + (k + 1) % NA, 1 + k);
   for (let r = 1; r < NR; r++) for (let k = 0; k < NA; k++) {
@@ -459,7 +478,8 @@ function drivingRange() {
   K.box(4.9, 0.04, 0.04, DARK(), 0, 2.28, -4.25, 0.01);
   { const g = new THREE.PlaneGeometry(4.8, 2.2); const m = K.put(g, netMat(24, 11), 0, 1.15, -4.25); m.userData.noInk = true; }
   for (const x of [-2.4, -0.8, 0.8, 2.4]) K.foot(x, -4.25, 0.12);
-  K.g.userData.range = { tee: { x: -0.6, z: TZ - 0.15 } };
+  K.g.userData.range = { tee: { x: -0.6, z: TZ - 0.15 }, bays: [-1.8, -0.6, 0.6, 1.8], matZ: TZ - 0.15, matY: 0.1225,
+    boards: [[TZ - 0.15, 0], [0.6, 50], [-1.6, 100], [-3.6, 150]], netZ: -4.25, fieldX: 2.5 };
   K.g.userData.floor = (x, z) => Math.abs(x) < 2.5 && Math.abs(z - TZ) < 0.65 ? 0.1 : null;
   return K.g;
 }
@@ -805,7 +825,7 @@ export function createNorthLife({ scene, town, game, player }) {
     const p = { obj, dir: d.clone(), kind: 'swim', t: 0 }; people.push(p); }
   // a reader on the middle lounger
   // (the seated stance is drawn for a bench seat ~0.2 higher than a lounger's: she sits down onto it)
-  { const L = club.loungers[1], d = CLW(L.x, L.z + 0.1), obj = put(PEOPLE.lounger, d, CLW(L.x, L.z - 2), -0.04);
+  { const L = club.loungers[1], d = CLW(L.x - 0.1, L.z), obj = put(PEOPLE.lounger, d, CLW(L.fx, L.fz), -0.04);
     obj.userData.turn.rotation.x = -0.18;                                         // leaning back a little, on the raised backrest
     const p = { obj, dir: d.clone(), kind: 'still' }; bumpIt(p, 390, 'My SUNBATHE!'); people.push(p); }
   // a golfer at the tee line, facing down the range
@@ -837,10 +857,15 @@ export function createNorthLife({ scene, town, game, player }) {
   }
 
   const river = createRiverLife({ scene, water: N.water, player, game, audio });
+  // a swim in the pool, a bucket of balls at the range (club.js)
+  let swimmerAt = null;
+  const play = createClubPlay({ scene, game, player, club, range: N.range, poolIn, poolEdge, poolTh, swimmerAt: () => swimmerAt });
+  N.play = play;                                                                   // (dev: window.__v2.town.north.play)
   return {
     list: people,
-    update(dt) {
+    update(dt, t = performance.now() / 1000) {
       river.update(dt);
+      play.update(dt, t);
       const cold = game.G.state === 'cold', here = player.st.dir;
       for (const p of people) {
         const busy = game.bumps.busy?.(p.obj), far = arc(here, p.dir) > NEAR;
@@ -854,7 +879,12 @@ export function createNorthLife({ scene, town, game, player }) {
           alignToSurface(p.obj, d, yawToFace(d, CLW(ct.x, ct.z - p.s)));
           if (h) poseFolk(h, dt, v);
         } else if (p.kind === 'swim') {                                            // lengths, turning at each end
-          p.t += dt; const u = (Math.sin(p.t * 0.28) + 1) / 2, x = pl.swim[0] + u * (pl.swim[1] - pl.swim[0]);
+          // she gives way to the critic: treads water while the critic's in her path
+          const me = play.swimAt(), ahead = (tt) => pl.swim[0] + (Math.sin(tt * 0.28) + 1) / 2 * (pl.swim[1] - pl.swim[0]) - pl.x;
+          const blocked = me && Math.hypot(ahead(p.t + dt * 8) - me[0], pl.swimZ - pl.z - me[1]) < 0.6 && Math.hypot(ahead(p.t + dt * 8) - me[0], pl.swimZ - pl.z - me[1]) < Math.hypot(ahead(p.t) - me[0], pl.swimZ - pl.z - me[1]);
+          if (!blocked) p.t += dt;
+          const u = (Math.sin(p.t * 0.28) + 1) / 2, x = pl.swim[0] + u * (pl.swim[1] - pl.swim[0]);
+          swimmerAt = [x - pl.x, pl.swimZ - pl.z];
           const d = CLW(x, pl.swimZ), dirx = Math.cos(p.t * 0.28) >= 0 ? 1 : -1;
           p.dir.copy(d);
           const bob = 0.025 * Math.sin(p.t * 3.1);
