@@ -130,6 +130,7 @@ export function paintThings(renderer, things) {
 function paintThing(renderer, obj, seed) {
   {
     const o = obj.clone(true);
+    o.traverse(m => { if (m.geometry?.userData.lodOf) m.geometry = m.geometry.userData.lodOf; });   // (its whole shape, whatever the distance LOD is drawing)
     o.position.set(0, 0, 0); o.quaternion.identity(); o.scale.setScalar(1);
     o.updateMatrixWorld(true);
     const box = new THREE.Box3();

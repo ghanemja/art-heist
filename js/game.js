@@ -365,7 +365,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     scene.traverse(o => {
       if (!o.isMesh || o.isSkinnedMesh || !o.visible || o.userData.isInk || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return;
       for (let q = o; q; q = q.parent) { if (skip.has(q) || people.has(q) || !q.visible) return; }
-      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+      const g = o.geometry.userData.lodOf || o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();   // (its whole shape, not the distance LOD's)
       _bs.copy(o.isInstancedMesh ? (o.boundingSphere || (o.computeBoundingSphere(), o.boundingSphere)) : g.boundingSphere).applyMatrix4(o.matrixWorld);
       if (o.userData.noInk && _bs.radius > 6 || _bs.center.distanceTo(mid) > reach + _bs.radius) return;
       if (o.isInstancedMesh) { near.push(o); return; }

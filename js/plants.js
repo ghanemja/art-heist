@@ -245,6 +245,7 @@ const SWAY = {
 export const TREE_KINDS = ['blossom', 'birch', 'maple', 'cypress', 'shade'];
 
 // ── grow a placed group's planting ──
+const NO_RAY = () => {};              // (module-level: a closure made in growPlants would hold its whole scope)
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _UP = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3();
 export function growPlants(scene, group, { seed = 1 } = {}) {
   const list = group.userData.plants; if (!list?.length) return null;
@@ -267,7 +268,9 @@ export function growPlants(scene, group, { seed = 1 } = {}) {
       g.setAttribute('sway', new THREE.BufferAttribute(sw, 1));
       g.applyMatrix4(_m);
       const key = col, b = buckets.get(key);
-      const gi = g.index ? g.toNonIndexed() : g;
+      // (kept indexed: a sphere's or a lathe's vertices are shared by ~6 triangles — unrolled, the
+      // town's planting held every corner of every triangle as its own vertex, ~3× the memory)
+      const gi = g.index ? g : g.setIndex([...Array(g.attributes.position.count).keys()]);
       if (b) b.push(gi); else buckets.set(key, [gi]);
     }, s, p);
   }
@@ -277,10 +280,11 @@ export function growPlants(scene, group, { seed = 1 } = {}) {
     geo.computeBoundingSphere();
     const m = new THREE.Mesh(geo, mat(col));
     m.userData.noInk = true;
-    const line = new THREE.Mesh(geo, swayInk()); line.userData.isInk = true; line.renderOrder = -1; line.raycast = () => {};
+    const line = new THREE.Mesh(geo, swayInk()); line.userData.isInk = true; line.renderOrder = -1; line.raycast = NO_RAY;
     m.add(line);
     out.add(m);
   }
+  buckets.clear();                    // (the per-plant pieces are merged: let them go — a closure here kept ~35 MB of them)
   scene.add(out);
   return out;
 }
