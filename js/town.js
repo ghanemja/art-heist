@@ -68,7 +68,8 @@ export function planTown() {
 
 export function buildTown(scene) {
   const out = { landmarks: [], sites: {}, museum: null, statics: [], colliders: [] };
-  const solid = (d, r) => out.colliders.push({ dir: d.clone(), r });
+  // soft: a person — the car knocks them flying (bump.js) instead of stopping; everything else stops it
+  const solid = (d, r, soft = false) => out.colliders.push({ dir: d.clone(), r, soft });
   // street furniture baked into a placed building (benches, lamp posts, planters,
   // post boxes…) left [x, z, r] footprints in its userData.foots (buildings.js `foot`)
   const feet = (g) => { g.updateWorldMatrix(true, false); for (const [x, z, r] of g.userData.foots || []) solid(g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r); };

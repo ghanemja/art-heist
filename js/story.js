@@ -382,7 +382,7 @@ export function buildCase(scene, W) {
     const facing = p.id === 'ezra' ? W.train.reader.facing : mF(0, 6);
     settle(m, d, 0.25, 0, yawToFace(d, facing)); m.position.setLength(standAt(d)); scene.add(m);   // people stand ON the ground/road (no sink)
     items.push({ kind: 'person', id: p.id, dir: d, obj: m, seated: !!LOOKS[p.id].stance && LOOKS[p.id].stance === 'reading', hidden: !!p.hidden });
-    W.solid(d, 0.35);
+    W.solid(d, 0.35, true);
   }
   // a faint, hand-drawn glint over anything you haven't looked at yet
   for (const it of items) {

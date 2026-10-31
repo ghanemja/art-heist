@@ -421,10 +421,10 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         st.dir.copy(nd);
       } else st.speed *= 0.3;
       if (st.mode === 'jeep') keepOnRoad(dt);
-      // collide: slide out of every footprint (the car ploughs past lamps and
-      // people — people get knocked flying instead, see bump.js)
+      // collide: slide out of every footprint. The car stops at trees, lamp posts and
+      // everything solid too; only people let it through (they get knocked flying, see bump.js)
       for (const c of colliders) {
-        if (st.mode !== 'walk' && c.r < 0.4 || st.mode === 'walk' && c.carOnly) continue;   // carOnly: the parked train's bulk (she walks in through its door)
+        if (st.mode !== 'walk' && c.soft || st.mode === 'walk' && c.carOnly) continue;   // carOnly: the parked train's bulk (she walks in through its door)
         const a = arc(st.dir, c.dir), lim = c.r + M.radius;
         if (a >= lim || a < 1e-5) continue;
         const perp = st.dir.clone().sub(c.dir.clone().multiplyScalar(c.dir.dot(st.dir))).normalize();
@@ -434,7 +434,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       }
       // the jeep is long: its nose collides too
       if (st.mode === 'jeep') for (const c of colliders) {
-        if (c.r < 0.4) continue;
+        if (c.soft) continue;
         const nose = st.dir.clone().multiplyScalar(R).addScaledVector(st.heading, 0.9).normalize();
         const a = arc(nose, c.dir), lim = c.r + 0.55;
         if (a >= lim || a < 1e-5) continue;
