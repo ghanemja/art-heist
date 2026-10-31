@@ -1,7 +1,7 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
 import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, registerGround, standAt, paintRoadMarkings } from './world.js';
-import { styleTick } from './style.js';
+import { styleTick, gpuOnly } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
 import { createGame } from './game.js';
@@ -82,6 +82,7 @@ game.doors.push({ dir: mf(0, -1.75), r: 1.3, label: 'go inside the museum', act:
 } }) });
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
+gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera);
 window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES };

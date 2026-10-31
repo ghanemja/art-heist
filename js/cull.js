@@ -30,6 +30,8 @@ export function createCuller(scene, camera) {
       let meshes = 0, skinned = false;
       o.traverse(q => { if (q.isMesh || q.isSprite) meshes++; if (q.isSkinnedMesh) skinned = true; });
       if (!meshes) continue;
+      let onMain = false; o.traverse(q => { if ((q.isMesh || q.isSprite) && q.layers.isEnabled(0)) onMain = true; });
+      if (!onMain) continue;                                             // (the rooms draw on their own layer: not ours)
       o.updateMatrixWorld(true);
       const person = skinned && !!(o.userData.human || o.userData.noGround);
       let r, off;
@@ -67,7 +69,8 @@ export function createCuller(scene, camera) {
   const apply = (o, st) => {
     o.traverse(q => {
       if (!(q.isMesh || q.isSprite || q.isLine || q.isPoints)) return;
-      q.layers.set(st.hidden || (st.lod && st.detail.has(q)) ? HIDE : 0);
+      if (q.userData._lay == null) q.userData._lay = q.layers.mask;              // its own layers, to give back
+      q.layers.mask = st.hidden || (st.lod && st.detail.has(q)) ? 1 << HIDE : q.userData._lay;
     });
   };
   return {

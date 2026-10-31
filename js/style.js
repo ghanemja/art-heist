@@ -129,6 +129,49 @@ function fadeInk(weight) {
 // ink(obj): give every mesh under obj its outline. Hull reuses the mesh's own
 // geometry (no copy), so the cost is one extra draw per inked mesh.
 const NO_RAY = () => {};                     // a shared no-op raycast (a closure would keep its maker's scope alive)
+// gpuOnly(scene): once the world is built, the JS copies of what only the GPU reads — normals,
+// uvs, vertex colours, an ink hull's index — are let go as soon as they're uploaded (the heap
+// held them all twice over: ~60% of every static mesh). The ground rays and the talk camera
+// read positions + indices only: each mesh raycasts through a proxy geometry that shares
+// exactly those. Skinned people, instanced and animated (point) meshes, the planet and the
+// sea are left as they are; so is anything added later (it may still be built from).
+const _freeArr = function () { this.array = null; };
+const _rayGeo = new WeakMap();                // mesh → its positions-and-index proxy (not in userData: clone() would copy it)
+function _rayThrough(raycaster, hits) {
+  const g = this.geometry; this.geometry = _rayGeo.get(this);
+  try { THREE.Mesh.prototype.raycast.call(this, raycaster, hits); } finally { this.geometry = g; }
+}
+export function gpuOnly(root, renderer, camera) {
+  const done = new Set();
+  // (people are left whole: their rigid parts — shoes, buttons, hair — come from shared
+  // builder caches that later people, and the critic streaming in, are cloned from)
+  const people = new Set(root.children.filter(t => { let sk = false; t.traverse(q => { if (q.isSkinnedMesh) sk = true; }); return sk || t.userData.human; }));
+  const skip = (o) => { for (let q = o; q; q = q.parent) if (people.has(q)) return true; return false; };
+  root.traverse(o => {
+    if (o.isMesh && skip(o)) return;
+    if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.name === 'planet' || o.name === 'sea') return;
+    const g = o.geometry; if (!g?.attributes?.position || g.morphAttributes?.position) return;
+    if (!o.userData.isInk && o.raycast === THREE.Mesh.prototype.raycast) {
+      const r = new THREE.BufferGeometry(); r.setAttribute('position', g.attributes.position); if (g.index) r.setIndex(g.index);
+      if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
+      r.boundingSphere = g.boundingSphere; r.boundingBox = g.boundingBox;
+      _rayGeo.set(o, r); o.raycast = _rayThrough;
+    }
+    if (done.has(g)) return; done.add(g);
+    if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
+    for (const k of ['normal', 'uv', 'color']) { const a = g.attributes[k]; if (a) a.onUpload(_freeArr); }
+  });
+  // upload it all now, while loading (one tiny off-screen frame with nothing culled): a thing
+  // first seen much later would otherwise keep its copies until then
+  if (renderer && camera) {
+    // (to the screen itself, through a 1-pixel scissor: a render target would compile a second
+    // copy of every shader for its colour space; the first real frame paints over the pixel)
+    const culled = [];
+    root.traverse(o => { if (o.isMesh && o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
+    try { renderer.setScissorTest(true); renderer.setScissor(0, 0, 1, 1); renderer.render(root, camera); }
+    finally { renderer.setScissorTest(false); for (const o of culled) o.frustumCulled = true; }
+  }
+}
 // one hull for a whole static thing. Its parts (siblings under one parent: a building baked
 // one mesh per material) are moved onto ONE shared vertex buffer — each keeps only its own
 // index into it — and their ink hulls, drawn in the same ink, become a single mesh indexing
@@ -177,6 +220,76 @@ function mergeHulls(parent) {
   for (const o of fills) { const old = o.geometry; o.geometry = shared(own.get(o)); old.dispose(); }
 }
 const _ID = new THREE.Matrix4();
+// a person's skinned hulls — one per body part, drawn in the same ink weight — become one
+// skinned hull (a body was up to ~12 hull draws; now 1). Each part's own bind matrix is baked
+// into its vertices and the parts' bones gathered into one skeleton (an "attached" skinned mesh
+// cancels its own transform, so where the merged hull hangs doesn't matter). A part whose bones
+// were bound differently keeps its own hull. The merged copy is the GPU's alone: its arrays go
+// once uploaded. (A plain hull merged with fading ones gets a fade of 1: the same stroke.)
+const _m4a = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _v3 = new THREE.Vector3();
+const _near = (a, b) => { for (let i = 0; i < 16; i++) if (Math.abs(a.elements[i] - b.elements[i]) > 1e-4 * (1 + Math.abs(a.elements[i]))) return false; return true; };
+function mergeSkinnedHulls(skins) {
+  const groups = new Map();
+  for (const h of skins) {
+    const g = h.geometry; if (Object.keys(g.morphAttributes).length || !g.attributes.skinIndex || !g.attributes.skinWeight || h.bindMode !== 'attached') continue;
+    const k = h.material.uniforms?.uWeight?.value ?? h.material.uuid; let b = groups.get(k); if (!b) groups.set(k, b = []); b.push(h);
+  }
+  const free = function () { this.array = null; };
+  for (const all of groups.values()) {
+    if (all.length < 2) continue;
+    // one skeleton for them: every bone once. A part may have been bound in a different pose of
+    // the whole model (its bone inverses all off by one common transform C): its vertices are
+    // carried by C, and the bones it brings in are taken back by C⁻¹. A part whose offset isn't
+    // common to all its bones keeps its own hull.
+    const bones = [], inv = [], at = new Map(), hs = [], carry = new Map();
+    for (const h of all) {
+      const sk = h.skeleton; let C = null, ok = true;
+      for (let i = 0; i < sk.bones.length && ok; i++) {
+        const k = at.get(sk.bones[i]); if (k == null) continue;
+        const c = inv[k].clone().invert().multiply(sk.boneInverses[i]);
+        if (!C) C = c; else if (!_near(C, c)) ok = false;
+      }
+      if (!ok) continue;
+      C = C || new THREE.Matrix4();
+      const Ci = C.clone().invert();
+      for (let i = 0; i < sk.bones.length; i++) { const b = sk.bones[i]; if (!at.has(b)) { at.set(b, bones.length); bones.push(b); inv.push(sk.boneInverses[i].clone().multiply(Ci)); } }
+      carry.set(h, C.multiply(h.bindMatrix)); hs.push(h);
+    }
+    if (hs.length < 2) continue;
+    const fade = hs.some(h => h.geometry.attributes.inkW);
+    let nv = 0, ni = 0;
+    for (const h of hs) { const g = h.geometry; nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
+    const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), SI = new Uint16Array(nv * 4), SW = new Float32Array(nv * 4), W = fade ? new Float32Array(nv).fill(1) : null;
+    const I = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let vb = 0, ib = 0;
+    for (const h of hs) {
+      const g = h.geometry, a = g.attributes, n = a.position.count, map = h.skeleton.bones.map(b => at.get(b));
+      _m4a.copy(carry.get(h)); _n3.getNormalMatrix(_m4a);
+      for (let i = 0; i < n; i++) {
+        const j = vb + i;
+        _v3.fromBufferAttribute(a.position, i).applyMatrix4(_m4a); P[j * 3] = _v3.x; P[j * 3 + 1] = _v3.y; P[j * 3 + 2] = _v3.z;
+        _v3.fromBufferAttribute(a.normal, i).applyMatrix3(_n3).normalize(); N[j * 3] = _v3.x; N[j * 3 + 1] = _v3.y; N[j * 3 + 2] = _v3.z;
+        for (let c = 0; c < 4; c++) { SI[j * 4 + c] = map[a.skinIndex.getComponent(i, c)] ?? 0; SW[j * 4 + c] = a.skinWeight.getComponent(i, c); }
+        if (W && a.inkW) W[j] = a.inkW.getX(i);
+      }
+      if (g.index) for (let k = 0; k < g.index.count; k++) I[ib++] = vb + g.index.getX(k); else for (let k = 0; k < n; k++) I[ib++] = vb + k;
+      vb += n;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(SI, 4)); g.setAttribute('skinWeight', new THREE.BufferAttribute(SW, 4));
+    if (W) g.setAttribute('inkW', new THREE.BufferAttribute(W, 1));
+    g.setIndex(new THREE.BufferAttribute(I, 1));
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    for (const a of [...Object.values(g.attributes), g.index]) a.onUpload(free);
+    const h0 = hs[0], m = new THREE.SkinnedMesh(g, skinnedInkFor(h0.material, fade));
+    h0.parent.add(m);
+    m.bind(new THREE.Skeleton(bones, inv), new THREE.Matrix4());
+    m.computeBoundingSphere(); m.computeBoundingBox();         // (now, while it has its arrays: the renderer sorts by it)
+    m.userData.isInk = true; m.raycast = NO_RAY; m.frustumCulled = false; m.renderOrder = h0.renderOrder;
+    for (const h of hs) h.removeFromParent();
+  }
+}
 // merge: the thing never moves and none of its parts are shown/hidden on their own — its
 // hulls become one draw (see mergeHulls)
 export function ink(root, weight = 'mid', { merge = false } = {}) {
@@ -188,6 +301,7 @@ export function ink(root, weight = 'mid', { merge = false } = {}) {
     if (!o.geometry?.attributes?.normal) return;
     list.push(o);
   });
+  const skins = [];
   for (const o of list) {
     const line = new THREE.Mesh(o.geometry, o.geometry.attributes.inkW ? fadeInk(weight) : mat);
     line.userData.isInk = true;
@@ -201,11 +315,13 @@ export function ink(root, weight = 'mid', { merge = false } = {}) {
       sk.userData.isInk = true; sk.raycast = NO_RAY; sk.frustumCulled = false;
       o.parent.add(sk);
       sk.position.copy(o.position); sk.quaternion.copy(o.quaternion); sk.scale.copy(o.scale);
+      skins.push(sk);
       continue;
     }
     o.add(line);
   }
   if (merge) { const parents = new Set(list.filter(o => !o.isSkinnedMesh).map(o => o.parent)); for (const p of parents) mergeHulls(p); }
+  if (skins.length > 1) mergeSkinnedHulls(skins);
   return root;
 }
 // mergeStatic(obj): bake a finished, inked thing that never moves (a parked car) into one
@@ -276,6 +392,8 @@ export function mergeStatic(root, keep = []) {
   return root;
 }
 const _skinInk = {};
+// the plain/fading variant of a skinned ink material, at the same weight
+const skinnedInkFor = (mat, fade) => { for (const [k, m] of Object.entries(_skinInk)) if (m === mat) return skinnedInk(k.split(':')[0], fade); return mat; };
 function skinnedInk(weight, fade = false) {
   const key = weight + (fade ? ':fade' : '');
   if (_skinInk[key]) return _skinInk[key];
