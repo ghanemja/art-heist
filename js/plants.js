@@ -18,7 +18,7 @@ import { drawnGroundAt } from './world.js';
 const rng = (s) => () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
 
 // ── the breeze: a shared vertex-shader nod, its strength per vertex in `sway` (world units) ──
-const BREEZE = /* glsl */`
+export const BREEZE = /* glsl */`
   attribute float sway;
   uniform float uTime;
   vec3 breeze(vec3 p) {
@@ -50,8 +50,9 @@ function swayInk() {
   _ink = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: { ...inkUniforms, uWeight: { value: 0.62 }, uColor: { value: new THREE.Color(0x2a2230) } },
-    vertexShader: BREEZE.replace('uniform float uTime;', '') + /* glsl */`
-      uniform float uTime, uWidth, uWeight; uniform vec2 uRes;
+    // (uTime stays declared ahead of breeze(), which reads it: the rest of the ink's uniforms follow)
+    vertexShader: BREEZE + /* glsl */`
+      uniform float uWidth, uWeight; uniform vec2 uRes;
       float h(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }
       void main() {
         vec3 pos = position + breeze(position);
@@ -72,8 +73,8 @@ function swayInk() {
   return _ink;
 }
 
-// ── colours ──
-const C = {
+// ── colours ── (shared: the meadow draws from the same paint box)
+export const C = {
   stem: 0x5f8a4e, leaf: 0x6f9a5a, leafD: 0x4f7a44, leafL: 0x93b86c, leafY: 0xa9bf62,
   grass: 0xb4bf72, grassG: 0xd2b866, grassD: 0x7f9a58,
   red: 0xe8604c, yellow: 0xf2c14e, pink: 0xf2a0b4, white: 0xf6eedb, purple: 0x8f7ae8, lav: 0x9c8ad8,
