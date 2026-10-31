@@ -613,6 +613,8 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   // plaque, in a warm pool of light. The plinth is static (merged with the museum); the
   // ribbon is its own two-material mesh so it can turn.
   const GOLD_HI = S(0xf8dc8c, { roughness: 0.22, metalness: 0.9 });      // burnished highlights
+  const GOLD_LO = S(0xa9741f, { roughness: 0.5, metalness: 0.6 });       // the cove, in shadow
+  const lobe = new THREE.SphereGeometry(1, 9, 6);                          // (the plaque's pins)
   const MARBLE = S(0x31544c, { roughness: 0.3, metalness: 0.08 });
   let poolMat = null;
   const sculpture = (() => {
