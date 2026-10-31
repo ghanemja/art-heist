@@ -12,6 +12,7 @@ import { createPark } from './park.js';
 import { createShopInteriors } from './shopinterior.js';
 import { createRooms, ROOM_STYLES } from './rooms.js';
 import { createCarParks } from './carparks.js';
+import { createNorthLife } from './north.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -55,6 +56,7 @@ registerGround([scene]);          // again, now the case's props (café deck, bo
 const citizens = createCitizens({ scene, town, game, player, camera });   // bystanders, streamed in after the title is up
 const plaza = createPlaza({ scene, town, game, player });                  // Maple Plaza: parked cars, shoppers in and out
 const park = createPark({ scene, town, game, player });                    // Lantern Park: strollers, a reader, a coffee
+const northLife = createNorthLife({ scene, town, game, player });          // the club's players, the swimmer, the golfer, the Close's neighbours
 createCarParks({ scene, town });                                         // the project shops' car parks: a parked car each
 const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper && !ROOM_STYLES.has(l.style)));   // the project shops' living rooms
 // YarnFlow, Borrowed Eyes and QR Compass open into whole rooms (rooms.js): walk in at the door.
@@ -109,6 +111,7 @@ function loop() {
     citizens.update(dt);
     plaza.update(dt);
     park.update(dt);
+    northLife.update(dt);
     shopInside.update(dt, t, player);
   }
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);

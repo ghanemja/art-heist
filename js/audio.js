@@ -270,6 +270,21 @@ export const audio = {
       o.connect(lp); o.start(t); o.stop(t + 0.26); am.start(t); am.stop(t + 0.26);
     }
   },
+  // a frog by the river: two low, buzzy 'rrb-bit' pulses (a square wave rattled at ~28 Hz,
+  // sliding down ~120 → 80 Hz, under a dark lowpass — a croak, never a chirp)
+  croak() {
+    if (!AC) return;
+    for (const k of [0, 0.17]) {
+      const t = AC.currentTime + k, g = AC.createGain(), lp = AC.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 520;
+      env(g, t, 0.01, k ? 0.11 : 0.14, 0.12);
+      const rattle = AC.createGain(); rattle.gain.value = 0.55;
+      const am = AC.createOscillator(), amG = AC.createGain(); am.frequency.value = 28; amG.gain.value = 0.45; am.connect(amG); amG.connect(rattle.gain);
+      const o = AC.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(k ? 105 : 125, t); o.frequency.exponentialRampToValueAtTime(78, t + 0.13);
+      o.connect(lp); lp.connect(g); g.connect(rattle); rattle.connect(sfxBus);
+      o.start(t); o.stop(t + 0.18); am.start(t); am.stop(t + 0.18);
+    }
+  },
   // a soft wooden knock for opening a card / a talk
   knock() {
     if (!AC) return;

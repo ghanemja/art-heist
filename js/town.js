@@ -5,14 +5,17 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js?v=11';
+import { buildMuseum } from '../museum.js?v=12';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
+import { museumGrounds } from './grounds.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
+import { planNorth, buildNorth } from './north.js';
+import { dressRoads } from './roadside.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -51,9 +54,15 @@ export function restyle(root) {
 const mDir = llv(PLAN.museum.at);
 const mF = frame(mDir, TOWN_C);                            // +y local = toward town
 export function planTown() {
+  planNorth();                                            // the river and the north's ground (north.js)
   reserve(mF(0, -0.3), 4.4, 'museum-plaza');
   reserve(mF(0, -7.0), 8.4, 'museum');
-  flatten(mF(0, -6), 12, 0.45, { plane: mDir });          // the museum stands on a true plane
+  // the museum stands on a true plane (tangent at its forecourt, so the forecourt is level);
+  // the plane only needs to reach past the building, its ramp and the ruts (r 9.5 round its
+  // middle). Past that the ground eases back to the plateau over 16 — it used to hold the plane
+  // out to r 12 (4.5 above the sphere behind the museum) and drop off in 9, a steep shelf every
+  // road out of town's west side climbed (grades of 0.5)
+  flatten(mF(0, -6), 9.5, 0.45, { plane: mDir, blend: 16 });
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const c = s.shift ? frame(llv(s.at), TOWN_C)(0, s.shift) : llv(s.at);
     reserve(c, s.r, 'site:' + k); flatten(c, s.r + 1);
@@ -62,12 +71,14 @@ export function planTown() {
   const fT = frame(TOWN_C);
   reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
   // each project shop gets a wide level yard that eases out gently (its spur road arrives on the flat)
-  for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, undefined, { blend: 7 }); }
-  // …and the shops with a car park beside them keep its ground too (levelled; the shop's local x is
-  // the frame's −x: the shop faces town)
-  for (const p of PLAN.projects) if (p.lot) {
-    const c = frame(llv(p.at), TOWN_C)(-p.lot * 5.7, 2.15);
-    reserve(c, 5.0, 'lot:' + p.key); flatten(c, 4.9, undefined, { blend: 5 });
+  // (level at the height the ground already has there, not pulled down to the plateau's: a yard
+  // on the museum's shoulder dug a hollow, and the roads either side of it rose and fell steeply)
+  for (const p of PLAN.projects) {
+    const h = Math.max(0.45, surfH(llv(p.at)));
+    reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, h, { blend: 10 });
+    // …and a shop with a car park beside it keeps that ground too, level with its yard (the shop's
+    // local x is the frame's −x: the shop faces town)
+    if (p.lot) { const c = frame(llv(p.at), TOWN_C)(-p.lot * 5.7, 2.15); reserve(c, 5.0, 'lot:' + p.key); flatten(c, 4.9, h, { blend: 5 }); }
   }
   reserve(llv(PLAN.park.at), PLAN.park.r, 'park'); flatten(llv(PLAN.park.at), PLAN.park.r + 1, undefined, { blend: 6 });
 }
@@ -98,17 +109,34 @@ export function buildTown(scene) {
   // forecourt Main Street is meant to arrive at (0.6 there cuts its last junction)
   const free = (x, y, half) => !zoneHit(fC(x, y), half + 0.6, z => z.key === 'museum-plaza') && !zoneHit(fC(x, y), half + 0.3);
   const lines = [];                                          // each grid line as runs of free samples
+  // CITY PLANNING: every street meets another one. The middle cross (i = 0) runs on out to the
+  // boulevard and ends IN it (a T junction) — it used to stop 2–3 short, leaving three stubs
+  // dead-ending on the grass between the houses; and a street that touches the boulevard (where
+  // the ring bends in round the museum) ends there instead of running on top of it
+  const blvdD = (d) => { let m = 1e9; for (const p of out.boulevard) { const a = arc(p, d); if (a < m) m = a; } return m; };
+  const onBlvd = (d) => blvdD(d) < ROAD_MAJOR * 0.55;
   for (let axis = 0; axis < 2; axis++) {
     for (let i = -K; i <= K; i++) {
       const major = i % 2 === 0, half = major ? ROAD_MAJOR : ROAD_MINOR;
-      let run = [];
-      for (let j = -K * 4; j <= K * 4; j++) {
+      const reach = i === 0 ? B + 2 : CAP;                   // the cross may run out to the ring
+      let run = [], last = null, inside = i !== 0;           // (the cross starts outside the ring)
+      const close = () => { if (run.length > 4) lines.push({ pts: run, half }); run = []; };
+      for (let j = -K * 6; j <= K * 6; j++) {
         const t = j * P / 4;
         const x = axis ? i * P : t, y = axis ? t : i * P;
-        if (inTown(x, y) && free(x, y, half) && !minorCut(axis, i, x, y)) run.push(fC(x, y));
-        else { if (run.length > 4) lines.push({ pts: run, half }); run = []; }
+        const ok = Math.hypot(x, y) <= reach && free(x, y, half) && !minorCut(axis, i, x, y);
+        if (!ok) { close(); last = null; continue; }
+        const d = fC(x, y);
+        if (onBlvd(d)) {
+          if (run.length) { run.push(d); close(); if (i === 0) inside = false; }   // the cross leaves the ring here
+          else if (i === 0) inside = true;                                      // …and enters it here
+          last = d; continue;
+        }
+        if (!inside && i === 0) continue;                    // still outside the ring
+        if (!run.length && last) run.push(last);             // start on the boulevard we just left
+        run.push(d); last = null;
       }
-      if (run.length > 4) lines.push({ pts: run, half });
+      close();
     }
   }
   for (const L of lines) buildRoad(scene, L.pts, { half: L.half, dashed: L.half > 0.9 });
@@ -127,14 +155,18 @@ export function buildTown(scene) {
     // smoothing rounds corners back INTO reserved ground: push the smoothed line out again
     const sm = smooth(pts, 2);
     deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: mine, clear: 1.8 });
-    return buildRoad(scene, sm, { half: 0.85, dashed: false });
+    const built = buildRoad(scene, sm, { half: 0.85, dashed: false });
+    out.spurs.push({ key, pts: built });
+    return built;
   };
+  out.spurs = [];
   // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
   // everything built after (blocks, lamps, the verge trees and bushes) see them —
   // laid later, a spur ran straight over the verge planting it crossed
   for (const p of PLAN.projects) spur(llv(p.at), p.style === 'library' ? 4.6 : 3.7, 'lm:' + p.key);   // shops: up to the stoop
   for (const [k, s] of Object.entries(PLAN.sites))
-    if (k !== 'airport') spur(llv(s.at), s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
+    // (the harbour's road runs on onto the quay's paving: it stopped half a metre short, on the grass)
+    if (k !== 'airport') spur(llv(s.at), k === 'harbour' ? s.r - 0.7 : s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
 
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
@@ -148,6 +180,18 @@ export function buildTown(scene) {
     addFloor(mus.group, (x, z) => Math.hypot(x, z + 0.3) < 3.38 ? 0.45 : null);
     out.museum = { ...mus, dir: mDir, frame: mF };
     for (let z = -3.4; z >= -11; z -= 2.2) for (let x = -5.6; x <= 5.6; x += 2.8) solid(mF(x, z), 1.55);
+  }
+  // ── landscaping (grounds.js): the museum's grounds — gravel walks round both wings to the
+  // back, hedges, a flower strip, low lamps, trees and benches, a sculpture garden round a pool
+  // behind the east wing, a rose garden behind the west. Built in the museum's own frame ──
+  // (switched off for now: the road pass eased the ground round the museum and these were laid
+  // on the old ground, so beds, benches and the sculpture-garden pool floated. Being rebuilt to
+  // read the ground they stand on; ?grounds=1 shows them meanwhile)
+  out.grounds = [];
+  if (new URLSearchParams(location.search).get('grounds') === '1') {
+    const g = add(placeOnPlanet(museumGrounds(), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0 }));
+    feet(g);
+    out.grounds = [g];
   }
   // ── Main Street: two terraces of shops facing each other across y = 0 ──
   // Units are laid by true arc length along each frontage, so neighbours meet
@@ -367,6 +411,11 @@ export function buildTown(scene) {
     if (g) { settle(g, d, s.r * 0.8, 0.06, yawToFace(d, TOWN_C)); add(g);
       if (g.userData.floor) addFloor(g, g.userData.floor); for (const c of g.userData.solids || []) solid(out.sites[k].frame(...c[0]), c[1]); }
   }
+  // the north: the river and its bridge, the country club, the driving range, Riverbend Close
+  out.north = buildNorth(scene, { add, solid, boulevard: out.boulevard });
+  // the roads' verges: street trees out of town, a lamp where each road leaves the ring, a
+  // turning circle and a viewpoint at the overlook (after the rail and the north: it sees them all)
+  out.roadside = dressRoads(scene, { add, solid, spurs: out.spurs, boulevard: out.boulevard, townC: TOWN_C, ringR: PLAN.town.boulevard, sites: out.sites, colliders: out.colliders });
   // helpers the story uses to place things
   out.townAt = ([x, y]) => fC(x, y);
   out.toTown = toTown;
