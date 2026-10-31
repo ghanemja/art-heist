@@ -21,7 +21,7 @@ import { audio } from './audio.js';
 const PLACES = {
   yarn: {
     id: 'yarnflow', title: 'YarnFlow', trade: 'Pattern Haberdashery', sound: 'cosy',
-    url: 'https://ghanemja.github.io/crochet/', shot: 'screenshots/rooms/yarnflow.webp',
+    url: 'https://ghanemja.github.io/crochet/', shot: 'screenshots/rooms/yarnflow.webp?v=2',   // (the app's Learn the stitches tutorial)
     desc: 'A crochet studio: watch a pattern get made stitch by stitch in 3D, learn the stitches, and share what you make.',
   },
   eyes: {
