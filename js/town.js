@@ -8,7 +8,7 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked } from './world.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js?v=12';
+import { buildMuseum } from '../museum.js?v=13';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
@@ -318,7 +318,7 @@ export function buildTown(scene) {
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
   {
-    const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/', openDoor: true });
+    const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/', openDoor: true, spin: 0.22 });
     restyle(mus.group);
     ink(mus.group, 'mid', { merge: true });              // (one hull for its static parts)
     settle(mus.group, mDir, 6, 0.1, yawToFace(mDir, TOWN_C));

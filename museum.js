@@ -18,7 +18,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
 const ART = './artworks/';
 
-export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDoor = false } = {}) {
+export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDoor = false, spin = 0 } = {}) {
   const g = new THREE.Group();
   g.name = 'DowntownMuseum';
   const SEG = lite ? 24 : 48;
@@ -791,11 +791,146 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   }
 
   // ── a smooth gilded sculpture on a plinth (the one thing they couldn't lift) ──
+  // "Endless Ribbon": a gilded Möbius band standing on edge — one surface, one edge, a half
+  // twist so it shows its broad face at the crown and turns edge-on where it balances on a
+  // small gilt socket. Its section is a soft dog-bone (beaded edges, a thinner middle) and the
+  // beads are burnished (GOLD_HI) so the twist reads even in the flat-painted main app. It
+  // stands on a fluted green-marble pedestal with white mouldings, gilt fillets and a bronze
+  // plaque, in a warm pool of light. The plinth is static (merged with the museum); the
+  // ribbon is its own two-material mesh so it can turn.
+  const MARBLE = S(0x31544c, { roughness: 0.3, metalness: 0.08 });
+  let poolMat = null;
   const sculpture = (() => {
     const px = -2.3, pz = 0.6;
-    add(lathe([[0.001, 0], [0.42, 0], [0.42, 0.06], [0.34, 0.12], [0.3, 0.9], [0.38, 0.96], [0.4, 1.02], [0.001, 1.02]], 32), STONE, px, PZ, pz);
-    const k = add(new THREE.TorusKnotGeometry(0.34, 0.1, lite ? 64 : 100, lite ? 8 : 12, 2, 3), GOLD, px, PZ + 1.5, pz);
-    return k;
+    const at = (geo, mat, y) => add(geo, mat, px, PZ + y, pz);
+    const RS = lite ? 32 : 64;
+    // ── the pedestal (heights above the paving) ──
+    at(lathe([[0.001, 0], [0.44, 0], [0.446, 0.015], [0.446, 0.06], [0.436, 0.08], [0.001, 0.08]], RS), STONE_D, 0);   // the step
+    at(lathe([[0.001, 0.08], [0.385, 0.08], [0.396, 0.095], [0.395, 0.12], [0.38, 0.14], [0.35, 0.15],       // torus, scotia, fillet
+      [0.335, 0.165], [0.34, 0.18], [0.315, 0.2], [0.001, 0.2]], RS), TRIM, 0);
+    const S0 = 0.2, S1 = 0.86, SR = 0.27;
+    const shaft = (() => {
+      const P = [];
+      for (let i = 0; i <= 6; i++) { const t = i / 6; P.push(new THREE.Vector2(SR * (1 - 0.06 * t + 0.02 * Math.sin(Math.PI * t)), S0 + (S1 - S0) * t)); }
+      const geo = new THREE.LatheGeometry(P, lite ? 40 : 96);
+      if (!lite) {                                  // 12 rounded flutes
+        const p = geo.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          const y = p.getY(i), a = Math.atan2(p.getX(i), p.getZ(i));
+          const e = THREE.MathUtils.smoothstep(y, S0, S0 + 0.06) * (1 - THREE.MathUtils.smoothstep(y, S1 - 0.06, S1));   // flutes die out at both ends
+          const k = 1 - 0.045 * e * Math.pow(0.5 + 0.5 * Math.cos(a * 12), 1.5);
+          p.setX(i, p.getX(i) * k); p.setZ(i, p.getZ(i) * k);
+        }
+      }
+      return smooth(geo);
+    })();
+    at(shaft, MARBLE, 0);
+    for (const [y, r] of [[S0 + 0.012, SR + 0.004], [S1 - 0.01, SR * 0.96 + 0.006]]) {          // gilt fillets at the shaft's ends
+      at(new THREE.TorusGeometry(r, 0.012, 8, RS), GOLD, y).rotation.x = Math.PI / 2;
+    }
+    at(lathe([[0.001, S1], [0.29, S1], [0.3, S1 + 0.018], [0.285, S1 + 0.035], [0.3, S1 + 0.05],          // astragal, ovolo, abacus
+      [0.35, S1 + 0.085], [0.385, S1 + 0.105], [0.395, S1 + 0.12], [0.395, S1 + 0.155], [0.385, S1 + 0.165], [0.001, S1 + 0.165]], RS), TRIM, 0);
+    const TOP = S1 + 0.165;                                                                               // 1.025
+    // the bronze plaque on the road side, bent round the shaft: three raised gilt lines of lettering + four pins
+    const bend = (geo, R) => {
+      const p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), a = x / R; p.setX(i, (R + z) * Math.sin(a)); p.setZ(i, (R + z) * Math.cos(a)); }
+      geo.computeVertexNormals(); return geo;
+    };
+    const PY = 0.56, PR = SR * (1 - 0.06 * 0.55) - 0.004;
+    at(bend(rbox(0.27, 0.15, 0.022, 0.01, 2), PR + 0.006), BRONZE, PY);
+    for (const [w, y] of [[0.17, 0.026], [0.12, -0.004], [0.07, -0.03]]) at(bend(rbox(w, y > 0 ? 0.016 : 0.01, 0.008, 0.004, 1), PR + 0.016), GOLD_HI, PY + y);
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      const a = sx * 0.112 / PR;
+      add(lobe, GOLD_LO, px + Math.sin(a) * (PR + 0.018), PZ + PY + sy * 0.052, pz + Math.cos(a) * (PR + 0.018)).scale.setScalar(0.007);
+    }
+    // the gilt socket the ribbon balances on
+    at(lathe([[0.001, 0], [0.13, 0], [0.132, 0.012], [0.08, 0.028], [0.052, 0.05], [0.058, 0.07],
+      [0.095, 0.1], [0.122, 0.122], [0.125, 0.135], [0.001, 0.135]], RS), GOLD_LO, TOP);
+    const SOCK = TOP + 0.135;
+
+    // ── the ribbon ──
+    const A = 0.36, B = 0.43, HT = 0.04;                   // half width / half height of the loop, half thickness
+    const curve = (t) => new THREE.Vector3(A * Math.sin(t), -B * Math.cos(t), 0.11 * Math.sin(2 * t));   // a gentle saddle: it leans out of plane
+    // N along × M around (M even: the half twist stitches ring N-1 to ring 0 shifted by M/2);
+    // kw / kt slim the section (for the boil proxy below)
+    const ribbonGeo = (N, M, kw = 1, kt = 1) => {
+      const pos = new Float32Array(N * M * 3), idx = [], hi = [];
+      const T = new THREE.Vector3(), Nn = new THREE.Vector3(), Bn = new THREE.Vector3(), c = new THREE.Vector3();
+      for (let i = 0; i < N; i++) {
+        const t = i / N * Math.PI * 2;
+        c.copy(curve(t));
+        T.copy(curve(t + 1e-3)).sub(curve(t - 1e-3)).normalize();
+        Nn.copy(c).addScaledVector(T, -c.dot(T)).normalize();        // outward from the loop's centre, square to the path
+        Bn.crossVectors(T, Nn);
+        const phi = Math.PI / 2 + t / 2;                               // the half twist: edge-on at the foot, face-on at the crown
+        const hw = kw * (0.09 + 0.075 * (0.5 - 0.5 * Math.cos(t)));   // slimmer at the foot, broad at the crown
+        const cp = Math.cos(phi), sp = Math.sin(phi);
+        for (let j = 0; j < M; j++) {
+          const s = j / M * Math.PI * 2, cs = Math.cos(s), ss = Math.sin(s);
+          const uu = Math.sign(cs) * Math.pow(Math.abs(cs), 0.3);     // a soft superellipse…
+          const u = hw * uu;
+          const v = kt * HT * Math.sign(ss) * Math.pow(Math.abs(ss), 0.6) * (0.55 + 0.75 * Math.pow(Math.abs(uu), 8));   // …thicker at its beaded edges
+          const k = (i * M + j) * 3;
+          pos[k] = c.x + (u * cp + v * sp) * Nn.x + (-u * sp + v * cp) * Bn.x;
+          pos[k + 1] = c.y + (u * cp + v * sp) * Nn.y + (-u * sp + v * cp) * Bn.y;
+          pos[k + 2] = c.z + (u * cp + v * sp) * Nn.z + (-u * sp + v * cp) * Bn.z;
+        }
+      }
+      for (let i = 0; i < N; i++) {
+        const i1 = (i + 1) % N, off = i1 === 0 ? M / 2 : 0;           // after one lap the section has turned half way
+        for (let j = 0; j < M; j++) {
+          const j1 = (j + 1) % M;
+          const a = i * M + j, b = i * M + j1, c2 = i1 * M + (j + off) % M, d = i1 * M + (j1 + off) % M;
+          const sm = Math.cos((j + 0.5) / M * Math.PI * 2);           // this facet's place round the section
+          (Math.abs(sm) > 0.8 ? hi : idx).push(a, c2, b, b, c2, d);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setIndex([...idx, ...hi]);
+      geo.computeVertexNormals();
+      { // wind it outward whatever the parametrisation turned out to be
+        const n = geo.attributes.normal, p0 = new THREE.Vector3().fromBufferAttribute(geo.attributes.position, 0);
+        if (new THREE.Vector3().fromBufferAttribute(n, 0).dot(p0.sub(curve(0))) < 0) {
+          const I = geo.index.array; for (let q = 0; q < I.length; q += 3) { const tmp = I[q + 1]; I[q + 1] = I[q + 2]; I[q + 2] = tmp; }
+          geo.computeVertexNormals();
+        }
+      }
+      geo.addGroup(0, idx.length, 0); geo.addGroup(idx.length, hi.length, 1);
+      geo.computeBoundingSphere();
+      return geo;
+    };
+    const ribbon = new THREE.Group();
+    ribbon.position.set(px, PZ + SOCK + B - 0.006, pz);
+    g.add(ribbon);
+    const rm = add(ribbonGeo(lite ? 96 : 168, lite ? 14 : 24), [GOLD, GOLD_HI], 0, 0, 0, ribbon);
+    if (!lite) rm.castShadow = true;
+    // The classic game's Wasteland boil jitters each vertex of its hull. On a mesh this dense
+    // and this thin, the jitter spikes through the faces as hairy scratches. So the boil is
+    // drawn round a coarse proxy instead: a slightly slimmer ribbon whose own fill never draws
+    // (a hidden ShaderMaterial, which flatOf and the main app's restyle leave alone, so it costs
+    // no draw call). The gold ribbon still swaps to its Wasteland fill; only its own boil is
+    // opted out. The main app's clip-space ink has no jitter and outlines the real ribbon.
+    rm.userData._gpDone = true;
+    const proxy = add(ribbonGeo(lite ? 48 : 72, 12, 0.96, 0.85), new THREE.ShaderMaterial({ visible: false }), 0, 0, 0, ribbon);
+    proxy.userData._gpForce = true; proxy.userData.noInk = true; proxy.userData.noCollide = true; proxy.userData.noClick = true;
+    proxy.castShadow = false; proxy.raycast = () => {};
+
+    // ── a warm pool of light on the paving round its foot ──
+    {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+      const c2 = cv.getContext('2d'), gr = c2.createRadialGradient(64, 64, 0, 64, 64, 64);
+      gr.addColorStop(0, 'rgba(255,214,140,1)'); gr.addColorStop(0.45, 'rgba(255,200,120,0.75)'); gr.addColorStop(1, 'rgba(255,190,110,0)');
+      c2.fillStyle = gr; c2.fillRect(0, 0, 128, 128);
+      const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+      poolMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending,
+        fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const pool = add(new THREE.CircleGeometry(0.8, 40).rotateX(-Math.PI / 2), poolMat, px, PZ + 0.006, pz);
+      pool.userData.noCollide = true; pool.userData.noClick = true; pool.userData.gpSkip = true; pool.userData.noInk = true;
+      pool.castShadow = false; pool.renderOrder = 1; pool.raycast = () => {};
+    }
+    return ribbon;
   })();
 
   // ── lamps, topiary, planters ──
@@ -836,7 +971,8 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   }
 
   // ── merge static parts per material: one draw per material, not ~400 ──
-  const keep = new Set([sculpture, ...shardKeep]);
+  const keep = new Set([...shardKeep]);
+  sculpture.traverse(o => keep.add(o));
   g.traverse(o => { if (o.material === beamMat || beaconMats.includes(o.material)) keep.add(o); });
   for (const b of beams) b.head.traverse(o => keep.add(o));
   g.updateMatrixWorld(true);
@@ -881,6 +1017,8 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     beaconMats[0].emissiveIntensity = 0.3 + 2.4 * flashA;
     beaconMats[1].emissiveIntensity = 0.3 + 2.4 * flashB;
     beamMat.opacity = 0.11 * THREE.MathUtils.smoothstep(night, 0.25, 0.8);
+    poolMat.opacity = 0.22 + 0.4 * night + 0.04 * Math.sin(t * 1.3);   // the sculpture's light, brighter after dark
+    if (spin) sculpture.rotation.y = t * spin;                       // (the classic game turns it itself)
     for (const b of beams) {
       b.head.rotation.z = b.s * (0.32 + Math.sin(t * 0.45 + b.s) * 0.22);
       b.head.rotation.x = Math.sin(t * 0.33 + b.s * 2) * 0.28 - 0.08;
