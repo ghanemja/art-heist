@@ -184,7 +184,7 @@ export function gpuOnly(root, renderer, camera) {
 // highlight and their hulls is a fill and a hull. Only plain scenery is touched: a group whose
 // parts carry no data beyond build records (anything the game keeps a handle on, moves, hides
 // or animates is marked some other way, or isn't in `only` — the town as first built).
-const INERT_PROP = new Set(['foots', 'conform', 'noInk', 'isInk']);
+const INERT_PROP = new Set(['foots', 'conform', 'noInk', 'isInk', 'lamp']);   // (lamp: a bulb's tag, read by nothing)
 function plainProp(o) {
   for (const k of Object.keys(o.userData)) if (!INERT_PROP.has(k)) return false;
   if (!o.visible) return false;
@@ -202,7 +202,9 @@ export function bakeScenery(scene, only) {
   for (const top of scene.children) {
     if (!only.has(top) || top.name || !top.children.length || !plainProp(top)) continue;
     let meshes = 0; top.traverse(o => { if (o.isMesh) meshes++; }); if (meshes < 3) continue;
-    _bb.setFromObject(top); if (_bb.getBoundingSphere(_bs).radius > 8) continue;     // props and small buildings: a street block stays culled part by part
+    // props and small buildings; a big thing only if it's made of many parts (the harbour) — a
+    // street block, already baked per material, stays culled part by part
+    _bb.setFromObject(top); if (_bb.getBoundingSphere(_bs).radius > 8 && meshes < 24) continue;
     mergeStatic(top, [], { vc: true }); n++;
   }
   return n;
@@ -318,7 +320,7 @@ function mergeOnBones(root) {
     if (kids.length < 2 || kids.some(held)) continue;
     let animated = false; for (const k of kids) k.traverse(q => { if (keep.has(q) || q.isBone || q.isSkinnedMesh || Object.keys(q.userData).some(x => !INERT_PART.has(x))) animated = true; });
     if (animated) continue;
-    mergeStatic(b, b.children.filter(c => c.isBone || c.isSkinnedMesh || !kids.includes(c) && !c.userData.isInk), { vc: true });
+    mergeStatic(b, b.children.filter(c => c.isBone || c.isSkinnedMesh || !kids.includes(c) && !c.userData.isInk), { vc: true, gpu: true });
   }
 }
 // a person's skinned hulls — one per body part, drawn in the same ink weight — become one
@@ -474,7 +476,9 @@ function tightBounds(g, pos, idx) {
   sp.radius = Math.sqrt(r2); g.boundingBox = bb; g.boundingSphere = sp;
 }
 // vc: plain-paint parts share one mesh per kind of paint, their colour carried per vertex
-export function mergeStatic(root, keep = [], { vc = false, keepMats = [] } = {}) {
+// gpu: the merged copy is the GPU's alone (nothing raycasts or measures it again) — its arrays
+// go once uploaded
+export function mergeStatic(root, keep = [], { vc = false, keepMats = [], gpu = false } = {}) {
   const ownMat = new Set(keepMats);
   const skip = new Set(keep);
   root.updateMatrixWorld(true);
@@ -496,7 +500,7 @@ export function mergeStatic(root, keep = [], { vc = false, keepMats = [] } = {})
   // each part's vertices: only those its index uses (an already-merged part shares a big
   // buffer with its siblings — copy just its own)
   const used_ = parts.map(({ o }) => { const g = o.geometry, I = g.index, n = g.attributes.position.count;
-    if (!I) return null; const seen = new Int32Array(n).fill(-1); let k = 0; for (let t = 0; t < I.count; t++) { const x = I.getX(t); if (seen[x] < 0) seen[x] = k++; } return { seen, k }; });
+    if (!I) return null; const seen = new Int32Array(n).fill(-1); let k = 0; const IA = I.array; for (let t = 0; t < I.count; t++) { const x = IA[t]; if (seen[x] < 0) seen[x] = k++; } return { seen, k }; });
   let nv = 0; parts.forEach((p, i) => { nv += used_[i] ? used_[i].k : p.o.geometry.attributes.position.count; });
   const asVc = (o) => vc && isPlainPaint(o.material) && !ownMat.has(o.material);
   const withCol = parts.some(p => p.o.geometry.attributes.color || asVc(p.o));
@@ -535,6 +539,7 @@ export function mergeStatic(root, keep = [], { vc = false, keepMats = [] } = {})
   const A = { position: new THREE.BufferAttribute(pos, 3), normal: new THREE.BufferAttribute(nor, 3) };
   if (uv) A.uv = new THREE.BufferAttribute(uv, 2);
   if (col) A.color = new THREE.BufferAttribute(col, 3);
+  if (gpu) for (const a of Object.values(A)) a.onUpload(_freeArr);
   // out with the old: the merged parts and their hulls, then any group left empty
   for (const o of used) o.removeFromParent();
   const prune = (o) => { for (const c of [...o.children]) prune(c); if (o !== root && !skip.has(o) && o.type === 'Group' && !o.children.length) o.removeFromParent(); };
@@ -544,6 +549,7 @@ export function mergeStatic(root, keep = [], { vc = false, keepMats = [] } = {})
     for (const [k, a] of Object.entries(A)) g.setAttribute(k, a);
     g.setIndex(idx);
     tightBounds(g, pos, idx);                               // (the shared buffer spans every part: bound just this one's)
+    if (gpu) g.index.onUpload(_freeArr);
     const m = new THREE.Mesh(g, mat); m.renderOrder = order;
     if (ink) { m.userData.isInk = true; m.raycast = NO_RAY; }      // (a module-level no-op: a closure here would keep the whole merge's scratch alive)
     root.add(m);
