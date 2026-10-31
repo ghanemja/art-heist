@@ -1928,12 +1928,16 @@ function shopYarn(B, U) {                      // Pattern Haberdashery: a giant 
   const pr = shape([[-(SH.D / 2 + 0.3), 0], [SH.D / 2 + 0.3, 0], [0, 1.25]]);
   const roofG = extrude(pr, SH.W + 0.3, 0.04); roofG.translate(0, 0, -(SH.W + 0.3) / 2); roofG.rotateY(Math.PI / 2);
   U.put(roofG, plum, 0, SH.H + 0.16, 0);
-  const ballY = SH.H + 1.75, yarn = paint(0x7fb3a8);
+  // the ball rests on both slopes: its centre stands r/cos(pitch) over the ridge (it used to sit
+  // 0.34 over it, half sunk in the slates)
+  const run = SH.D / 2 + 0.3, rise = 1.25, ridge = SH.H + 0.16 + rise + 0.04, cosP = run / Math.hypot(run, rise);
+  const roofY = (z) => ridge - rise * Math.abs(z) / run;              // the slates' top at z
+  const ballY = ridge + (0.85 + 0.035) / cosP - 0.03, yarn = paint(0x7fb3a8);
   U.put(new THREE.SphereGeometry(0.85, 28, 18), yarn, 0.6, ballY, 0);
   for (let k = 0; k < 7; k++) U.put(new THREE.TorusGeometry(0.86, 0.035, 6, 36), paint(0x5f948a), 0.6, ballY, 0, [k * 0.45, k * 0.7, 0]);
   for (const s of [-1, 1]) U.put(new THREE.CylinderGeometry(0.04, 0.025, 2.4, 10), paint(0xe4b84f), 0.6 + s * 0.2, ballY + 0.5, 0, [0, 0, s * 0.5]);
   // the loose end trails down the roof
-  const tr = new THREE.CatmullRomCurve3([[0.0, ballY - 0.7, 0.4], [-0.7, SH.H + 0.9, 0.9], [-1.5, SH.H + 0.6, 1.6], [-2.2, SH.H + 0.35, 2.4]].map(p => new THREE.Vector3(...p)));
+  const tr = new THREE.CatmullRomCurve3([[0.35, ballY - 0.72, 0.42], [-0.7, roofY(0.9) + 0.05, 0.9], [-1.5, roofY(1.6) + 0.05, 1.6], [-2.2, roofY(2.4) + 0.05, 2.4]].map(p => new THREE.Vector3(...p)));
   U.put(new THREE.TubeGeometry(tr, 24, 0.04, 6), yarn, 0, 0, 0);
   // inside: baskets of yarn, a mannequin in a striped scarf, a giant hook
   const fy = SH.FY, R = rng(31), yc = [0xe8604c, 0xe1b95c, 0x7fb3a8, 0xb7a3c6, 0xdc9e9a, 0xa8b994, 0x93abc0];
