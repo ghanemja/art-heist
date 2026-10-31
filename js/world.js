@@ -483,6 +483,46 @@ export function paintRoadMarkings() {
   });
 }
 
+// ── the DRAWN ground: the planet mesh's own surface along a direction. radiusAt is the exact
+// terrain, but the mesh cuts straight across it between its vertices (~0.75 apart) — where the
+// ground curves hard (a levelled site's edge easing into the hills) the drawn ground sits a
+// little below it, and anything laid on radiusAt there hovers. Landscaping lays onto this. ──
+let DG = null;
+function indexDrawnGround(geo) {
+  const pos = geo.attributes.position, idx = geo.index, P = Float32Array.from(pos.array), CELL = 0.02, buckets = new Map();
+  const n = idx ? idx.count / 3 : pos.count / 3, tri = new Uint32Array(n * 3);
+  for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) tri[t * 3 + k] = idx ? idx.getX(t * 3 + k) : t * 3 + k;
+  for (let t = 0; t < n; t++) {
+    let x = 0, y = 0, z = 0;
+    for (let k = 0; k < 3; k++) { const i = tri[t * 3 + k] * 3; x += P[i]; y += P[i + 1]; z += P[i + 2]; }
+    const l = Math.hypot(x, y, z), key = `${Math.floor(x / l / CELL)},${Math.floor(y / l / CELL)},${Math.floor(z / l / CELL)}`;
+    let a = buckets.get(key); if (!a) buckets.set(key, a = []); a.push(t);
+  }
+  DG = { P, tri, buckets, CELL };
+}
+export function drawnGroundAt(d) {
+  if (!DG) return radiusAt(d);
+  const { P, tri, buckets, CELL } = DG, l = d.length(), dx = d.x / l, dy = d.y / l, dz = d.z / l;
+  const fx = Math.floor(dx / CELL), fy = Math.floor(dy / CELL), fz = Math.floor(dz / CELL);
+  let best = -1;
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+    const arr = buckets.get(`${fx + i},${fy + j},${fz + k}`); if (!arr) continue;
+    for (const t of arr) {                     // a ray from the centre through the triangle (Möller–Trumbore)
+      const a = tri[t * 3] * 3, b = tri[t * 3 + 1] * 3, c = tri[t * 3 + 2] * 3;
+      const e1x = P[b] - P[a], e1y = P[b + 1] - P[a + 1], e1z = P[b + 2] - P[a + 2];
+      const e2x = P[c] - P[a], e2y = P[c + 1] - P[a + 1], e2z = P[c + 2] - P[a + 2];
+      const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+      const det = e1x * px + e1y * py + e1z * pz; if (Math.abs(det) < 1e-12) continue;
+      const tx = -P[a], ty = -P[a + 1], tz = -P[a + 2];
+      const u = (tx * px + ty * py + tz * pz) / det; if (u < -1e-6 || u > 1 + 1e-6) continue;
+      const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+      const w = (dx * qx + dy * qy + dz * qz) / det; if (w < -1e-6 || u + w > 1 + 1e-6) continue;
+      const r = (e2x * qx + e2y * qy + e2z * qz) / det; if (r > best) best = r;
+    }
+  }
+  return best > 0 ? best : radiusAt(d);
+}
+
 // ── the planet mesh: painted in posterized bands with a watercolour wobble ──
 export function buildPlanet(scene) {
   let g = mergeVertices(new THREE.IcosahedronGeometry(R, 56));
@@ -518,6 +558,7 @@ export function buildPlanet(scene) {
   const mesh = new THREE.Mesh(g, paint(0xffffff, { vertexColors: true, hatch: 0.6 }));
   mesh.userData.noInk = true;          // the ground's edge is the horizon; ink it with the rim below
   mesh.name = 'planet';
+  indexDrawnGround(g);
   scene.add(mesh);
   // the sea: one flat sheet of gouache, slightly translucent at the shore
   const sea = new THREE.Mesh(new THREE.IcosahedronGeometry(R + SEA, 24), paint(PAL.water, { hatch: 0.4 }));

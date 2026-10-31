@@ -83,6 +83,31 @@ function resolveRow() {
   return ROWP;
 }
 
+// ── the museum's sculpture garden (landscaping) sits on its OWN level terrace: behind the museum
+// the ground rises off the museum's flat, and laid onto that slope the pool tilted and floated.
+// Its spot (museum-local [x, z]) is picked here, before the planet is shaped, well behind the
+// back walk (the building, forecourt and lawn keep their levels) and clear of the project shops;
+// the terrace takes the ground's height at its centre ──
+export const GARDEN_R = 3.9;                           // the garden's reach (pool, paving ring, plinths, benches)
+let MGARDEN = null;
+function planMuseumGarden() {
+  resolveRow();
+  const W = (x, z) => mF(-x, z);                       // museum-local → direction (museum +x is the frame's −x)
+  const shops = PLAN.projects.filter(p => !ROW_KEYS.includes(p.key)).map(p => [PDIR[p.key], 5.6]);
+  shops.push([ROWP.L(0, 4.2), 11.0]);
+  for (const [x, z] of [[4.2, -20.4], [-3.8, -20.0], [2.4, -21.4], [6.6, -19.9], [-1.0, -21.6], [-5.6, -19.2]]) {
+    const c = W(x, z);
+    if (z > -13.0 - GARDEN_R - 1.5) continue;   // the terrace (and its easing) stays clear of the walk and the building
+    if (shops.some(([d, r]) => arc(c, d) < r + GARDEN_R + 0.5)) continue;
+    let wet = false; for (let a = 0; a < 6.3; a += 0.8) if (isWater(W(x + Math.sin(a) * GARDEN_R, z + Math.cos(a) * GARDEN_R), 0.3)) wet = true;
+    if (wet || zoneHit(c, GARDEN_R, zz => !zz.key.startsWith('museum'))) continue;
+    flatten(c, GARDEN_R + 0.5, surfH(c), { plane: c, blend: 3.5 });
+    reserve(c, GARDEN_R, 'museum-garden');
+    return (MGARDEN = [x, z]);
+  }
+  return null;
+}
+
 // ── 1. RESERVE — runs BEFORE the planet is shaped (sites level their ground) ──
 const mDir = llv(PLAN.museum.at);
 const mF = frame(mDir, TOWN_C);                            // +y local = toward town
@@ -115,6 +140,7 @@ export function planTown() {
   // nothing on it floats or tilts
   { const c = RW.L(0, 4.2); reserve(c, 10.6, 'lm:row'); flatten(c, 11.4, Math.max(0.45, surfH(c)), { plane: c, blend: 8 }); }
   reserve(llv(PLAN.park.at), PLAN.park.r, 'park'); flatten(llv(PLAN.park.at), PLAN.park.r + 1, undefined, { blend: 6 });
+  planMuseumGarden();                                     // last: it keeps clear of everything reserved above
 }
 
 export function buildTown(scene) {
@@ -240,9 +266,10 @@ export function buildTown(scene) {
       if (isWater(w, 0.2) || onRoad(w, r + 0.35)) return false;
       return keep.every(({ c, e, r: kr = 5.6 }) => arc(w, c) > kr + r && (!e || segDist(w, c, e) > 1.5 + r));
     };
-    const g = add(placeOnPlanet(museumGrounds({ ok }), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0 }));
+    const g = add(placeOnPlanet(museumGrounds({ ok, pool: MGARDEN }), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0, drawn: true }));
     feet(g);
     out.grounds = [g];
+    out.museumGarden = MGARDEN;                      // museum-local [x, z] of the sculpture garden's terrace (or null)
     groundsKeep.push(...g.userData.keep.map(([x, z, r]) => ({ dir: g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r })));
   }
   // ── Main Street: two terraces of shops facing each other across y = 0 ──
@@ -408,7 +435,7 @@ export function buildTown(scene) {
         const W = (x, z) => base.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
         const solids = out.colliders.slice();
         const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r) && !groundsKeep.some(c => arc(w, c.dir) < c.r + r); };
-        const g = add(placeOnPlanet(shopApproach({ ex: end?.x ?? null, ez: end?.z ?? null, ok, shop: [S.base, S.upper], seed: out.landmarks.length }), d, yaw, { weight: 'fine', sink: 0 }));
+        const g = add(placeOnPlanet(shopApproach({ ex: end?.x ?? null, ez: end?.z ?? null, ok, shop: [S.base, S.upper], seed: out.landmarks.length }), d, yaw, { weight: 'fine', sink: 0, drawn: true }));
         feet(g);
         (out.grounds ||= []).push(g);
       }
@@ -429,7 +456,7 @@ export function buildTown(scene) {
     const inv = probe.matrixWorld.clone().invert(), W = (x, z) => probe.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
     const e = spurEnds.row ? spurEnds.row.clone().multiplyScalar(R).applyMatrix4(inv) : null;
     const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r); };
-    const g = add(placeOnPlanet(makersRow({ ex: e?.x ?? null, ez: e?.z ?? null, ok }), hub, yaw, { weight: 'fine', sink: 0 }));
+    const g = add(placeOnPlanet(makersRow({ ex: e?.x ?? null, ez: e?.z ?? null, ok }), hub, yaw, { weight: 'fine', sink: 0, drawn: true }));
     feet(g);
     (out.grounds ||= []).push(g);
     out.row = { root: g, ...g.userData.row };
