@@ -2108,7 +2108,7 @@ export function createRooms({ scene, camera, player, game }) {
       M.see(''); say.classList.add('hide'); prompt.classList.add('hide');
       camera.layers.set(0); playerLayer(false);
       const o = S.out();
-      st.dir.copy(o.dir); st.heading.copy(o.heading); st.camFwd.copy(o.heading);
+      st.dir.copy(o.dir); st.heading.copy(o.heading); st.camFwd.copy(o.camFwd || o.heading);
       st.speed = 0; st.camPitch = S.pitch0; st.camInit = false; st.grT = null;
       G.room = null; cur = null; armed = false;
       audio.setRoom(null);

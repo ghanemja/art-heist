@@ -1,10 +1,13 @@
 // ─── INSIDE THE PROJECT SHOPS: the room comes alive when you step in ───────────
 // The static set dressing (shelves, rugs, lamps, beams) is baked with the shop in
 // buildings.js. This is the part that moves and talks back, and only while you're in:
+//  · the front door: shut (a collider plugs the doorway) until you press E on the stoop;
+//    a fade, and she's inside facing the exhibits. Walk out of the door (or E by it) and
+//    it fades back to the stoop (shopDoorway; rooms.js's shops share the door)
 //  · a few living things per shop (a cat breathing, a yarn ball swinging, a flickering
 //    screen, a projector beam, fireflies…) and dust motes drifting in the lamplight
-//  · a room camera: it frames the room from just inside the shopfront (which lifts away
-//    with the roof), close and warm, instead of the far look down from outside
+//  · a room camera: it frames the whole room from over the open shopfront (which lifts
+//    away with the roof while you're in), with a wider lens, and holds still
 //  · little cards: walk up to an exhibit and a note about that part of the project
 //    pops up beside it (E still opens the project's own card)
 //  · the room's own soft sound (audio.setRoom) and a warm vignette over the view
@@ -182,9 +185,35 @@ function dom() {
   return { note, glow };
 }
 
-// ── set up: once per placed shop. `base` is the placed (baked) base group ──
-export function createShopInteriors(scene, shops) {
-  const D = dom(), up = new THREE.Vector3();
+// ── the front door, in the shop's frame: where the E prompt stands (on the stoop), the plug that
+// keeps the doorway shut from outside (a collider, opened only while you're in through E), and
+// where you come back out (on the stoop, facing the street). rooms.js's shops use it too ──
+export function shopDoorway(lm, colliders) {
+  const W = (x, z) => lm.root.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
+  const plug = { dir: W(0.2, SH.D / 2 - 0.1), r: 0.6 };      // (the wall posts leave a gap -0.63…1.03: this fills it)
+  colliders.push(plug);
+  return {
+    W, plug,
+    at: W(0, SH.D / 2 + 1.0),                                // the prompt spot: the stoop's front edge
+    // facing the street. The camera starts off to her side, looking along the shopfront (straight
+    // behind her it would be inside the shop): her, the door and the street ahead all in view
+    out: () => {
+      const dir = W(0, SH.D / 2 + 0.95), heading = W(0, 8).sub(dir).projectOnPlane(dir).normalize();
+      return { dir, heading, camFwd: heading.clone().applyAxisAngle(dir, Math.PI / 2) };
+    },
+  };
+}
+
+// ── set up: once per placed shop ──
+// E at the door fades you in: the shopfront and roof lift away, she stands just inside facing the
+// exhibits, and a room camera frames the whole room from over the open front. Walk out through
+// the door (or E just inside it) and it fades you back onto the stoop.
+export function createShopInteriors(scene, shops, { player, game, colliders }) {
+  const D = dom(), up = new THREE.Vector3(), st = player.st, G = game.G;
+  const fade = document.createElement('div');
+  Object.assign(fade.style, { position: 'fixed', inset: '0', background: '#f3ead7', opacity: '0', pointerEvents: 'none', transition: 'opacity .38s ease', zIndex: 40 });
+  document.body.append(fade);
+  let inside = null, shownNote = null, busy = false;
   const list = shops.map((lm) => {
     const g = new THREE.Group();
     g.position.copy(lm.root.position); g.quaternion.copy(lm.root.quaternion); g.visible = false;
@@ -196,45 +225,92 @@ export function createShopInteriors(scene, shops) {
     const c = g.localToWorld(new THREE.Vector3(0, 0, 0)), d = c.clone().normalize();
     g.position.addScaledVector(d, radiusAt(d) - 0.04 - c.length());
     ink(g, 'fine');
-    return { lm, g, ticks, notes: NOTES[lm.style] || [] };
+    lm.noLift = true;                                         // (the shopfront lifts only while you're in: setInside)
+    const door = shopDoorway(lm, colliders);
+    const S = { lm, g, ticks, notes: NOTES[lm.style] || [], door };
+    // the prompts (game.doors: nearest wins, on foot only, never mid-conversation): in at the
+    // door from the street, and back out from just inside it (each live only on its own side)
+    game.doors.push({ dir: door.at, get r() { return inside || busy ? 0 : 1.3; }, label: `go inside ${lm.name}`, act: () => enter(S) });
+    game.doors.push({ dir: door.W(0.1, SH.D / 2 - 0.45), get r() { return inside === S && !busy ? 0.7 : 0; }, label: 'back to the street', act: () => leave(true) });
+    return S;
   });
-  const _p = new THREE.Vector3(), _w = new THREE.Vector3(), cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false };
-  let inside = null, shownNote = null;
+  const _p = new THREE.Vector3(), cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false };
   const local = (S, dir) => S.lm.root.worldToLocal(_p.copy(dir).multiplyScalar(40));
-  // the room camera: from just inside the (lifted-away) shopfront, a little above her, eased
+  const backDir = (S) => S.door.W(0, -5).sub(st.dir).projectOnPlane(st.dir).normalize();
+  const fadeDo = (fn) => {
+    busy = true; st.enabled = false; fade.style.opacity = '1';
+    setTimeout(() => { fn(); setTimeout(() => { fade.style.opacity = '0'; busy = false; if (!G.ui) st.enabled = true; }, 80); }, 400);
+  };
+  // the room camera: over the open shopfront, high enough to see the floor and every exhibit,
+  // under the front ceiling beam; it drifts only a little with her, so the room holds still
   const roomCam = (camera, root) => {
     const S = inside; if (!S) return;
-    const p = S.lm.root.worldToLocal(_w.copy(root.position));
-    const want = S.lm.root.localToWorld(new THREE.Vector3(THREE.MathUtils.clamp(p.x * 0.55, -1.5, 1.5), SH.FY + 2.25, Math.min(SH.D / 2 + 0.85, p.z + 2.7)));
-    const look = S.lm.root.localToWorld(new THREE.Vector3(p.x * 0.8, SH.FY + 0.75, p.z - 0.6));
-    if (!cam.init) { cam.pos.copy(camera.position); cam.look.copy(want.clone().lerp(look, 0.5)); cam.init = true; }
-    cam.pos.lerp(want, 0.08); cam.look.lerp(look, 0.12);
+    const p = S.lm.root.worldToLocal(_p.copy(root.position));
+    const want = S.lm.root.localToWorld(new THREE.Vector3(THREE.MathUtils.clamp(p.x * 0.3, -0.6, 0.6), SH.FY + 2.55, SH.D / 2 + 2.1));
+    const look = S.lm.root.localToWorld(new THREE.Vector3(THREE.MathUtils.clamp(p.x * 0.4, -0.9, 0.9), SH.FY + 0.9, -0.9 + THREE.MathUtils.clamp(p.z * 0.15, -0.3, 0.3)));
+    if (!cam.init) { cam.pos.copy(want); cam.look.copy(look); cam.init = true; }
+    cam.pos.lerp(want, 0.06); cam.look.lerp(look, 0.08);
     camera.position.copy(cam.pos); camera.up.copy(up.copy(S.lm.root.position).normalize()); camera.lookAt(cam.look);
+    // a wider lens while in here, so the whole room fits across (a phone held upright too)
+    if (cam.fov0 == null) cam.fov0 = camera.fov;
+    const fov = THREE.MathUtils.clamp(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(37)) / camera.aspect) * 180 / Math.PI, 56, 84);
+    if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    cam.camera = camera;
   };
+  const lensBack = () => { if (cam.fov0 != null && cam.camera) { cam.camera.fov = cam.fov0; cam.camera.updateProjectionMatrix(); } cam.fov0 = null; };
+  function setInside(S) {
+    if (inside) { inside.door.plug.carOnly = false; inside.lm.upper.visible = true; }
+    if (st.camHook === roomCam) { st.camHook = null; st.camInit = false; }
+    lensBack();
+    inside = S; cam.init = false;
+    audio.setRoom(S ? ROOM[S.lm.style] : null);
+    D.glow.classList.toggle('hide', !S);
+    if (S) { S.door.plug.carOnly = true; S.lm.upper.visible = false; }   // (carOnly: she walks through it, nothing else does)
+  }
+  function enter(S) {
+    if (busy || inside || G.ui || st.mode !== 'walk') return;
+    fadeDo(() => {
+      setInside(S);
+      st.dir.copy(S.door.W(0, 0.6));                          // just inside, on the rug, facing the exhibits
+      st.heading.copy(backDir(S)); st.camFwd.copy(st.heading);
+      st.speed = 0; st.camInit = false; st.grT = null;
+      if (!G.ui) st.camHook = roomCam;
+    });
+  }
+  function leave(fadeOut) {
+    if (!inside || busy) return;
+    const S = inside;
+    if (!fadeOut) return setInside(null);
+    fadeDo(() => {
+      setInside(null);
+      const o = S.door.out();
+      st.dir.copy(o.dir); st.heading.copy(o.heading); st.camFwd.copy(o.camFwd);
+      st.speed = 0; st.camInit = false; st.grT = null;
+    });
+  }
   return {
-    update(dt, t, player) {
-      const st = player.st, here = st.mode === 'walk' ? st.dir : null;
-      let now = null;
-      for (const S of list) {
-        const near = here && S.lm.dir.dot(here) > 0.985;          // within ~7 units: worth drawing
-        if (near) { const p = local(S, here); if (S.lm.inside(p.x, p.z)) now = S; }
-        S.g.visible = !!near;
-      }
-      if (now !== inside) {
-        if (inside && st.camHook === roomCam) { st.camHook = null; st.camInit = false; }
-        inside = now; cam.init = false;
-        audio.setRoom(inside ? ROOM[inside.lm.style] : null);
-        D.glow.classList.toggle('hide', !inside);
-        if (inside) {                                                       // walk "into the room": W heads for the back wall
-          const a = inside.lm.root.localToWorld(new THREE.Vector3(0, 0, 0)), b = inside.lm.root.localToWorld(new THREE.Vector3(0, 0, -1));
-          st.camFwd.copy(b.sub(a)).projectOnPlane(st.dir).normalize();
+    get inside() { return inside; },
+    get busy() { return busy; },
+    update(dt, t) {
+      const here = st.mode === 'walk' ? st.dir : null;
+      for (const S of list) S.g.visible = !!(here && S.lm.dir.dot(here) > 0.985);   // within ~7 units: worth drawing
+      if (inside && !busy) {
+        const p = here && local(inside, here);
+        if (!p || !inside.lm.inside(p.x, p.z) || p.z > SH.D / 2 + 0.05) {
+          // out through the doorway: fade back to the stoop. Anywhere else (a cut moved her): just let go
+          if (p && Math.abs(p.x) < 1.4 && p.z > SH.D / 2 - 0.3 && p.z < SH.D / 2 + 1.2 && G.state === 'play') leave(true);
+          else leave(false);
         }
       }
-      if (inside && !st.camHook && st.enabled) st.camHook = roomCam;      // (a conversation's camera wins while it lasts)
+      if (inside && !busy) {
+        st.camFwd.copy(backDir(inside));                       // W always heads for the back wall: the camera holds still
+        if (!st.camHook && st.enabled) st.camHook = roomCam;  // (a conversation's camera wins while it lasts)
+        if (st.camHook !== roomCam) lensBack();
+      }
       if (inside) for (const tk of inside.ticks) tk(t, dt);
       // the nearest exhibit's card
       let best = null;
-      if (inside && st.enabled) {
+      if (inside && st.enabled && here) {
         const p = local(inside, here); let bd = 1e9;
         for (const n of inside.notes) { const dd = Math.hypot(p.x - n[0], p.z - n[1]); if (dd < n[2] && dd < bd) { bd = dd; best = n; } }
       }
