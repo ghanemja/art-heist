@@ -170,8 +170,9 @@ function makeCar(o = {}) {
   ink(g, 'mid');
   // bake it down: one draw per material for the body, and per wheel (they turn), instead
   // of ~235 separate meshes and hulls per car
-  for (const w of wheels) mergeStatic(w);
-  return mergeStatic(g, wheels);
+  // (plain paints share a mesh, colour per vertex — all but the body's, which each car swaps)
+  for (const w of wheels) mergeStatic(w, [], { vc: true });
+  return mergeStatic(g, wheels, { vc: true, keepMats: [body] });
 }
 
 // ── the shoulder straps, traced over HER shoulders: for each strap, slice the

@@ -196,7 +196,7 @@ export function bakeScenery(scene, only) {
   for (const top of scene.children) {
     if (!only.has(top) || top.name || !top.children.length || !plainProp(top)) continue;
     let meshes = 0; top.traverse(o => { if (o.isMesh) meshes++; }); if (meshes < 3) continue;
-    _bb.setFromObject(top); if (_bb.getBoundingSphere(_bs).radius > 4) continue;     // props only: a building stays culled part by part
+    _bb.setFromObject(top); if (_bb.getBoundingSphere(_bs).radius > 8) continue;     // props and small buildings: a street block stays culled part by part
     mergeStatic(top, [], { vc: true }); n++;
   }
   return n;
@@ -213,7 +213,7 @@ function mergeHulls(parent) {
   const hullsOf = (o) => o.children.filter(h => h.isMesh && h.userData.isInk && h.geometry === o.geometry && h.matrix.equals(_ID));
   const byMat = new Map();
   for (const o of fills) for (const h of hullsOf(o)) { let b = byMat.get(h.material); if (!b) byMat.set(h.material, b = []); b.push(o); }
-  if (![...byMat.values()].some(b => b.length > 1)) return;
+  if (![...byMat.values()].some(b => b.length > 1)) { mergeLooseHulls(parent); return; }
   const withUv = fills.some(o => o.geometry.attributes.uv), withCol = fills.some(o => o.geometry.attributes.color);
   let nv = 0; for (const o of fills) nv += o.geometry.attributes.position.count;
   const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = withUv ? new Float32Array(nv * 2) : null;
@@ -250,6 +250,44 @@ function mergeHulls(parent) {
     parent.add(m);
   }
   for (const o of fills) { const old = o.geometry; o.geometry = shared(own.get(o)); old.dispose(); }
+  mergeLooseHulls(parent);
+}
+// the rest of a static thing's hulls — parts that sit with their own transform under it — are
+// copied out, transform baked in, into one hull per ink (GPU-only: the copy is let go once
+// uploaded). Only for things that never move part by part (ink(…, { merge: true })).
+function mergeLooseHulls(parent) {
+  const byMat = new Map();
+  for (const o of parent.children) {
+    if (!o.isMesh || o.isSkinnedMesh || o.userData.isInk || !o.visible || o.matrix.equals(_ID)) continue;
+    for (const h of o.children) if (h.isMesh && h.userData.isInk && !h.isSkinnedMesh && h.matrix.equals(_ID) && !h.geometry.attributes.inkW && h.geometry.attributes.normal) {
+      let b = byMat.get(h.material); if (!b) byMat.set(h.material, b = []); b.push(h);
+    }
+  }
+  const free = function () { this.array = null; };
+  for (const [mat, hs] of byMat) {
+    if (hs.length < 2) continue;
+    let nv = 0, ni = 0;
+    for (const h of hs) { const g = h.geometry; nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
+    const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), I = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let vb = 0, ib = 0;
+    for (const h of hs) {
+      const g = h.geometry, a = g.attributes, n = a.position.count, M = h.parent.matrix; _n3.getNormalMatrix(M);
+      for (let i = 0; i < n; i++) {
+        _v3.fromBufferAttribute(a.position, i).applyMatrix4(M); P[(vb + i) * 3] = _v3.x; P[(vb + i) * 3 + 1] = _v3.y; P[(vb + i) * 3 + 2] = _v3.z;
+        _v3.fromBufferAttribute(a.normal, i).applyMatrix3(_n3).normalize(); N[(vb + i) * 3] = _v3.x; N[(vb + i) * 3 + 1] = _v3.y; N[(vb + i) * 3 + 2] = _v3.z;
+      }
+      const flip = M.determinant() < 0;
+      const tri = (x, y, z) => { I[ib++] = vb + x; if (flip) { I[ib++] = vb + z; I[ib++] = vb + y; } else { I[ib++] = vb + y; I[ib++] = vb + z; } };
+      if (g.index) for (let k = 0; k < g.index.count; k += 3) tri(g.index.getX(k), g.index.getX(k + 1), g.index.getX(k + 2)); else for (let k = 0; k < n; k += 3) tri(k, k + 1, k + 2);
+      vb += n; h.removeFromParent();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3).onUpload(free)); g.setAttribute('normal', new THREE.BufferAttribute(N, 3).onUpload(free));
+    g.setIndex(new THREE.BufferAttribute(I, 1).onUpload(free));
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    const m = new THREE.Mesh(g, mat); m.userData.isInk = true; m.raycast = NO_RAY; m.renderOrder = -1;
+    parent.add(m);
+  }
 }
 const _ID = new THREE.Matrix4();
 // a person's rigid parts (eyes, brows, lids, hair tufts, glasses, buttons…) each rode their
@@ -428,7 +466,8 @@ function tightBounds(g, pos, idx) {
   sp.radius = Math.sqrt(r2); g.boundingBox = bb; g.boundingSphere = sp;
 }
 // vc: plain-paint parts share one mesh per kind of paint, their colour carried per vertex
-export function mergeStatic(root, keep = [], { vc = false } = {}) {
+export function mergeStatic(root, keep = [], { vc = false, keepMats = [] } = {}) {
+  const ownMat = new Set(keepMats);
   const skip = new Set(keep);
   root.updateMatrixWorld(true);
   const inv = root.matrixWorld.clone().invert(), m4 = new THREE.Matrix4(), nm = new THREE.Matrix3();
@@ -451,7 +490,7 @@ export function mergeStatic(root, keep = [], { vc = false } = {}) {
   const used_ = parts.map(({ o }) => { const g = o.geometry, I = g.index, n = g.attributes.position.count;
     if (!I) return null; const seen = new Int32Array(n).fill(-1); let k = 0; for (let t = 0; t < I.count; t++) { const x = I.getX(t); if (seen[x] < 0) seen[x] = k++; } return { seen, k }; });
   let nv = 0; parts.forEach((p, i) => { nv += used_[i] ? used_[i].k : p.o.geometry.attributes.position.count; });
-  const asVc = (o) => vc && isPlainPaint(o.material);
+  const asVc = (o) => vc && isPlainPaint(o.material) && !ownMat.has(o.material);
   const withCol = parts.some(p => p.o.geometry.attributes.color || asVc(p.o));
   const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = withUv ? new Float32Array(nv * 2) : null;
   const col = withCol ? new Float32Array(nv * 3).fill(1) : null;      // (a part without colours: white — its material ignores them)

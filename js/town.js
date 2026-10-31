@@ -173,7 +173,7 @@ export function buildTown(scene) {
   {
     const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/', openDoor: true });
     restyle(mus.group);
-    ink(mus.group, 'mid');
+    ink(mus.group, 'mid', { merge: true });              // (one hull for its static parts)
     settle(mus.group, mDir, 6, 0.1, yawToFace(mDir, TOWN_C));
     add(mus.group);
     // the forecourt disc stands 0.45 proud of the lawn: you walk on its paving
