@@ -12,7 +12,7 @@ import { buildMuseum } from '../museum.js?v=12';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden } from './buildings.js';
 import { parkedTrain } from './train.js';
-import { museumGrounds, shopApproach, APPROACH_STOP } from './grounds.js';
+import { museumGrounds, shopApproach, APPROACH_STOP, makersRow, ROW_X } from './grounds.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 import { planNorth, buildNorth } from './north.js';
 
@@ -49,6 +49,39 @@ export function restyle(root) {
   return root;
 }
 
+// ── Makers' Row (landscaping): Behavior Search moves beside Borrowed Eyes, the two facing one
+// level cobbled car park (grounds.js makersRow). The row's centre sits on the dry side of Borrowed
+// Eyes; ROW.L(x, z) maps the row's own frame (shop-like: +z toward town, x mirrored from frame())
+// to a direction. PDIR: every project's direction (the row's two come from it) ──
+const ROW_KEYS = ['borrowed-eyes', 'behaviors'];
+const PDIR = {};
+let ROWP = null;
+function resolveRow() {
+  if (ROWP) return ROWP;
+  for (const p of PLAN.projects) PDIR[p.key] = llv(p.at);
+  const eyes = PDIR['borrowed-eyes'], f0 = frame(eyes, TOWN_C);
+  // the hub somewhere round Borrowed Eyes where the row's whole yard is dry and clear of other
+  // reserved ground (the museum, the sites…): fewest bad samples wins, then the smallest move
+  let best = null;
+  for (const s of [1, -1]) for (const k of [ROW_X, ROW_X + 2, ROW_X + 4, ROW_X - 2, ROW_X + 6]) for (const fy of [0, -2, -4, 2]) {
+    const hub = f0(s * k, fy), f = frame(hub, TOWN_C);
+    let bad = 0;
+    for (let x = -12; x <= 12; x += 1.5) for (let y = -5; y <= 13; y += 1.5) {
+      const w = f(x, y);
+      if (isWater(w, 0.6) || zoneHit(w, 0.4, z => !z.key.startsWith('lm:')) || arc(w, mF(0, -7.5)) < 13.5) bad++;   // (the museum's grounds reach past its zone)
+    }
+    const cost = bad * 10 + Math.abs(k - ROW_X) + Math.abs(fy);
+    if (!best || cost < best.cost) best = { hub, cost, s, k, fy };
+  }
+  const f = frame(best.hub, TOWN_C);
+  const L = (x, z) => f(-x, z);                       // shop-like local frame (local +x is frame −x)
+  // Borrowed Eyes stays (near enough) where it was; Behavior Search takes the other side
+  const eyesX = best.s * ROW_X;                       // f0(s·X) is the hub, so Eyes sits at frame −s·X = local +s·X
+  ROWP = { hub: best.hub, L, x: { 'borrowed-eyes': eyesX, behaviors: -eyesX } };
+  PDIR['borrowed-eyes'] = L(eyesX, 0); PDIR.behaviors = L(-eyesX, 0);
+  return ROWP;
+}
+
 // ── 1. RESERVE — runs BEFORE the planet is shaped (sites level their ground) ──
 const mDir = llv(PLAN.museum.at);
 const mF = frame(mDir, TOWN_C);                            // +y local = toward town
@@ -65,7 +98,13 @@ export function planTown() {
   const fT = frame(TOWN_C);
   reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
   // each project shop gets a wide level yard that eases out gently (its spur road arrives on the flat)
-  for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, undefined, { blend: 7 }); }
+  const RW = resolveRow();
+  for (const p of PLAN.projects) {
+    reserve(PDIR[p.key], 4.2, 'lm:' + p.key);
+    if (!ROW_KEYS.includes(p.key)) flatten(PDIR[p.key], 6.5, undefined, { blend: 7 });
+  }
+  // Makers' Row: its shops and car park on one true plane, so nothing on it floats or tilts
+  { const c = RW.L(0, 4.2); reserve(c, 10.6, 'lm:row'); flatten(c, 11.4, undefined, { plane: c, blend: 6 }); }
   reserve(llv(PLAN.park.at), PLAN.park.r, 'park'); flatten(llv(PLAN.park.at), PLAN.park.r + 1, undefined, { blend: 6 });
 }
 
@@ -131,9 +170,12 @@ export function buildTown(scene) {
   // (landscaping: each shop's spur stops short of its cobbled forecourt — see shopApproach)
   const spurEnds = {}, groundsKeep = [];       // groundsKeep: ground the landscaping has taken (not solid)
   for (const p of PLAN.projects) {
-    const pts = spur(llv(p.at), p.style === 'library' ? 4.6 : isProjectShop(p.style) ? APPROACH_STOP : 3.7, 'lm:' + p.key);
+    if (ROW_KEYS.includes(p.key)) continue;               // the row's shops share one spur, below
+    const pts = spur(PDIR[p.key], p.style === 'library' ? 4.6 : isProjectShop(p.style) ? APPROACH_STOP : 3.7, 'lm:' + p.key);
     if (pts) spurEnds[p.key] = pts[pts.length - 1].clone();
   }
+  { const RW = resolveRow(), pts = spur(RW.L(0, 6.0), 6.1, 'lm:row');   // ends just past the car park's aisle
+    if (pts) spurEnds.row = pts[pts.length - 1].clone(); }
   for (const [k, s] of Object.entries(PLAN.sites))
     if (k !== 'airport') spur(llv(s.at), s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
 
@@ -157,7 +199,8 @@ export function buildTown(scene) {
     // free ground: no road or water, and clear of every project building and its cobbled approach
     // (the shop, r 5.6, and the lane out to where its spur stops)
     const mg = out.museum.group; mg.updateMatrixWorld(true);
-    const keep = PLAN.projects.map(p => ({ c: llv(p.at), e: spurEnds[p.key] || null }));
+    const keep = PLAN.projects.map(p => ({ c: PDIR[p.key], e: spurEnds[p.key] || null }));
+    { const RW = resolveRow(); keep.push({ c: RW.L(0, 4.2), e: spurEnds.row || null, r: 11.0 }); }
     const segDist = (w, a, b) => {                       // arc distance from w to the great-circle segment a–b (short: chord is fine)
       const ab = b.clone().sub(a), t = Math.max(0, Math.min(1, w.clone().sub(a).dot(ab) / ab.lengthSq()));
       return a.clone().addScaledVector(ab, t).normalize().angleTo(w) * R;
@@ -165,7 +208,7 @@ export function buildTown(scene) {
     const ok = (x, z, r) => {
       const w = mg.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
       if (isWater(w, 0.2) || onRoad(w, r + 0.35)) return false;
-      return keep.every(({ c, e }) => arc(w, c) > 5.6 + r && (!e || segDist(w, c, e) > 1.5 + r));
+      return keep.every(({ c, e, r: kr = 5.6 }) => arc(w, c) > kr + r && (!e || segDist(w, c, e) > 1.5 + r));
     };
     const g = add(placeOnPlanet(museumGrounds({ ok }), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0 }));
     feet(g);
@@ -311,19 +354,20 @@ export function buildTown(scene) {
   }
   // project buildings, each on its own plaza, each with a spur road
   for (const p of PLAN.projects) {
-    const d = llv(p.at);
+    const d = PDIR[p.key], inRow = ROW_KEYS.includes(p.key);
     if (isProjectShop(p.style)) {
       // a walk-in shop: the base (floor, low walls, the inside, props) and the upper part (walls
       // above the waist, shopfront, sign, roof), placed at the same spot; the upper part hides
       // while you're inside (tickShops)
-      const S = projectShop(p.style), yaw = yawToFace(d, TOWN_C);
+      // (the row's two face straight across their car park, square to each other)
+      const S = projectShop(p.style), yaw = yawToFace(d, inRow ? resolveRow().L(resolveRow().x[p.key], 40) : TOWN_C);
       const base = add(placeOnPlanet(S.base, d, yaw, { weight: 'mid' })), upper = add(placeOnPlanet(S.upper, d, yaw, { weight: 'mid' }));
       addFloor(base, S.floor);
       for (const [x, z, r] of S.walls) solid(base.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
       out.landmarks.push({ ...p, dir: d, root: base, upper, inside: S.inside });
       // ── landscaping (grounds.js): a cobbled forecourt and lane out to where the spur now
       // stops, edging stones, planters, a lamp, a bench, and planting round the shop ──
-      {
+      if (!inRow) {
         base.updateMatrixWorld(true);
         const inv = base.matrixWorld.clone().invert(), L = (q) => q.clone().multiplyScalar(R).applyMatrix4(inv);
         let end = spurEnds[p.key] ? L(spurEnds[p.key]) : null;
@@ -345,6 +389,20 @@ export function buildTown(scene) {
     add(g);
     solid(d, 2.1);
     out.landmarks.push({ ...p, dir: d, root: g });
+  }
+  // ── landscaping (grounds.js): Makers' Row's shared cobbled car park, garden square, apron,
+  // planting; plaza.js parks cars in its bays ──
+  {
+    const RW = resolveRow(), hub = RW.L(0, 0), yaw = yawToFace(hub, RW.L(0, 40));
+    const solids = out.colliders.slice(), probe = new THREE.Object3D();
+    settle(probe, hub, 0, 0, yaw); probe.updateMatrixWorld(true);
+    const inv = probe.matrixWorld.clone().invert(), W = (x, z) => probe.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
+    const e = spurEnds.row ? spurEnds.row.clone().multiplyScalar(R).applyMatrix4(inv) : null;
+    const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r); };
+    const g = add(placeOnPlanet(makersRow({ ex: e?.x ?? null, ez: e?.z ?? null, ok }), hub, yaw, { weight: 'fine', sink: 0 }));
+    feet(g);
+    (out.grounds ||= []).push(g);
+    out.row = { root: g, ...g.userData.row };
   }
   // Lantern Park: lawn, pond, paths, beds, trees, benches (its people are park.js)
   {

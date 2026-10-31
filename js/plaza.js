@@ -46,7 +46,30 @@ function bag(col) {
   return ink(g, 'fine');
 }
 
+// Makers' Row's car park (grounds.js makersRow): three of its four bays taken, nose-in, the lot
+// paved so the car may drive off the spur into it
+function parkRow(scene, town) {
+  const row = town.row; if (!row) return;
+  const root = row.root; root.updateWorldMatrix(true, false);
+  const L = (x, z) => root.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
+  { const inv = root.matrixWorld.clone().invert(), p = new THREE.Vector3(), r = root.position.length();
+    LOTS.push((d) => { p.copy(d).multiplyScalar(r).applyMatrix4(inv); return p.z > row.z0 + 1.6 && p.z < row.z1 + 1.2 && Math.abs(p.x) < row.half; }); }
+  [[0, 0xd8573f], [1, 0x6f9fc0], [3, 0xf3eee4]].forEach(([bi, col]) => {
+    const b = row.bays[bi]; if (!b) return;
+    const frame = new THREE.Group(), body = buildCar({ body: col });
+    frame.add(body); frame.userData.noGround = true;
+    const cz = b.stopZ + 0.12 + 1.42, d = L(b.x, cz);              // nose toward the shops, just short of the wheel stop
+    frame.position.copy(d).multiplyScalar(standAt(d));
+    alignToSurface(frame, d, yawToFace(d, L(b.x, cz - 3)));
+    scene.add(frame);
+    fitToGround(body, frame);
+    frame.updateWorldMatrix(true, false);
+    for (const z of [-0.6, 0.6]) town.colliders.push({ dir: frame.localToWorld(new THREE.Vector3(0, 0, z)).normalize(), r: 0.75 });
+  });
+}
+
 export function createPlaza({ scene, town, game, player }) {
+  parkRow(scene, town);
   const mall = town.mall, info = mall?.root?.userData?.mall;
   if (!info) return { update() {} };
   const root = mall.root; root.updateWorldMatrix(true, false);
