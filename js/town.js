@@ -12,7 +12,7 @@ import { buildMuseum } from '../museum.js?v=12';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden } from './buildings.js';
 import { parkedTrain } from './train.js';
-import { museumGrounds } from './grounds.js';
+import { museumGrounds, shopApproach, APPROACH_STOP } from './grounds.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 import { planNorth, buildNorth } from './north.js';
 
@@ -128,7 +128,12 @@ export function buildTown(scene) {
   // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
   // everything built after (blocks, lamps, the verge trees and bushes) see them —
   // laid later, a spur ran straight over the verge planting it crossed
-  for (const p of PLAN.projects) spur(llv(p.at), p.style === 'library' ? 4.6 : 3.7, 'lm:' + p.key);   // shops: up to the stoop
+  // (landscaping: each shop's spur stops short of its cobbled forecourt — see shopApproach)
+  const spurEnds = {}, groundsKeep = [];       // groundsKeep: ground the landscaping has taken (not solid)
+  for (const p of PLAN.projects) {
+    const pts = spur(llv(p.at), p.style === 'library' ? 4.6 : isProjectShop(p.style) ? APPROACH_STOP : 3.7, 'lm:' + p.key);
+    if (pts) spurEnds[p.key] = pts[pts.length - 1].clone();
+  }
   for (const [k, s] of Object.entries(PLAN.sites))
     if (k !== 'airport') spur(llv(s.at), s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
 
@@ -149,9 +154,23 @@ export function buildTown(scene) {
   // back, hedges, a flower strip, low lamps, trees and benches, a sculpture garden round a pool
   // behind the east wing, a rose garden behind the west. Built in the museum's own frame ──
   {
-    const g = add(placeOnPlanet(museumGrounds(), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0 }));
+    // free ground: no road or water, and clear of every project building and its cobbled approach
+    // (the shop, r 5.6, and the lane out to where its spur stops)
+    const mg = out.museum.group; mg.updateMatrixWorld(true);
+    const keep = PLAN.projects.map(p => ({ c: llv(p.at), e: spurEnds[p.key] || null }));
+    const segDist = (w, a, b) => {                       // arc distance from w to the great-circle segment a–b (short: chord is fine)
+      const ab = b.clone().sub(a), t = Math.max(0, Math.min(1, w.clone().sub(a).dot(ab) / ab.lengthSq()));
+      return a.clone().addScaledVector(ab, t).normalize().angleTo(w) * R;
+    };
+    const ok = (x, z, r) => {
+      const w = mg.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
+      if (isWater(w, 0.2) || onRoad(w, r + 0.35)) return false;
+      return keep.every(({ c, e }) => arc(w, c) > 5.6 + r && (!e || segDist(w, c, e) > 1.5 + r));
+    };
+    const g = add(placeOnPlanet(museumGrounds({ ok }), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0 }));
     feet(g);
     out.grounds = [g];
+    groundsKeep.push(...g.userData.keep.map(([x, z, r]) => ({ dir: g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r })));
   }
   // ── Main Street: two terraces of shops facing each other across y = 0 ──
   // Units are laid by true arc length along each frontage, so neighbours meet
@@ -302,6 +321,23 @@ export function buildTown(scene) {
       addFloor(base, S.floor);
       for (const [x, z, r] of S.walls) solid(base.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
       out.landmarks.push({ ...p, dir: d, root: base, upper, inside: S.inside });
+      // ── landscaping (grounds.js): a cobbled forecourt and lane out to where the spur now
+      // stops, edging stones, planters, a lamp, a bench, and planting round the shop ──
+      {
+        base.updateMatrixWorld(true);
+        const inv = base.matrixWorld.clone().invert(), L = (q) => q.clone().multiplyScalar(R).applyMatrix4(inv);
+        let end = spurEnds[p.key] ? L(spurEnds[p.key]) : null;
+        if (!end) {                                     // no spur of its own: run the lane to the nearest road
+          let bd = 9;
+          for (const rd of ROADS) for (const q of rd.pts) { const lp = L(q), dd = Math.hypot(lp.x, lp.z); if (dd < bd && dd > 4) { bd = dd; end = lp; } }
+        }
+        const W = (x, z) => base.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
+        const solids = out.colliders.slice();
+        const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r) && !groundsKeep.some(c => arc(w, c.dir) < c.r + r); };
+        const g = add(placeOnPlanet(shopApproach({ ex: end?.x ?? null, ez: end?.z ?? null, ok, shop: [S.base, S.upper], seed: out.landmarks.length }), d, yaw, { weight: 'fine', sink: 0 }));
+        feet(g);
+        (out.grounds ||= []).push(g);
+      }
       continue;
     }
     const g = landmark(p);
