@@ -3,16 +3,19 @@
 Static three.js site, no build step. Hosted on **Netlify** (site `art-heist` (formerly `shelfie-jg`),
 id `c1677cd8-337d-4500-879c-3aed0433fe67`) → https://art-heist.netlify.app
 
-Deploys are **manual** — this site is NOT git-connected, so `git push` does not
-publish. Ship with:
+The site is **git-connected**: Netlify deploys github.com/ghanemja/art-heist and
+publishes `main` automatically. Netlify's build command (`netlify.toml`) runs
+`node scripts/validate-critic.mjs`, so a missing/broken `critic.glb` fails the
+deploy before anything goes live. Pushing another branch does not publish.
+
+A manual deploy still works from a machine with the Netlify CLI:
 
 ```bash
 ./deploy.sh
 ```
 
-`deploy.sh` validates the main character (`scripts/validate-critic.mjs`) before
-uploading, so a missing/broken `critic.glb` aborts before anything goes live,
-then runs `netlify deploy --prod` against the `art-heist` site id.
+It validates the main character and the model assets, syncs every module's cache
+token to main.js's, then runs `netlify deploy --prod` against the `art-heist` site id.
 
 ## Gotchas
 
