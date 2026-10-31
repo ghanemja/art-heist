@@ -142,7 +142,7 @@ function makeHand(s, skin) {
   return g;
 }
 // curl the fingers toward the palm: 0 open … 1 wrapped round a handle at FIST … ~1.6 a tight fist
-function gripHand(h, k) {
+export function gripHand(h, k) {
   const { fingers, thumb, s } = h.userData;
   const tight = Math.max(0, k - 1);
   fingers.forEach((ch, i) => {
@@ -520,7 +520,7 @@ export function makeFolk(spec) {
 // ── two-bone IK: put the fist (grip centre) at `target` (spine frame), elbow toward `pole` ──
 const UA = 0.16, FA = 0.15 + 0.046;                          // upper arm, forearm + wrist→fist
 const _m4 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
-function ikArm(J, side, target, pole) {
+export function ikArm(J, side, target, pole) {
   const S0 = J['arm' + side].position;
   const D = target.clone().sub(S0);
   const d = THREE.MathUtils.clamp(D.length(), Math.abs(UA - FA) + 0.005, UA + FA - 0.002);
