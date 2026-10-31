@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { R, SEA, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir, LOTS } from './world.js';
 import { buildBoat, createWake } from './harbour.js';
-import { PAL, paint, ink, blobShadow } from './style.js';
+import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { rbox, lathe } from './props.js';
 import { loadHuman, makeHuman, pose, sit, LOOKS, HUMAN_SCALE } from './human.js';
 
@@ -148,7 +148,11 @@ export function buildCar(o = {}) {
     for (const s of [-1, 1]) { const b = new THREE.Mesh(new THREE.CircleGeometry(0.17, 20), paint(0xe4b84f, { hatch: 0 })); b.position.set(s * 0.71, 0.6, 0.05); b.rotation.y = s * Math.PI / 2; g.add(b); }
     g.userData.lights = [red.material, blue.material];
   }
-  return ink(g, 'mid');
+  ink(g, 'mid');
+  // bake it down: one draw per material for the body, and per wheel (they turn), instead
+  // of ~235 separate meshes and hulls per car
+  for (const w of wheels) mergeStatic(w);
+  return mergeStatic(g, wheels);
 }
 
 // ── the shoulder straps, traced over HER shoulders: for each strap, slice the
