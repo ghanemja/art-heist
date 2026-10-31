@@ -426,7 +426,7 @@ export function buildTown(scene) {
       const base = add(placeOnPlanet(S.base, d, yaw, { weight: 'mid' })), upper = add(placeOnPlanet(S.upper, d, yaw, { weight: 'mid' }));
       addFloor(base, S.floor);
       for (const [x, z, r] of S.walls) solid(base.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
-      const lm = { ...p, dir: d, root: base, upper, inside: S.inside };
+      const lm = { ...p, lot: null, dir: d, root: base, upper, inside: S.inside };   // (lot: set below only where a car park is built — Makers' Row shares one)
       if (p.lot && !inRow) {
         // the car park: its apron runs in to the spur's real edge (walk out from the lot, in the
         // shop's frame, until the road's surface begins)
