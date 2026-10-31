@@ -7,7 +7,7 @@
 // timber level crossing with a crossbuck either side.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R, arc, radiusAt, surfH, deflect, isWater, onRoad, resample } from './world.js';
+import { R, arc, radiusAt, surfH, deflect, isWater, onRoad, resample, addBlocker } from './world.js';
 import { PAL, paint, ink } from './style.js';
 
 export const RAIL = { pts: [], stationIdx: new Set() };
@@ -226,3 +226,6 @@ function mergeNormals(g) {
   for (let i = 0; i < pos.count; i++) { const a = acc.get(key(i)), l = Math.hypot(...a) || 1; nor.setXYZ(i, a[0] / l, a[1] / l, a[2] / l); }
   return g;
 }
+
+// no plant on the line (world.js decoBlocked)
+addBlocker((d, r) => onRail(d, r + 0.3));

@@ -12,7 +12,7 @@
 //     on pads that hop from pad to pad with a plop and croak low now and then.
 // Only what's near the player moves (createRiverLife).
 import * as THREE from 'three';
-import { R, arc, slerpDir, surfH, isWater, alignToSurface, yawToFace, frame } from './world.js';
+import { R, arc, slerpDir, surfH, isWater, alignToSurface, yawToFace, frame, groundColour, groundMaterial } from './world.js';
 import { paint, ink } from './style.js';
 
 const SURF = 0.005, LAKE_SURF = 0.003;     // the river's surface sits a hair above the lakes' (see the mask)
@@ -31,7 +31,10 @@ const WATER_FS = /* glsl */`
   uniform vec3 cShallow, cDeep, cFoam;
   varying vec2 vUV; varying float vFlow, vDepth; varying vec3 vW;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  // a thin band that never aliases: its edge as soft as one pixel of its own pattern
+  float band(float w, float lo, float hi) { float aa = fwidth(w); return smoothstep(lo - aa, hi + aa, w); }
   void main() {
+    float near = 1.0 - smoothstep(10.0, 28.0, distance(cameraPosition, vW));   // fine detail fades with distance (no shimmering stripes)
     float lat = vUV.y / uHalf;                                     // across the river, −1…1
     float sp = vFlow * 0.6 * (1.0 - 0.75 * lat * lat);             // the current: fastest mid-stream
     vec2 q = vec2(vUV.x - uTime * sp, vUV.y);
@@ -40,13 +43,13 @@ const WATER_FS = /* glsl */`
     float a = mix(0.3, 0.8, smoothstep(0.0, 0.7, d));            // (enough to soften the bed's toon shadow bands)
     // ripple strokes, riding the current (drifting slowly on the lakes)
     float w = sin(q.x * 5.0 + 1.6 * sin(q.y * 3.0 + uTime * 0.8) + uTime * 0.6) * sin(q.y * 6.0 - uTime * 0.7 + 1.3 * sin(q.x * 2.5));
-    float strokes = smoothstep(0.86, 0.97, w) * mix(0.45, 1.0, vFlow);
+    float strokes = band(w, 0.86, 0.97) * mix(0.45, 1.0, vFlow) * near;
     // flecks of foam carried downstream
     vec2 g = q * vec2(1.3, 2.6), id = floor(g), f = fract(g) - 0.5;
-    float fleck = vFlow * step(0.84, hash(id)) * smoothstep(0.11, 0.04, length(f - (vec2(hash(id + 3.1), hash(id + 7.7)) - 0.5) * 0.6));
+    float fleck = near * vFlow * step(0.84, hash(id)) * smoothstep(0.11, 0.04, length(f - (vec2(hash(id + 3.1), hash(id + 7.7)) - 0.5) * 0.6));
     // caustic shimmer over the shallows
     float c = sin(q.x * 7.0 + 2.0 * sin(q.y * 5.0 + uTime)) * sin(q.y * 8.0 - uTime * 1.2 + 2.0 * sin(q.x * 4.0));
-    col = mix(col, cFoam, smoothstep(0.75, 0.95, c) * 0.3 * (1.0 - d));
+    col = mix(col, cFoam, band(c, 0.75, 0.95) * 0.3 * (1.0 - d) * near);
     float shore = smoothstep(0.07, 0.0, vDepth);                   // a pale lip where it laps the bank
     float ring = 0.0;                                              // plop rings
     for (int i = 0; i < 4; i++) {
@@ -85,6 +88,7 @@ export function buildRiverWater(scene, P, lakes, half, bridgeAt) {
     for (let k = 0; k < NA; k++) idx.push(c0, c0 + 1 + (k + 1) % NA, c0 + 1 + k);
     for (let r = 1; r < NR; r++) for (let k = 0; k < NA; k++) { const a = c0 + 1 + (r - 1) * NA + k, b = c0 + 1 + (r - 1) * NA + (k + 1) % NA; idx.push(a, b, a + NA, b, b + NA, a + NA); }
   }
+  buildBed(scene, pts, lakes, half);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('aUV', new THREE.Float32BufferAttribute(uv, 2));
@@ -94,6 +98,10 @@ export function buildRiverWater(scene, P, lakes, half, bridgeAt) {
   // (winding: both sides drawn, the camera may look at it from any side of the planet)
   const mask = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
   mask.renderOrder = 1;
+  // a hair under the surface: at exactly its depth the two shaders rounded differently and the
+  // surface lost the depth test in streaks (showing the bare bed). The stencil keeps any overlap
+  // from blending twice
+  mask.scale.setScalar((R + SURF - 0.003) / (R + SURF));
   const C = (hex) => ({ value: new THREE.Color(hex) });
   const mat = new THREE.ShaderMaterial({
     vertexShader: WATER_VS, fragmentShader: WATER_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -114,6 +122,47 @@ export function buildRiverWater(scene, P, lakes, half, bridgeAt) {
     if (hemi) mat.uniforms.uLight.value = Math.min(1, Math.max(0.35, hemi.intensity / 1.35));
   };
   return { surf, P: pts, lakes, half, bridgeAt, uRip: mat.uniforms.uRip.value, time: () => mat.uniforms.uTime.value };
+}
+
+// ── the bed: a fine mesh laid exactly on the carved shape (surfH), across the river's whole
+// carve and a little past it, and over each lake — painted with the planet's own colours
+// (groundColour), so it meets the banks without a seam. The coarse planet sinks under it ──
+function buildBed(scene, pts, lakes, half) {
+  const pos = [], col = [], idx = [], c = new THREE.Color();
+  const vert = (d) => { const h = surfH(d); pos.push(...d.clone().multiplyScalar(R + h).toArray()); groundColour(d, h, c); col.push(c.r, c.g, c.b); return pos.length / 3 - 1; };
+  const W = half + 0.8, L = 22;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], tan = pts[Math.min(pts.length - 1, i + 1)].clone().sub(pts[Math.max(0, i - 1)]).projectOnPlane(p).normalize();
+    const lat = new THREE.Vector3().crossVectors(p, tan).normalize();
+    for (let j = 0; j <= L; j++) vert(p.clone().multiplyScalar(R).addScaledVector(lat, (j / L * 2 - 1) * W).normalize());
+    if (i) for (let j = 0; j < L; j++) { const a = (i - 1) * (L + 1) + j, b = a + L + 1; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+  }
+  for (const lk of lakes) {
+    const f = frame(lk.c), NA = 72, NR = 16, Rr = lk.r + 0.8, c0 = vert(lk.c);
+    for (let r = 1; r <= NR; r++) for (let k = 0; k < NA; k++) { const a = k / NA * Math.PI * 2; vert(f(Math.cos(a) * Rr * r / NR, Math.sin(a) * Rr * r / NR)); }
+    for (let k = 0; k < NA; k++) idx.push(c0, c0 + 1 + (k + 1) % NA, c0 + 1 + k);
+    for (let r = 1; r < NR; r++) for (let k = 0; k < NA; k++) { const a = c0 + 1 + (r - 1) * NA + k, b = c0 + 1 + (r - 1) * NA + (k + 1) % NA; idx.push(a, b, a + NA, b, b + NA, a + NA); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+  // under the water it's lit as if level (its slopes fell into the toon shadow band and showed
+  // through as hatched streaks); up the banks it eases back to its true shading, to meet the planet
+  { const N = g.attributes.normal, P = g.attributes.position, v = new THREE.Vector3(), n = new THREE.Vector3();
+    for (let i = 0; i < N.count; i++) {
+      v.fromBufferAttribute(P, i); const h = v.length() - R; v.normalize();
+      const k = Math.min(1, Math.max(0, (h - 0.02) / 0.25));
+      n.fromBufferAttribute(N, i).lerp(v, 1 - k).normalize(); N.setXYZ(i, n.x, n.y, n.z);
+    } }
+  // (wound either way round the planet: drawn from both sides)
+  const mat = groundMaterial.clone(); mat.side = THREE.DoubleSide;
+  mat.polygonOffset = true; mat.polygonOffsetFactor = -1; mat.polygonOffsetUnits = -1;   // where it meets the banks it wins
+  mat.onBeforeCompile = groundMaterial.onBeforeCompile; mat.customProgramCacheKey = groundMaterial.customProgramCacheKey; mat.userData = { ...groundMaterial.userData };
+  const m = new THREE.Mesh(g, mat);
+  m.userData.noInk = true; m.userData.noGround = true; m.raycast = () => {}; m.name = 'riverbed';
+  scene.add(m);
+  return m;
 }
 
 // ── little creatures ──

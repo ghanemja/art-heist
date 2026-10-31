@@ -248,6 +248,7 @@ export function tree(o = {}) {
   const geos = puffs.map(([x, y, z, r]) => _puff.clone().scale(r * s, r * s * 0.92, r * s).translate(x * s, y * s, z * s));
   g.add(new THREE.Mesh(weld(mergeGeometries(geos.map(q => { q.deleteAttribute('uv'); return q; }))), leaf));
   g.add(blobShadow(0.7 * s));
+  g.userData.deco = 0.3;                       // a plant: never on a road or rail (world.js decoBlocked)
   return ink(g, 'fine');
 }
 export function pine(o = {}) {
@@ -259,6 +260,7 @@ export function pine(o = {}) {
   const geos = [tier(0.35, 0.62, 0.8), tier(0.85, 0.48, 0.7), tier(1.3, 0.34, 0.6)].map(q => q.scale(s, s, s));
   g.add(new THREE.Mesh(mergeGeometries(geos), paint(PAL.grassDeep)));
   g.add(blobShadow(0.6 * s));
+  g.userData.deco = 0.28;                       // a plant: never on a road or rail (world.js decoBlocked)
   return ink(g, 'fine');
 }
 export function bush(s = 0.5) {
@@ -267,6 +269,7 @@ export function bush(s = 0.5) {
     .map(([x, y, z, r]) => _puff.clone().scale(r * s, r * s * 0.8, r * s).translate(x * s, y * s, z * s));
   g.add(new THREE.Mesh(mergeGeometries(geos.map(q => { q.deleteAttribute('uv'); return q; })), paint(PAL.leaf)));
   g.add(blobShadow(0.8 * s));
+  g.userData.deco = 0.3;                       // a plant: never on a road or rail (world.js decoBlocked)
   return ink(g, 'fine');
 }
 

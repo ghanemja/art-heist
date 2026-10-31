@@ -17,7 +17,7 @@
 // called from main.js once the game is up.
 import * as THREE from 'three';
 import { R, ll, arc, slerpDir, frame, reserve, flatten, addRiver, addLake, radiusAt, surfH, isWater,
-  settle, yawToFace, alignToSurface, addFloor, buildRoad, deflect, smooth, ROADS, onRoad, standAt, zoneHit, LOTS } from './world.js';
+  settle, yawToFace, alignToSurface, addFloor, buildRoad, deflect, smooth, ROADS, onRoad, standAt, zoneHit, LOTS, decoBlocked } from './world.js';
 import { PAL, paint, ink, mergeStatic } from './style.js';
 import { kit, lathe, signMat, upperGlass, DARK, placeOnPlanet, batchPlaced, hipRoof } from './buildings.js';
 import { tree, pine, bush, lamp, bench, rbox } from './props.js';
@@ -179,7 +179,7 @@ function countryClub() {
     for (const [sx, h] of [[1, 0.42], [-1, 0.3]]) { S.put(new THREE.CapsuleGeometry(0.05, 0.16, 3, 8), g, x + sx * 0.14, h + 0.12, z); S.put(new THREE.CapsuleGeometry(0.045, 0.08, 3, 8), g, x + sx * 0.08, h, z).rotation.z = sx * Math.PI / 2; } };
   const boulder = (S, x, z, s) => { const m = S.put(new THREE.IcosahedronGeometry(0.16 * s, 1), paint(0xc9b79a), x, 0.06 * s, z); m.scale.set(1.2, 0.7, 1); m.rotation.y = x * 3; };
   for (const [x, z, kind] of [[-5.0, 0.7, 0], [-5.05, 2.5, 1], [-4.75, 3.35, 2]]) {
-    const S = K.sub(x, 0, z);
+    const S = K.sub(x, 0, z); S.g.userData.deco = 0.45;
     S.put(lathe([[0.001, 0], [0.42, 0], [0.44, 0.16], [0.4, 0.18], [0.001, 0.17]], 24), paint(0xd8cab0), 0, 0, 0);
     S.put(new THREE.CircleGeometry(0.39, 20).rotateX(-Math.PI / 2), paint(0xe2d3b0, { hatch: 0 }), 0, 0.175, 0).userData.noInk = true;
     const T = S.sub(0, 0.17, 0);
@@ -717,12 +717,12 @@ export function buildNorth(scene, { add, solid, boulevard }) {
     for (const [p, dv] of pts) {
       if (arc(p, C) < 4.5) continue;                                                // leave the bridge's banks clear
       const perp = new THREE.Vector3().crossVectors(p, dv.projectOnPlane(p).normalize()).normalize();
-      for (const s of [-1, 1]) { if (R0() < 0.3) continue; const d = shore(p, perp.clone().multiplyScalar(s)); if (d && !onRoad(d, 0.6) && !zoneHit(d, 0.3)) clump(d); }
+      for (const s of [-1, 1]) { if (R0() < 0.3) continue; const d = shore(p, perp.clone().multiplyScalar(s)); if (d && !decoBlocked(d, 0.3) && !zoneHit(d, 0.3)) clump(d); }
     }
     for (const [la, lo, r] of NORTH.lakes) {
       const c = ll(la, lo), f = frame(c);
       for (let k = 0; k < 18; k++) { if (R0() < 0.35) continue; const a = k / 18 * Math.PI * 2, dir = f(Math.sin(a), Math.cos(a)).multiplyScalar(R).sub(c.clone().multiplyScalar(R));
-        const dd = shore(c, dir.normalize()); if (dd && !onRoad(dd, 0.6)) clump(dd); }
+        const dd = shore(c, dir.normalize()); if (dd && !decoBlocked(dd, 0.3)) clump(dd); }
     }
     ink(root, 'fine'); mergeStatic(root);
     for (const m of root.children) { m.geometry.computeBoundingSphere(); }
