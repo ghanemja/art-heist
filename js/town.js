@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=11';
@@ -57,7 +57,12 @@ export function planTown() {
   planNorth();                                            // the river and the north's ground (north.js)
   reserve(mF(0, -0.3), 4.4, 'museum-plaza');
   reserve(mF(0, -7.0), 8.4, 'museum');
-  flatten(mF(0, -6), 12, 0.45, { plane: mDir });          // the museum stands on a true plane
+  // the museum stands on a true plane (tangent at its forecourt, so the forecourt is level);
+  // the plane only needs to reach past the building, its ramp and the ruts (r 9.5 round its
+  // middle). Past that the ground eases back to the plateau over 16 — it used to hold the plane
+  // out to r 12 (4.5 above the sphere behind the museum) and drop off in 9, a steep shelf every
+  // road out of town's west side climbed (grades of 0.5)
+  flatten(mF(0, -6), 9.5, 0.45, { plane: mDir, blend: 16 });
   for (const [k, s] of Object.entries(PLAN.sites)) {
     const c = s.shift ? frame(llv(s.at), TOWN_C)(0, s.shift) : llv(s.at);
     reserve(c, s.r, 'site:' + k); flatten(c, s.r + 1);
@@ -66,7 +71,9 @@ export function planTown() {
   const fT = frame(TOWN_C);
   reserve(fT(MALL.zone[0], MALL.zone[1]), MALL.r, 'mall'); flatten(fT(MALL.zone[0], MALL.zone[1]), MALL.r + 2);
   // each project shop gets a wide level yard that eases out gently (its spur road arrives on the flat)
-  for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, undefined, { blend: 7 }); }
+  // (level at the height the ground already has there, not pulled down to the plateau's: a yard
+  // on the museum's shoulder dug a hollow, and the roads either side of it rose and fell steeply)
+  for (const p of PLAN.projects) { reserve(llv(p.at), 4.2, 'lm:' + p.key); flatten(llv(p.at), 6.5, Math.max(0.45, surfH(llv(p.at))), { blend: 10 }); }
   reserve(llv(PLAN.park.at), PLAN.park.r, 'park'); flatten(llv(PLAN.park.at), PLAN.park.r + 1, undefined, { blend: 6 });
 }
 
@@ -385,7 +392,7 @@ export function buildTown(scene) {
   out.north = buildNorth(scene, { add, solid, boulevard: out.boulevard });
   // the roads' verges: street trees out of town, a lamp where each road leaves the ring, a
   // turning circle and a viewpoint at the overlook (after the rail and the north: it sees them all)
-  out.roadside = dressRoads(scene, { add, solid, spurs: out.spurs, boulevard: out.boulevard, townC: TOWN_C, ringR: PLAN.town.boulevard, sites: out.sites });
+  out.roadside = dressRoads(scene, { add, solid, spurs: out.spurs, boulevard: out.boulevard, townC: TOWN_C, ringR: PLAN.town.boulevard, sites: out.sites, colliders: out.colliders });
   // helpers the story uses to place things
   out.townAt = ([x, y]) => fC(x, y);
   out.toTown = toTown;

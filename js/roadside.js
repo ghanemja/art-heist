@@ -7,7 +7,7 @@
 // It runs after the railway and the north are built, so it sees every road, rail and zone.
 // Its own little random stream keeps the rest of the town's random scenery where it was.
 import * as THREE from 'three';
-import { R, arc, slerpDir, zoneHit, onRoad, isWater, settle, yawToFace, buildRoad, ROADS } from './world.js';
+import { R, arc, slerpDir, zoneHit, onRoad, isWater, settle, yawToFace, buildRoad, ROADS, deflect, smooth } from './world.js';
 import { PAL, paint, ink, mergeStatic } from './style.js';
 import { tree, bush, lamp, bench, rbox, lathe } from './props.js';
 import { onRail } from './rail.js';
@@ -43,8 +43,36 @@ function viewBoard(text) {
 }
 
 // spurs: [{ key, pts }] from town.js; boulevard: its centre-line points; townC: the town's centre
-export function dressRoads(scene, { add, solid, spurs, boulevard, townC, ringR, sites }) {
-  const out = { trees: 0, lamps: 0 };
+export function dressRoads(scene, { add, solid, spurs, boulevard, townC, ringR, sites, colliders = [] }) {
+  const out = { trees: 0, lamps: 0, lanes: [], blocked: [] };
+  // ── country lanes: the town's roads used to be all spokes, each a dead end at its one place.
+  // A lane joins two spokes where they come close, so you can drive a loop through the country:
+  // YarnFlow's road on round to the road north over the Riverbend bridge ──
+  const nearestOn = (pts, d) => { let bi = 0, bd = 1e9; pts.forEach((p, i) => { const a = arc(p, d); if (a < bd) { bd = a; bi = i; } }); return bi; };
+  const lane = (A, B, bend = 0.25) => {
+    // a gentle bow between them (a quadratic curve, its control pushed off the straight line)
+    const mid = slerpDir(A, B, 0.5), t = B.clone().sub(A).normalize(), side = new THREE.Vector3().crossVectors(mid, t).normalize();
+    const ctrl = mid.clone().multiplyScalar(R).addScaledVector(side, arc(A, B) * bend).normalize();
+    const n = Math.max(8, Math.round(arc(A, B) / 1.1)), pts = [];
+    for (let k = 0; k <= n; k++) { const u = k / n; pts.push(slerpDir(slerpDir(A, ctrl, u), slerpDir(ctrl, B, u), u)); }
+    deflect(pts, { keep: (i) => i === 0 || i === pts.length - 1, clear: 1.6 });
+    const sm = smooth(pts, 2);
+    deflect(sm, { keep: (i) => i === 0 || i === sm.length - 1, clear: 1.6 });
+    for (const c of colliders) if (!c.soft && sm.some(p => arc(p, c.dir) < 0.75 + c.r - 0.2)) out.blocked.push(c);
+    const built = buildRoad(scene, sm, { half: 0.75, dashed: false });
+    out.lanes.push(built);
+    return built;
+  };
+  {
+    const yarn = spurs.find(sp => sp.key === 'lm:yarnflow');
+    // the bridge's south approach: the open road that starts at the boulevard and ends on the bridge deck
+    const bridgeRoad = ROADS.find(r => !r.closed && r.pts.length > 8 && r.half > 0.9 && r.half < 1.0 && arc(r.pts[0], townC) < ringR + 1.5 && arc(r.pts[r.pts.length - 1], townC) > ringR + 4);
+    if (yarn && bridgeRoad) {
+      const Y = yarn.pts, A = Y[Math.max(1, Y.length - 7)];                  // off YarnFlow's road, short of its yard
+      const Bp = bridgeRoad.pts, B = Bp[Math.min(Bp.length - 2, nearestOn(Bp, A) + 2)];
+      lane(A, B, -0.18);
+    }
+  }
   // ── the verges: every open road whose middle lies out past the boulevard ──
   const country = ROADS.filter(r => !r.closed && r.pts.length > 6 && arc(r.pts[Math.floor(r.pts.length / 2)], townC) > ringR + 1.5);
   for (const r of country) {
@@ -63,7 +91,7 @@ export function dressRoads(scene, { add, solid, spurs, boulevard, townC, ringR, 
       const isTree = rand() > 0.22, off = r.half + (isTree ? 1.55 : 1.0) + rand() * 0.3;
       const v = d.clone().multiplyScalar(R).addScaledVector(lat, side * off).addScaledVector(tang, (rand() - 0.5) * 0.6).normalize();
       // a crown reaches ~1.1 from its trunk: it never overhangs a carriageway, a rail, water or a site
-      if (zoneHit(v, 0.6) || onRoad(v, isTree ? 1.1 : 0.6) || isWater(v, -0.15) || onRail(v, 1.2)) continue;
+      if (zoneHit(v, 0.6) || onRoad(v, isTree ? 1.3 : 1.0) || isWater(v, -0.15) || onRail(v, 1.2)) continue;
       const o = isTree ? tree({ s: 0.85 + rand() * 0.3 }) : bush(0.5 + rand() * 0.15);
       settle(o, v, 0.5, 0.05, rand() * 6);
       G.add(o); solid(v, isTree ? 0.35 : 0.3);
