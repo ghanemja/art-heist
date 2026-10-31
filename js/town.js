@@ -13,6 +13,7 @@ import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { museumGrounds, shopApproach, APPROACH_STOP, makersRow, ROW_X } from './grounds.js';
+import { growPlants } from './plants.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 import { planNorth, buildNorth } from './north.js';
 import { dressRoads } from './roadside.js';
@@ -273,6 +274,7 @@ export function buildTown(scene) {
     };
     const g = add(placeOnPlanet(museumGrounds({ ok, pool: MGARDEN }), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0, drawn: true }));
     feet(g);
+    growPlants(scene, g, { seed: (out.grounds?.length || 0) + 1 });   // its planting, on the ground as drawn, in the breeze
     out.grounds = [g];
     out.museumGarden = MGARDEN;                      // museum-local [x, z] of the sculpture garden's terrace (or null)
     groundsKeep.push(...g.userData.keep.map(([x, z, r]) => ({ dir: g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r })));
@@ -454,6 +456,7 @@ export function buildTown(scene) {
         const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r) && !groundsKeep.some(c => arc(w, c.dir) < c.r + r); };
         const g = add(placeOnPlanet(shopApproach({ ex: end?.x ?? null, ez: end?.z ?? null, ok, shop: [S.base, S.upper], seed: out.landmarks.length }), d, yaw, { weight: 'fine', sink: 0, drawn: true }));
         feet(g);
+        growPlants(scene, g, { seed: (out.grounds?.length || 0) + 1 });   // its planting, on the ground as drawn, in the breeze
         (out.grounds ||= []).push(g);
       }
       continue;
@@ -475,6 +478,7 @@ export function buildTown(scene) {
     const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r); };
     const g = add(placeOnPlanet(makersRow({ ex: e?.x ?? null, ez: e?.z ?? null, ok }), hub, yaw, { weight: 'fine', sink: 0, drawn: true }));
     feet(g);
+    growPlants(scene, g, { seed: (out.grounds?.length || 0) + 1 });   // its planting, on the ground as drawn, in the breeze
     (out.grounds ||= []).push(g);
     out.row = { root: g, ...g.userData.row };
   }

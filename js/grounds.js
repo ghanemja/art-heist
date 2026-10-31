@@ -5,7 +5,7 @@
 // leave K.foot markers (town.js feet() turns them into colliders).
 import * as THREE from 'three';
 import { PAL, paint } from './style.js';
-import { tree, bush, rbox, lathe } from './props.js';
+import { rbox, lathe } from './props.js';
 import { kit } from './buildings.js';
 
 // a tiny seeded random, so the grounds come out the same every load
@@ -57,11 +57,16 @@ function mats() {
       }
     }
   });
+  // mulch: dark bark chips
+  const mulchTex = groundTex(128, (c, n, R) => {
+    c.fillStyle = '#6e4c38'; c.fillRect(0, 0, n, n);
+    for (let i = 0; i < 220; i++) { c.fillStyle = ['#8a6248', '#5a3c2c', '#9a7356'][Math.floor(R() * 3)]; c.save(); c.translate(R() * n, R() * n); c.rotate(R() * 3); c.fillRect(-3, -1.2, 6 + R() * 4, 2.4); c.restore(); }
+  });
   const flat = (o) => { const m = paint(0xffffff, { hatch: 0, side: THREE.DoubleSide, ...o }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -3; return m; };
   _M = {
     gravel: flat({ map: gravelTex }), flag: flat({ map: flagTex }), cobble: flat({ map: cobbleTex }),
     edge: (() => { const m = paint(0xb9ad95, { hatch: 0, side: THREE.DoubleSide }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -2; return m; })(),
-    stone: paint(0xd6cbb4), stoneD: paint(0xb3a68c), soil: paint(0x8a6a52, { hatch: 0 }),
+    stone: paint(0xd6cbb4), stoneD: paint(0xb3a68c), soil: paint(0x8a6a52, { hatch: 0 }), mulch: paint(0x7a5640, { map: mulchTex }),
     hedge: paint(0x5f8a4e), hedgeD: paint(0x4f7a44), water: paint(PAL.water, { hatch: 0 }),
     dark: paint(PAL.ink, { hatch: 0 }), glow: paint(0xfff1c8, { emissive: 0xffd98a, hatch: 0 }),
     wood: paint(PAL.bark), bronze: paint(0xb07a3e), patina: paint(0x6fa596), terracotta: paint(PAL.terracotta ?? 0xc8714f),
@@ -117,39 +122,99 @@ function gardenBench(K, x, z, ry) {
   for (const sx of [-0.52, 0.52]) s.box(0.06, 0.46, 0.36, M.dark, sx, 0.19, 0, 0.02);
   K.foot(x, z, 0.45);
 }
-// a flower bed: a stone kerb (round or rounded-square), soil, dots of colour and a little bush
-function flowerBed(K, x, z, w, d, R, { round = false, bushS = 0.3, kerb = true } = {}) {
+// ── planting: plants are listed (plants.js grows them on the drawn ground after placement,
+// merged per colour, nodding in the breeze). A bed is filled in layers — tall at the back,
+// low at the front, something spilling over the edge — from a harmonious palette ──
+const PALETTES = [
+  { tall: ['cosmos', 'spikes'], mid: ['tulip', 'bloom'], low: ['daisy', 'trail'], c: [0xd8508a, 0xf2a0b4, 0xf6eedb], spike: 0x9c8ad8 },   // pinks and lavender
+  { tall: ['spikes', 'grass'], mid: ['tulip', 'mound'], low: ['daisy', 'trail'], c: [0xf2c14e, 0xf29a4a, 0xf6eedb], spike: 0x6676d6 },    // gold, orange and blue salvia
+  { tall: ['cosmos', 'grass'], mid: ['bloom', 'tulip'], low: ['daisy', 'trail'], c: [0xe8604c, 0xf27a6a, 0xf6eedb], spike: 0xe8604c },    // reds and corals
+  { tall: ['spikes', 'cosmos'], mid: ['mound', 'tulip'], low: ['trail', 'daisy'], c: [0x8f7ae8, 0xf6eedb, 0xf2a0b4], spike: 0x9c8ad8 },  // violets and whites
+];
+function plant(K, k, x, z, o = {}) { (K.g.userData.plants ||= []).push({ k, x, z, ...o }); }
+// fill a rectangle (w × d, its back at −z unless `front` says which way the path is) at height y
+function fillBed(K, x, z, w, d, R, y, { pal = PALETTES[Math.floor(R() * PALETTES.length)], front = [0, 1], edge = true } = {}) {
+  const [fx, fz] = front, ax = fz, az = -fx;                     // along the bed: perpendicular to the front
+  const at = (u, v) => [x + ax * u + fx * v, z + az * u + fz * v];    // u along, v toward the front
+  const L = Math.abs(ax) > 0.5 ? w : d, D = Math.abs(ax) > 0.5 ? d : w;
+  const rows = [[-D / 2 + 0.16, pal.tall, 1.45], [0, pal.mid, 1.4], [D / 2 - 0.14, pal.low, 1.3]];
+  for (const [v, kinds, sc] of rows) {
+    if (D < 0.7 && v === 0) continue;
+    const n = Math.max(3, Math.round(L / (kinds === pal.mid ? 0.24 : 0.17)));
+    for (let i = 0; i < n; i++) {
+      const u = -L / 2 + (i + 0.5) * L / n + (R() - 0.5) * 0.08, k = kinds[(i + Math.floor(R() * 2)) % kinds.length];
+      const [px, pz] = at(u, v + (R() - 0.5) * 0.08);
+      const c = k === 'spikes' ? pal.spike : pal.c[Math.floor(R() * pal.c.length)];
+      plant(K, k, px, pz, { y, s: sc * (0.85 + R() * 0.3), c: k === 'mound' || k === 'grass' ? undefined : c, ry: k === 'trail' ? Math.atan2(fx, fz) + (R() - 0.5) * 0.6 : undefined });
+    }
+  }
+  if (edge) for (let i = 0, n = Math.max(2, Math.round(L / 0.3)); i < n; i++) {   // a clipped box edge along the front
+    const [px, pz] = at(-L / 2 + (i + 0.5) * L / n, D / 2 + 0.02);
+    plant(K, 'boxBall', px, pz, { y, s: 1 });
+  }
+}
+// a flower bed: a stone kerb (round or rounded-square), mulch, and layered planting
+function flowerBed(K, x, z, w, d, R, { round = false, kerb = true, front = [0, 1] } = {}) {
   const M = mats();
   if (round) {
     const r = w / 2;
-    if (kerb) K.put(lathe([[r - 0.06, 0], [r + 0.04, 0], [r + 0.04, 0.16], [r - 0.06, 0.16]], 28), M.stone, x, 0, z);
-    K.put(lathe([[0.001, 0.1], [r - 0.06, 0.1], [r - 0.08, 0.15], [0.001, 0.16]], 28), M.soil, x, 0, z);
-  } else {
-    if (kerb) K.box(w + 0.1, 0.2, d + 0.1, M.stone, x, 0.06, z, 0.04);
-    K.box(w - 0.04, 0.06, d - 0.04, M.soil, x, 0.15, z, 0.02);
+    if (kerb) K.put(lathe([[r - 0.06, -0.05], [r + 0.04, -0.05], [r + 0.04, 0.16], [r - 0.06, 0.16]], 28), M.stone, x, 0, z);
+    K.put(lathe([[0.001, 0.1], [r - 0.06, 0.1], [r - 0.08, 0.15], [0.001, 0.16]], 28), M.mulch, x, 0, z);
+    const pal = PALETTES[Math.floor(R() * PALETTES.length)];
+    plant(K, R() > 0.5 ? 'bloom' : 'grass', x, z, { y: 0.15, s: 1.1 });
+    for (let i = 0; i < 9; i++) { const a = i / 9 * 6.28, rr = r * 0.62; plant(K, pal.low[i % 2], x + Math.sin(a) * rr, z + Math.cos(a) * rr, { y: 0.15, c: pal.c[i % pal.c.length], ry: a }); }
+    for (let i = 0; i < 5; i++) { const a = i / 5 * 6.28 + 0.6, rr = r * 0.34; plant(K, pal.mid[i % 2], x + Math.sin(a) * rr, z + Math.cos(a) * rr, { y: 0.15, c: pal.c[(i + 1) % pal.c.length] }); }
+    return;
   }
-  const n = Math.round(w * d * 14);
-  for (let f = 0; f < n; f++) {
-    const fx = (R() - 0.5) * (w - 0.2), fz = (R() - 0.5) * (d - 0.2);
-    if (round && Math.hypot(fx, fz) > w / 2 - 0.12) continue;
-    K.put(new THREE.SphereGeometry(0.055 + R() * 0.02, 8, 6), M.flowers[Math.floor(R() * M.flowers.length)], x + fx, 0.21 + R() * 0.05, z + fz);
-  }
-  if (bushS) { const b = bush(bushS); b.position.set(x, 0.15, z); K.g.add(b); }
+  if (kerb) K.box(w + 0.1, 0.2, d + 0.1, M.stone, x, 0.06, z, 0.04);
+  K.box(w - 0.04, 0.06, d - 0.04, M.mulch, x, 0.15, z, 0.02);
+  fillBed(K, x, z, w - 0.1, d - 0.1, R, 0.18, { front, edge: false });
+}
+// a square bed planted as a little island: a feature plant in the middle, rings round it
+function islandBed(K, x, z, w, R) {
+  const M = mats(), pal = PALETTES[Math.floor(R() * PALETTES.length)];
+  K.box(w + 0.1, 0.2, w + 0.1, M.stone, x, 0.06, z, 0.04);
+  K.box(w - 0.04, 0.06, w - 0.04, M.mulch, x, 0.15, z, 0.02);
+  plant(K, R() > 0.5 ? 'spikes' : 'grass', x, z, { y: 0.18, s: 1.3, c: pal.spike });
+  const h = w / 2 - 0.16;
+  for (const [u, v] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) plant(K, pal.tall[(u + v + 2) / 2 % 2], x + u * h * 0.55, z + v * h * 0.55, { y: 0.18, c: pal.tall[(u + v + 2) / 2 % 2] === 'spikes' ? pal.spike : pal.c[(u + 1) / 2], s: 1.15 });
+  for (let i = 0; i < 12; i++) { const a = i / 12 * 6.28 + 0.4; plant(K, pal.low[i % 2], x + Math.sin(a) * h, z + Math.cos(a) * h, { y: 0.18, c: pal.c[i % pal.c.length], ry: a, s: 1.25 }); }
+  for (let i = 0; i < 4; i++) { const a = i / 4 * 6.28 + 1.2; plant(K, pal.mid[i % 2] === 'bloom' || pal.mid[i % 2] === 'mound' ? 'tulip' : pal.mid[i % 2], x + Math.sin(a) * h * 0.5, z + Math.cos(a) * h * 0.5, { y: 0.18, c: pal.c[(i + 2) % pal.c.length], s: 1.3 }); }
+}
+// a trough planter (stone box, mulch, planted, something trailing over the front)
+function trough(K, x, z, R, { w = 0.62, d = 0.62, h = 0.56, front = [0, 1] } = {}) {
+  const M = mats();
+  K.box(w, h, d, M.stone, x, h / 2 - 0.06, z, 0.06);
+  K.box(w - 0.1, 0.05, d - 0.1, M.mulch, x, h - 0.07, z, 0.02);
+  const pal = PALETTES[Math.floor(R() * PALETTES.length)];
+  plant(K, pal.mid[0] === 'mound' ? 'grass' : 'bloom', x - front[0] * 0.08, z - front[1] * 0.08, { y: h - 0.06, s: 0.75 });
+  for (const s2 of [-1, 1]) plant(K, 'trail', x + front[0] * (d / 2 - 0.08) + front[1] * s2 * 0.13, z + front[1] * (d / 2 - 0.08) - front[0] * s2 * 0.13, { y: h - 0.06, s: 0.9, c: pal.c[0], ry: Math.atan2(front[0], front[1]) });
+  plant(K, 'tulip', x + front[1] * 0.16, z - front[0] * 0.16, { y: h - 0.06, s: 0.85, c: pal.c[1] });
+  plant(K, 'tulip', x - front[1] * 0.16, z + front[0] * 0.16, { y: h - 0.06, s: 0.85, c: pal.c[2] });
+  K.foot(x, z, Math.max(w, d) / 2 + 0.05);
 }
 // a clipped hedge along a straight run (a rounded box, its top a touch darker)
 function hedge(K, x0, z0, x1, z1, h = 0.45, w = 0.34) {
   const M = mats(), L = Math.hypot(x1 - x0, z1 - z0), a = Math.atan2(x1 - x0, z1 - z0);
   K.put(rbox(w, h + 0.13, L, 0.13, 3), M.hedge, (x0 + x1) / 2, (h - 0.13) / 2, (z0 + z1) / 2, [0, a, 0]);   // bevel below ground
 }
-function specimen(K, x, z, s, R) {
-  const t = tree({ s }); t.position.set(x, 0, z); t.rotation.y = R() * 6; K.g.add(t);
+// a tree: a mix of kinds (blossom, birch, autumn maple, cypress, a round shade tree)
+const TREES = ['blossom', 'maple', 'birch', 'shade', 'cypress', 'blossom', 'maple', 'birch'];
+let _treeN = 0;
+function specimen(K, x, z, s, R, kind = null) {
+  plant(K, kind ?? TREES[(_treeN++ + Math.floor(R() * 3)) % TREES.length], x, z, { s: s * 1.05 });
   K.foot(x, z, 0.3);
 }
-// a clipped cone of box, in a stone pot
-function topiary(K, x, z, s = 1) {
+// a shrub on the lawn: a mounding shrub or a flowering bush, a grass clump beside it
+function shrub(K, x, z, R) {
+  plant(K, R() > 0.45 ? 'bloom' : 'mound', x, z, { s: 1.1 + R() * 0.4 });
+  if (R() > 0.4) plant(K, 'grass', x + 0.38, z + 0.15, { s: 0.9 });
+}
+// clipped topiary in a stone pot: a cone, a spiral or a ball on a stem
+function topiary(K, x, z, s = 1, kind = 'spiral') {
   const M = mats();
-  K.put(lathe([[0.001, 0], [0.24, 0], [0.28, 0.3], [0.31, 0.34], [0.001, 0.34]], 16).scale(s, s, s), M.stone, x, 0, z);
-  K.put(lathe([[0.001, 0.3], [0.3, 0.38], [0.26, 0.7], [0.14, 1.05], [0.04, 1.25], [0.001, 1.28]], 16).scale(s, s, s), M.hedgeD, x, 0, z);
+  K.put(lathe([[0.001, -0.05], [0.24, -0.05], [0.28, 0.3], [0.31, 0.34], [0.001, 0.34]], 16).scale(s, s, s), M.stone, x, 0, z);
+  plant(K, kind, x, z, { y: 0.3 * s, s });
   K.foot(x, z, 0.3 * s);
 }
 
@@ -172,8 +237,9 @@ export function museumGrounds({ ok = () => true, pool: poolAt = null } = {}) {
   // box hedges along the walks' road side; a flower strip under the east wing's windows
   if (ok(-8.95, -7.4, 0.2)) hedge(K, -8.95, -4.9, -8.95, -9.9);
   hedge(K, 9.67, -4.5, 9.67, -10.3);
-  flowerBed(K, 8.05, -5.0, 0.55, 2.4, R, { bushS: 0 });
-  flowerBed(K, 8.05, -9.4, 0.55, 2.0, R, { bushS: 0 });
+  // flower strips under the east wing's windows, planted tall at the wall, low at the walk
+  flowerBed(K, 8.05, -5.0, 0.7, 2.4, R, { front: [1, 0] });
+  flowerBed(K, 8.05, -9.4, 0.7, 2.0, R, { front: [1, 0] });
   // low lamps along the walks, a bench on the east lawn
   for (const [x, z] of [[-7.62, -5.0], [-7.62, -10.6], [10.15, -5.6], [10.15, -9.4], [-4.2, -12.3], [4.2, -12.3]]) if (ok(x, z, 0.1)) bollard(K, x, z);
   if (ok(10.45, -8.6, 0.5)) { gardenBench(K, 10.45, -8.6, -Math.PI / 2); placed.push([10.45, -8.6, 0.5]); }
@@ -219,7 +285,7 @@ export function museumGrounds({ ok = () => true, pool: poolAt = null } = {}) {
       K.put(lathe([[0.001, 0], [0.15, 0], [0.12, 0.12], [0.08, 0.2], [0.001, 0.22]], 16), M.patina, x, 0.68, z);
       K.put(new THREE.SphereGeometry(0.22, 18, 14).scale(0.85, 1.1, 0.95), M.patina, x, 1.06, z); }
     for (const da of [2.3, -2.3]) { const a = mouth + da, x = PX + Math.sin(a) * (PR + 1.75), z = PZ + Math.cos(a) * (PR + 1.75); gardenBench(K, x, z, a + Math.PI); }
-    for (const da of [0.6, -0.6]) { const a = mouth + da; topiary(K, PX + Math.sin(a) * (PR + 1.7), PZ + Math.cos(a) * (PR + 1.7), 0.85); }
+    for (const da of [0.6, -0.6]) { const a = mouth + da; topiary(K, PX + Math.sin(a) * (PR + 1.7), PZ + Math.cos(a) * (PR + 1.7), 0.85, da > 0 ? 'spiral' : 'cone'); }
   }
 
   // (the four-bed garden square that used to sit behind here is now Makers' Row's centrepiece)
@@ -306,13 +372,7 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
     K.put(rbox(0.28, 0.12, 0.16, 0.04, 1), M.stoneD, x, 0.03, z, [0, Math.atan2(nx - x, nz - z), 0]);
   }
   // planters at the forecourt's back corners, a lamp and a bench on it
-  const planter = (x, z) => {
-    K.box(0.62, 0.56, 0.62, M.stone, x, 0.22, z, 0.06);
-    K.box(0.52, 0.06, 0.52, M.soil, x, 0.5, z, 0.02);
-    for (let f = 0; f < 7; f++) K.put(new THREE.SphereGeometry(0.06, 8, 6), M.flowers[Math.floor(R() * M.flowers.length)], x + (R() - 0.5) * 0.4, 0.57 + R() * 0.05, z + (R() - 0.5) * 0.4);
-    const b = bush(0.24); b.position.set(x, 0.5, z); K.g.add(b);
-    K.foot(x, z, 0.4); take(x, z, 0.4);
-  };
+  const planter = (x, z) => { trough(K, x, z, R, { front: [0, 1] }); take(x, z, 0.4); };
   for (const s of [-1, 1]) for (const [x, z] of [[s * 3.05, 2.85], [s * 2.95, 4.35]]) if (clear(x, z, 0.4, { onPlaza: true })) { planter(x, z); break; }
   const laneSide = lane ? Math.sign(lane.ax || 1) : 1;
   for (const [x, z] of [[laneSide * -2.3, 4.75], [laneSide * 2.3, 4.75], [laneSide * -1.8, 4.75]]) if (clear(x, z, 0.12, { onPlaza: true })) { bollard(K, x, z, 1.15); take(x, z, 0.12); break; }
@@ -325,11 +385,11 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
   }
   for (const [x, z] of [[-3.75, 1.9], [3.75, 1.9], [-3.6, 0.2], [3.6, 0.2], [-2.6, -3.0], [2.6, -3.0]]) {
     if (!clear(x, z, 0.4)) continue;
-    const b = bush(0.36 + R() * 0.12); b.position.set(x, 0, z); b.rotation.y = R() * 6; K.g.add(b); take(x, z, 0.4);
+    shrub(K, x, z, R); take(x, z, 0.4);
   }
   for (const [x, z, w, d] of [[-4.2, 3.4, 0.9, 1.3], [4.2, 3.4, 0.9, 1.3]]) {
     if (!clear(x, z, 0.75)) continue;
-    flowerBed(K, x, z, w, d, R, { bushS: 0.26 }); K.foot(x, z, 0.65); take(x, z, 0.75);
+    flowerBed(K, x, z, w, d, R, { front: [-Math.sign(x), 0] }); K.foot(x, z, 0.65); take(x, z, 0.75);
   }
   return K.g;
 }
@@ -371,7 +431,7 @@ export function makersRow({ ex = null, ez = null, ok = () => true, seed = 3 } = 
   lay(K, new THREE.PlaneGeometry(GW * 2 + 0.1, 0.62), M.flag, GX, 0.012, GZ, 1.4);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const bx = GX + sx * 0.98, bz = GZ + sz * 0.98;
-    flowerBed(K, bx, bz, 1.2, 1.2, R, { bushS: 0.3 });
+    islandBed(K, bx, bz, 1.2, R);
     K.foot(bx, bz, 0.66);
   }
   bollard(K, GX, GZ, 1.25);                                        // a lamp at the cross's heart
@@ -398,11 +458,7 @@ export function makersRow({ ex = null, ez = null, ok = () => true, seed = 3 } = 
   // the apron: lamps between the shops and at its ends, planters, a bench in the gap
   for (const x of [-H + 0.35, H - 0.35]) bollard(K, x, Z0 + 0.5, 1.2);
   for (const x of [-1.6, 1.6]) {
-    K.box(0.62, 0.56, 0.62, M.stone, x, 0.22, Z0 + 0.55, 0.06);
-    K.box(0.52, 0.06, 0.52, M.soil, x, 0.5, Z0 + 0.55, 0.02);
-    for (let f = 0; f < 7; f++) K.put(new THREE.SphereGeometry(0.06, 8, 6), M.flowers[Math.floor(R() * M.flowers.length)], x + (R() - 0.5) * 0.4, 0.57 + R() * 0.05, Z0 + 0.55 + (R() - 0.5) * 0.4);
-    const b = bush(0.24); b.position.set(x, 0.5, Z0 + 0.55); K.g.add(b);
-    K.foot(x, Z0 + 0.55, 0.4);
+    trough(K, x, Z0 + 0.55, R, { front: [0, 1] });
   }
   gardenBench(K, 0, 0.9, 0);                                         // in the gap between the shops
   // planting: trees behind and beside the shops, bushes and beds round the lot's sides
@@ -410,7 +466,7 @@ export function makersRow({ ex = null, ez = null, ok = () => true, seed = 3 } = 
   const take = (x, z, r) => { if (!ok(x, z, r) || placed.some(([a, b, c]) => Math.hypot(a - x, b - z) < c + r + 0.1)) return false; placed.push([x, z, r]); return true; };
   for (const [x, z, s] of [[-10.2, -1.0, 0.9], [10.2, -1.2, 0.85], [-7.4, -3.8, 1.0], [-2.0, -3.4, 0.85], [2.6, -3.5, 0.95], [7.6, -3.7, 0.9], [-10.6, 3.0, 0.8], [10.6, 3.2, 0.8]])
     if (take(x, z, 0.8)) specimen(K, x, z, s, R);
-  for (const [x, z] of [[-10.5, 6.0], [10.5, 6.0], [-10.4, 8.8], [10.4, 8.8], [0, -1.6]]) if (take(x, z, 0.4)) { const b = bush(0.4 + R() * 0.12); b.position.set(x, 0, z); K.g.add(b); }
+  for (const [x, z] of [[-10.5, 6.0], [10.5, 6.0], [-10.4, 8.8], [10.4, 8.8], [0, -1.6]]) if (take(x, z, 0.4)) shrub(K, x, z, R);
   K.g.userData.row = { bays, half: H, z0: Z0, z1: Z1 };
   return K.g;
 }
