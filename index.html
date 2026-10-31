@@ -74,6 +74,10 @@
   .bub.yell { font-size: 34px; color: var(--accent); }
   .bub.wail { font-size: 42px; letter-spacing: .02em; }
   .bub.grumble { font-family: 'Patrick Hand', cursive; font-weight: 400; font-size: 19px; padding: 2px 12px; }
+  /* the constable at the museum's open door (doorcop.js): a speech bubble with a tail, wrapping on a phone */
+  .bub.cop { font-family: 'Patrick Hand', cursive; font-weight: 400; font-size: 21px; line-height: 1.15; white-space: normal; width: max-content; max-width: min(290px, 64vw); text-align: center; text-wrap: balance; padding: 6px 15px 8px; transform-origin: 50% 100%; }
+  .bub.cop::after { content: ''; position: absolute; left: calc(50% + var(--tail, 0px)); bottom: -10px; width: 15px; height: 15px; margin-left: -9px; background: var(--paper); border-right: 2.5px solid var(--ink); border-bottom: 2.5px solid var(--ink); border-bottom-right-radius: 3px; transform: rotate(40deg) skewX(10deg); box-shadow: 3px 3px 0 rgba(42,34,48,0.5); }
+  body.touch .bub.cop { font-size: 19px; max-width: min(250px, 60vw); }
   #nbBtn { right: 16px; top: 14px; font-size: 20px; }
   #nbBtn i { font-style: normal; display: inline-block; min-width: 22px; margin-left: 6px; background: var(--accent); color: #fff; border-radius: 50%; text-align: center; font-size: 15px; }
   #hint { left: 14px; bottom: 14px; font-size: 15px; padding: 4px 12px; max-width: calc(100vw - 200px); line-height: 1.6; opacity: .92; }
@@ -283,44 +287,45 @@
 { "imports": {
   "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-  "./js/audio.js": "./js/audio.js?cb=219",
-  "./js/buildings.js": "./js/buildings.js?cb=219",
-  "./js/bump.js": "./js/bump.js?cb=219",
-  "./js/citizens.js": "./js/citizens.js?cb=219",
-  "./js/crowd.js": "./js/crowd.js?cb=219",
-  "./js/faces.js": "./js/faces.js?cb=219",
-  "./js/folk.js": "./js/folk.js?cb=219",
-  "./js/game.js": "./js/game.js?cb=219",
-  "./js/grounds.js": "./js/grounds.js?cb=219",
-  "./js/harbour.js": "./js/harbour.js?cb=219",
-  "./js/human.js": "./js/human.js?cb=219",
-  "./js/manifest.js": "./js/manifest.js?cb=219",
-  "./js/park.js": "./js/park.js?cb=219",
-  "./js/phone.js": "./js/phone.js?cb=219",
-  "./js/player.js": "./js/player.js?cb=219",
-  "./js/plaza.js": "./js/plaza.js?cb=219",
-  "./js/portraits.js": "./js/portraits.js?cb=219",
-  "./js/props.js": "./js/props.js?cb=219",
-  "./js/rail.js": "./js/rail.js?cb=219",
-  "./js/route.js": "./js/route.js?cb=219",
-  "./js/shopinterior.js": "./js/shopinterior.js?cb=219",
-  "./js/story.js": "./js/story.js?cb=219",
-  "./js/style.js": "./js/style.js?cb=219",
-  "./js/town.js": "./js/town.js?cb=219",
-  "./js/train.js": "./js/train.js?cb=219",
-  "./js/world.js": "./js/world.js?cb=219",
-  "./js/cull.js": "./js/cull.js?cb=219",
-  "./js/north.js": "./js/north.js?cb=219",
-  "./js/riverlife.js": "./js/riverlife.js?cb=219",
-  "./js/roadside.js": "./js/roadside.js?cb=219",
-  "./js/carparks.js": "./js/carparks.js?cb=219",
-  "./js/rooms.js": "./js/rooms.js?cb=219",
-  "./js/plants.js": "./js/plants.js?cb=219",
-  "./js/overlook.js": "./js/overlook.js?cb=219",
-  "./js/meadow.js": "./js/meadow.js?cb=219",
-  "./js/club.js": "./js/club.js?cb=219"
+  "./js/audio.js": "./js/audio.js?cb=220",
+  "./js/buildings.js": "./js/buildings.js?cb=220",
+  "./js/bump.js": "./js/bump.js?cb=220",
+  "./js/citizens.js": "./js/citizens.js?cb=220",
+  "./js/crowd.js": "./js/crowd.js?cb=220",
+  "./js/faces.js": "./js/faces.js?cb=220",
+  "./js/folk.js": "./js/folk.js?cb=220",
+  "./js/game.js": "./js/game.js?cb=220",
+  "./js/grounds.js": "./js/grounds.js?cb=220",
+  "./js/harbour.js": "./js/harbour.js?cb=220",
+  "./js/human.js": "./js/human.js?cb=220",
+  "./js/manifest.js": "./js/manifest.js?cb=220",
+  "./js/park.js": "./js/park.js?cb=220",
+  "./js/phone.js": "./js/phone.js?cb=220",
+  "./js/player.js": "./js/player.js?cb=220",
+  "./js/plaza.js": "./js/plaza.js?cb=220",
+  "./js/portraits.js": "./js/portraits.js?cb=220",
+  "./js/props.js": "./js/props.js?cb=220",
+  "./js/rail.js": "./js/rail.js?cb=220",
+  "./js/route.js": "./js/route.js?cb=220",
+  "./js/shopinterior.js": "./js/shopinterior.js?cb=220",
+  "./js/story.js": "./js/story.js?cb=220",
+  "./js/style.js": "./js/style.js?cb=220",
+  "./js/town.js": "./js/town.js?cb=220",
+  "./js/train.js": "./js/train.js?cb=220",
+  "./js/world.js": "./js/world.js?cb=220",
+  "./js/cull.js": "./js/cull.js?cb=220",
+  "./js/north.js": "./js/north.js?cb=220",
+  "./js/riverlife.js": "./js/riverlife.js?cb=220",
+  "./js/roadside.js": "./js/roadside.js?cb=220",
+  "./js/carparks.js": "./js/carparks.js?cb=220",
+  "./js/rooms.js": "./js/rooms.js?cb=220",
+  "./js/plants.js": "./js/plants.js?cb=220",
+  "./js/overlook.js": "./js/overlook.js?cb=220",
+  "./js/meadow.js": "./js/meadow.js?cb=220",
+  "./js/club.js": "./js/club.js?cb=220",
+  "./js/doorcop.js": "./js/doorcop.js?cb=220"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=219"></script>
+<script type="module" src="./js/main.js?cb=220"></script>
 </body>
 </html>
