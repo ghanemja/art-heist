@@ -15,6 +15,7 @@ import { createCarParks } from './carparks.js';
 import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
 import { createMeadow } from './meadow.js';
+import { createDoorCop } from './doorcop.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -77,10 +78,14 @@ for (const lm of town.landmarks.filter((l) => ROOM_STYLES.has(l.style))) {
   const door = shopDoorway(lm, town.colliders);                        // (the doorway is shut: only E takes you in)
   game.doors.push({ dir: door.at, r: 1.3, label: `go inside ${lm.name}`, act: () => rooms.enter({ key: lm.style, out: door.out }) });
 }
-game.doors.push({ dir: mf(0, -1.75), r: 1.3, label: 'go inside the museum', act: () => rooms.enter({ key: 'museum', out: () => {
+const museumDoor = { dir: mf(0, -1.75), r: 1.3, label: 'go inside the museum', act: () => rooms.enter({ key: 'museum', out: () => {
   const dir = mf(0, -1.0);
   return { dir, heading: mf(0, 2).sub(dir).projectOnPlane(dir).normalize() };
-} }) });
+} }) };
+game.doors.push(museumDoor);
+// the museum's open front door: a constable beside it waves you in, with a speech bubble (doorcop.js)
+const doorCop = createDoorCop({ scene, town, game, player, camera, rooms });
+game.doors.push({ dir: doorCop.dir, r: 1.6, label: 'go inside the museum', act: museumDoor.act });   // (E by him goes in too)
 const telescope = createTelescope({ town, game, player, camera });   // the Summit Overlook's telescope: E for a look at the town
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
@@ -104,6 +109,7 @@ function loop() {
   }
   town.museum.tick(t, 1 - atm.k);
   telescope?.update(dt);
+  doorCop.update(dt);
   if (!game.update(dt, t)) { if (!rooms.update(dt, t)) player.update(dt, t); }
   town.tickShops(player.st.dir);                 // inside a project shop: its upper walls lift away
   // inside a carriage of the parked train: its roof lifts off and the camera rises to look in
