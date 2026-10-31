@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked, addCamBlock } from './world.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=17';
@@ -586,6 +586,12 @@ export function buildTown(scene) {
       const base = add(placeOnPlanet(S.base, d, yaw, { weight: 'mid' })), upper = add(placeOnPlanet(S.upper, d, yaw, { weight: 'mid' }));
       addFloor(base, S.floor);
       for (const [x, z, r] of S.walls) solid(base.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r);
+      {                                               // its walls and roof stop the follow camera (world.js addCamBlock)
+        base.updateWorldMatrix(true, false); upper.updateWorldMatrix(true, true);
+        const top = new THREE.Box3(), inv = base.matrixWorld.clone().invert(), m = new THREE.Matrix4();
+        upper.traverse(o => { if (o.isMesh && !o.userData.isInk) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); top.union(o.geometry.boundingBox.clone().applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld))); } });
+        addCamBlock(base, new THREE.Vector3(-3.0, -0.3, -2.5), new THREE.Vector3(3.0, top.isEmpty() ? 3.4 : top.max.y, 2.5));
+      }
       const lm = { ...p, lot: null, dir: d, root: base, upper, inside: S.inside };   // (lot: set below only where a car park is built — Makers' Row shares one)
       if (p.lot && !inRow) {
         // the car park: its apron runs in to the spur's real edge (walk out from the lot, in the

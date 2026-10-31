@@ -268,6 +268,29 @@ export function registerGround(roots) {
   };
   for (const root of roots) walk(root);
 }
+// Camera blockers: solid volumes the follow camera may neither sit in nor look through (a
+// shop's walls and roof). The walk colliders are discs too small to stop the camera (it only
+// minds those of r ≥ 0.5), so standing on a shop's stoop facing out used to park the camera
+// inside its back wall: a black screen. Each is a box in a placed object's own frame.
+const _camBlocks = [], _cbq = new THREE.Vector3();
+export function addCamBlock(obj, min, max) {
+  obj.updateWorldMatrix(true, false);
+  const box = new THREE.Box3(min.clone(), max.clone());
+  const c = box.getCenter(new THREE.Vector3()).applyMatrix4(obj.matrixWorld);
+  _camBlocks.push({ inv: obj.matrixWorld.clone().invert(), box, c, r: box.getSize(new THREE.Vector3()).length() / 2 });
+}
+// the blockers within `range` of world point p (that p itself isn't inside: from in there, they're no wall)
+export function camBlocksNear(p, range, pad = 0) {
+  return _camBlocks.filter(b => b.c.distanceTo(p) < b.r + range && !camBlocked(p, pad, [b]));
+}
+export function camBlocked(p, pad = 0, list = _camBlocks) {
+  for (const b of list) {
+    _cbq.copy(p).applyMatrix4(b.inv);
+    if (_cbq.x > b.box.min.x - pad && _cbq.x < b.box.max.x + pad && _cbq.y > b.box.min.y - pad && _cbq.y < b.box.max.y + pad
+      && _cbq.z > b.box.min.z - pad && _cbq.z < b.box.max.z + pad) return true;
+  }
+  return false;
+}
 const STEP_UP = 0.45;                                   // how far above the base ground a walkable surface may be
 // the ground never moves, so each ~0.2-unit patch of the planet is measured once and cached
 const _standCache = new Map(), CELL = 0.2;
