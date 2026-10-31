@@ -2093,6 +2093,7 @@ export function createRooms({ scene, camera, player, game }) {
       for (const v of cur.vids) v.play().catch(() => {});
       S.x = 0; S.z = -0.9; S.face = Math.PI; S.speed = 0; S.yaw = 0; S.pitch0 = st.camPitch; S.out = door.out;
       cam.snap = true;
+      S.camMask = camera.layers.mask;
       camera.layers.set(LAYER); playerLayer(true);
       G.room = { act };
       st.enabled = true;
@@ -2106,10 +2107,17 @@ export function createRooms({ scene, camera, player, game }) {
       cur.g.removeFromParent();
       for (const v of cur.vids) v.pause();
       M.see(''); say.classList.add('hide'); prompt.classList.add('hide');
-      camera.layers.set(0); playerLayer(false);
+      camera.layers.mask = S.camMask ?? 1; playerLayer(false);
+      player.root.children[0].position.y = 0;                    // (the room's walk bob)
       const o = S.out();
       st.dir.copy(o.dir); st.heading.copy(o.heading); st.camFwd.copy(o.camFwd || o.heading);
-      st.speed = 0; st.camPitch = S.pitch0; st.camInit = false; st.grT = null;
+      // back on the street as a clean cut: everything the street walk eases (her height, the
+      // camera's anchor, its look-ahead, the squash) starts from here, not from where she
+      // went in; the camera takes a clear angle at once (player.js: not inside the shop's
+      // back wall); and a key held through the fade — S, to walk out of the room — waits to
+      // be let go, or she'd turn on the spot and walk straight back in
+      st.speed = 0; st.camPitch = S.pitch0; st.camInit = false; st.grT = null; st.gr = 0;
+      st.squashK = 0; st.leadV?.set(0, 0, 0); st.camYaw = 0; st.recenter = 0; st.inputHold = true;
       G.room = null; cur = null; armed = false;
       audio.setRoom(null);
     });
