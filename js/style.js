@@ -164,12 +164,18 @@ export function gpuOnly(root, renderer, camera) {
   // upload it all now, while loading (one tiny off-screen frame with nothing culled): a thing
   // first seen much later would otherwise keep its copies until then
   if (renderer && camera) {
-    // (to the screen itself, through a 1-pixel scissor: a render target would compile a second
-    // copy of every shader for its colour space; the first real frame paints over the pixel)
-    const culled = [];
-    root.traverse(o => { if (o.isMesh && o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
-    try { renderer.setScissorTest(true); renderer.setScissor(0, 0, 1, 1); renderer.render(root, camera); }
-    finally { renderer.setScissorTest(false); for (const o of culled) o.frustumCulled = true; }
+    // (the renderer uploads an object's buffers as it gathers it, before it looks at whether its
+    // material is visible: with every material hidden for one pass, it all goes up and nothing
+    // is drawn — the frame costs no shading at all)
+    const culled = [], mats = new Set();
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m?.visible) mats.add(m);
+    });
+    for (const m of mats) m.visible = false;
+    try { renderer.render(root, camera); }
+    finally { for (const m of mats) m.visible = true; for (const o of culled) o.frustumCulled = true; }
   }
 }
 // bakeScenery(scene, only): the town's loose props — trees, bushes, lamps, benches, planters,
@@ -220,36 +226,38 @@ function mergeHulls(parent) {
   const col = withCol ? new Float32Array(nv * 3).fill(1) : null;
   const IDX = nv > 65535 ? Uint32Array : Uint16Array, base = new Map();
   let vb = 0;
+  // (plain float arrays copy straight across; anything packed or interleaved goes value by value)
+  const copy = (dst, A, size, at) => {
+    if (!A) return;
+    if (A.array instanceof Float32Array && A.itemSize === size && !A.isInterleavedBufferAttribute && !A.normalized) { dst.set(A.array.subarray(0, A.count * size), at * size); return; }
+    for (let i = 0; i < A.count; i++) for (let c = 0; c < size; c++) dst[(at + i) * size + c] = A.getComponent(i, c);
+  };
   for (const o of fills) {
-    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, C = g.attributes.color, n = P.count;
-    for (let i = 0; i < n; i++) {
-      const j = (vb + i) * 3;
-      pos[j] = P.getX(i); pos[j + 1] = P.getY(i); pos[j + 2] = P.getZ(i);
-      nor[j] = N.getX(i); nor[j + 1] = N.getY(i); nor[j + 2] = N.getZ(i);
-      if (uv && U) { uv[(vb + i) * 2] = U.getX(i); uv[(vb + i) * 2 + 1] = U.getY(i); }
-      if (col && C) { col[j] = C.getX(i); col[j + 1] = C.getY(i); col[j + 2] = C.getZ(i); }
-    }
+    const g = o.geometry, n = g.attributes.position.count;
+    copy(pos, g.attributes.position, 3, vb); copy(nor, g.attributes.normal, 3, vb);
+    if (uv) copy(uv, g.attributes.uv, 2, vb);
+    if (col && g.attributes.color?.itemSize === 3) copy(col, g.attributes.color, 3, vb);
+    if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
     base.set(o, vb); vb += n;
   }
   const A = { position: new THREE.BufferAttribute(pos, 3), normal: new THREE.BufferAttribute(nor, 3) };
   if (uv) A.uv = new THREE.BufferAttribute(uv, 2);
   if (col) A.color = new THREE.BufferAttribute(col, 3);
-  const indexOf = (o) => { const g = o.geometry, b = base.get(o); if (g.index) { const I = g.index, out = new Array(I.count); for (let k = 0; k < I.count; k++) out[k] = b + I.getX(k); return out; } const out = new Array(g.attributes.position.count); for (let k = 0; k < out.length; k++) out[k] = b + k; return out; };
-  const shared = (idx) => { const g = new THREE.BufferGeometry(); for (const [k, a] of Object.entries(A)) g.setAttribute(k, a); g.setIndex(new THREE.BufferAttribute(new IDX(idx), 1));
-    // bounds from just the vertices this index uses (the shared buffer spans the whole thing)
-    const bb = new THREE.Box3(), v = new THREE.Vector3(); for (const t of idx) bb.expandByPoint(v.set(pos[t * 3], pos[t * 3 + 1], pos[t * 3 + 2]));
-    g.boundingBox = bb; g.boundingSphere = bb.getBoundingSphere(new THREE.Sphere());
-    let r2 = 0; const c = g.boundingSphere.center; for (const t of idx) r2 = Math.max(r2, c.distanceToSquared(v.set(pos[t * 3], pos[t * 3 + 1], pos[t * 3 + 2])));
-    g.boundingSphere.radius = Math.sqrt(r2); return g; };
+  const indexOf = (o) => { const g = o.geometry, b = base.get(o), n = g.index ? g.index.count : g.attributes.position.count, out = new IDX(n); if (g.index) { const I = g.index.array; for (let k = 0; k < n; k++) out[k] = b + I[k]; } else for (let k = 0; k < n; k++) out[k] = b + k; return out; };
+  // (bounds: a part's own, as it had them — the shared buffer spans the whole thing)
+  const shared = (idx, box) => { const g = new THREE.BufferGeometry(); for (const [k, a] of Object.entries(A)) g.setAttribute(k, a); g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.boundingBox = box.clone(); g.boundingSphere = box.getBoundingSphere(new THREE.Sphere()); return g; };
   const own = new Map(fills.map(o => [o, indexOf(o)]));
   // the hulls first (they read each part's old index), then the parts move onto the shared buffer
   for (const [mat, parts] of byMat) {
-    const idx = []; for (const o of parts) { for (const t of own.get(o)) idx.push(t); for (const h of hullsOf(o)) if (h.material === mat) h.removeFromParent(); }
-    const m = new THREE.Mesh(shared(idx), mat);
+    let n = 0; for (const o of parts) n += own.get(o).length;
+    const idx = new IDX(n), box = new THREE.Box3(); let at = 0;
+    for (const o of parts) { idx.set(own.get(o), at); at += own.get(o).length; box.union(o.geometry.boundingBox); for (const h of hullsOf(o)) if (h.material === mat) h.removeFromParent(); }
+    const m = new THREE.Mesh(shared(idx, box), mat);
     m.userData.isInk = true; m.raycast = NO_RAY; m.renderOrder = -1;
     parent.add(m);
   }
-  for (const o of fills) { const old = o.geometry; o.geometry = shared(own.get(o)); old.dispose(); }
+  for (const o of fills) { const old = o.geometry; o.geometry = shared(own.get(o), old.boundingBox); old.dispose(); }
   mergeLooseHulls(parent);
 }
 // the rest of a static thing's hulls — parts that sit with their own transform under it — are
@@ -501,16 +509,24 @@ export function mergeStatic(root, keep = [], { vc = false, keepMats = [] } = {})
   parts.forEach(({ o, inks }, pi) => {
     const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, C = g.attributes.color && g.attributes.color.itemSize >= 3 ? g.attributes.color : null, MC = asVc(o) ? o.material.color : null, n = P.count, I = g.index, map = used_[pi];
     m4.multiplyMatrices(inv, o.matrixWorld); nm.getNormalMatrix(m4);
+    // (straight off the arrays when they're plain floats: this runs over every vertex of every prop)
+    const flat = (A) => A && A.array instanceof Float32Array && !A.isInterleavedBufferAttribute && !A.normalized;
+    const e = m4.elements, q = nm.elements, PA = flat(P) && P.itemSize === 3 ? P.array : null, NA = flat(N) && N.itemSize === 3 ? N.array : null;
     for (let i = 0; i < n; i++) {
       const at = map ? map.seen[i] : i; if (at < 0) continue;
       const j = (base + at) * 3;
-      v.fromBufferAttribute(P, i).applyMatrix4(m4); pos[j] = v.x; pos[j + 1] = v.y; pos[j + 2] = v.z;
-      if (N) { v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); nor[j] = v.x; nor[j + 1] = v.y; nor[j + 2] = v.z; }
+      if (PA) { const x = PA[i * 3], y = PA[i * 3 + 1], z = PA[i * 3 + 2], w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15]);
+        pos[j] = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w; pos[j + 1] = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w; pos[j + 2] = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w; }
+      else { v.fromBufferAttribute(P, i).applyMatrix4(m4); pos[j] = v.x; pos[j + 1] = v.y; pos[j + 2] = v.z; }
+      if (NA) { const x = NA[i * 3], y = NA[i * 3 + 1], z = NA[i * 3 + 2];
+        let a = q[0] * x + q[3] * y + q[6] * z, b2 = q[1] * x + q[4] * y + q[7] * z, c = q[2] * x + q[5] * y + q[8] * z; const l = Math.hypot(a, b2, c) || 1;
+        nor[j] = a / l; nor[j + 1] = b2 / l; nor[j + 2] = c / l; }
+      else if (N) { v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); nor[j] = v.x; nor[j + 1] = v.y; nor[j + 2] = v.z; }
       if (uv && U && o.material.map) { uv[(base + at) * 2] = U.getX(i); uv[(base + at) * 2 + 1] = U.getY(i); }
       if (col && MC) { col[j] = MC.r; col[j + 1] = MC.g; col[j + 2] = MC.b; } else if (col && C) { col[j] = C.getX(i); col[j + 1] = C.getY(i); col[j + 2] = C.getZ(i); }
     }
     const tris = [];
-    if (I) for (let k = 0; k < I.count; k++) tris.push(base + map.seen[I.getX(k)]); else for (let k = 0; k < n; k++) tris.push(base + k);
+    if (I) { const IA = I.array; for (let k = 0; k < I.count; k++) tris.push(base + map.seen[IA[k]]); } else for (let k = 0; k < n; k++) tris.push(base + k);
     if (m4.determinant() < 0) for (let k = 0; k < tris.length; k += 3) { const t = tris[k + 1]; tris[k + 1] = tris[k + 2]; tris[k + 2] = t; }   // a mirrored part keeps its facing
     into(asVc(o) ? vcPaint(o.material) : o.material, o.renderOrder, false, tris);
     for (const h of inks) into(h.material, h.renderOrder, true, tris);
