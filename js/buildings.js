@@ -1483,14 +1483,16 @@ export function placeOnPlanet(raw, d, yaw, { weight = 'mid', sink = 0.04, inked 
   settle(g, d, 0.25, sink, yaw);
   conform(g, sink);
   g.userData.conform = sink;                   // floors on it read heights above the terrain
-  return inked ? ink(g, weight) : g;
+  // (its hulls merge into one draw — unless parts of it are shown/hidden on their own: the
+  // train's roofs lift off while you're inside)
+  return inked ? ink(g, weight, { merge: !g.userData.roofMats }) : g;
 }
 // batch placed buildings that share materials (a street of shops) into one
 // mesh per material in world space: a street costs what one shop used to
 export function batchPlaced(groups, weight = 'mid') {
   const g = bake(new THREE.Group(), groups);
   for (const m of g.children) { m.geometry.computeBoundingSphere(); m.geometry.computeBoundingBox(); }
-  return ink(g, weight);
+  return ink(g, weight, { merge: true });
 }
 
 // ── Lantern Park: a round town park (where a dome and a spur road used to be) ─────────

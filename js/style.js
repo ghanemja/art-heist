@@ -129,7 +129,57 @@ function fadeInk(weight) {
 // ink(obj): give every mesh under obj its outline. Hull reuses the mesh's own
 // geometry (no copy), so the cost is one extra draw per inked mesh.
 const NO_RAY = () => {};                     // a shared no-op raycast (a closure would keep its maker's scope alive)
-export function ink(root, weight = 'mid') {
+// one hull for a whole static thing. Its parts (siblings under one parent: a building baked
+// one mesh per material) are moved onto ONE shared vertex buffer — each keeps only its own
+// index into it — and their ink hulls, drawn in the same ink, become a single mesh indexing
+// that same buffer. A building that was ~12 fills + ~12 hull draws is ~12 + 1, and costs no
+// more memory than before (the hull copies nothing but indices).
+function mergeHulls(parent) {
+  const fills = parent.children.filter(o => o.isMesh && !o.isSkinnedMesh && !o.isInstancedMesh && !o.userData.isInk && o.visible &&
+    o.matrix.equals(_ID) && o.geometry.attributes.position && o.geometry.attributes.normal && !o.geometry.attributes.inkW &&
+    !Object.keys(o.geometry.morphAttributes).length);
+  const hullsOf = (o) => o.children.filter(h => h.isMesh && h.userData.isInk && h.geometry === o.geometry && h.matrix.equals(_ID));
+  const byMat = new Map();
+  for (const o of fills) for (const h of hullsOf(o)) { let b = byMat.get(h.material); if (!b) byMat.set(h.material, b = []); b.push(o); }
+  if (![...byMat.values()].some(b => b.length > 1)) return;
+  const withUv = fills.some(o => o.geometry.attributes.uv);
+  let nv = 0; for (const o of fills) nv += o.geometry.attributes.position.count;
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = withUv ? new Float32Array(nv * 2) : null;
+  const IDX = nv > 65535 ? Uint32Array : Uint16Array, base = new Map();
+  let vb = 0;
+  for (const o of fills) {
+    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, n = P.count;
+    for (let i = 0; i < n; i++) {
+      const j = (vb + i) * 3;
+      pos[j] = P.getX(i); pos[j + 1] = P.getY(i); pos[j + 2] = P.getZ(i);
+      nor[j] = N.getX(i); nor[j + 1] = N.getY(i); nor[j + 2] = N.getZ(i);
+      if (uv && U) { uv[(vb + i) * 2] = U.getX(i); uv[(vb + i) * 2 + 1] = U.getY(i); }
+    }
+    base.set(o, vb); vb += n;
+  }
+  const A = { position: new THREE.BufferAttribute(pos, 3), normal: new THREE.BufferAttribute(nor, 3) };
+  if (uv) A.uv = new THREE.BufferAttribute(uv, 2);
+  const indexOf = (o) => { const g = o.geometry, b = base.get(o); if (g.index) { const I = g.index, out = new Array(I.count); for (let k = 0; k < I.count; k++) out[k] = b + I.getX(k); return out; } const out = new Array(g.attributes.position.count); for (let k = 0; k < out.length; k++) out[k] = b + k; return out; };
+  const shared = (idx) => { const g = new THREE.BufferGeometry(); for (const [k, a] of Object.entries(A)) g.setAttribute(k, a); g.setIndex(new THREE.BufferAttribute(new IDX(idx), 1));
+    // bounds from just the vertices this index uses (the shared buffer spans the whole thing)
+    const bb = new THREE.Box3(), v = new THREE.Vector3(); for (const t of idx) bb.expandByPoint(v.set(pos[t * 3], pos[t * 3 + 1], pos[t * 3 + 2]));
+    g.boundingBox = bb; g.boundingSphere = bb.getBoundingSphere(new THREE.Sphere());
+    let r2 = 0; const c = g.boundingSphere.center; for (const t of idx) r2 = Math.max(r2, c.distanceToSquared(v.set(pos[t * 3], pos[t * 3 + 1], pos[t * 3 + 2])));
+    g.boundingSphere.radius = Math.sqrt(r2); return g; };
+  const own = new Map(fills.map(o => [o, indexOf(o)]));
+  // the hulls first (they read each part's old index), then the parts move onto the shared buffer
+  for (const [mat, parts] of byMat) {
+    const idx = []; for (const o of parts) { for (const t of own.get(o)) idx.push(t); for (const h of hullsOf(o)) if (h.material === mat) h.removeFromParent(); }
+    const m = new THREE.Mesh(shared(idx), mat);
+    m.userData.isInk = true; m.raycast = NO_RAY; m.renderOrder = -1;
+    parent.add(m);
+  }
+  for (const o of fills) { const old = o.geometry; o.geometry = shared(own.get(o)); old.dispose(); }
+}
+const _ID = new THREE.Matrix4();
+// merge: the thing never moves and none of its parts are shown/hidden on their own — its
+// hulls become one draw (see mergeHulls)
+export function ink(root, weight = 'mid', { merge = false } = {}) {
   const mat = INK[weight] || INK.mid;
   const list = [];
   root.traverse(o => {
@@ -155,6 +205,7 @@ export function ink(root, weight = 'mid') {
     }
     o.add(line);
   }
+  if (merge) { const parents = new Set(list.filter(o => !o.isSkinnedMesh).map(o => o.parent)); for (const p of parents) mergeHulls(p); }
   return root;
 }
 // mergeStatic(obj): bake a finished, inked thing that never moves (a parked car) into one
