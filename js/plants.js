@@ -246,7 +246,8 @@ export const TREE_KINDS = ['blossom', 'birch', 'maple', 'cypress', 'shade'];
 
 // ── grow a placed group's planting ──
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _UP = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3();
-export function growPlants(scene, group, { seed = 1 } = {}) {
+// (oneInk: one outline for the whole planting instead of one per colour — half the draws)
+export function growPlants(scene, group, { seed = 1, oneInk = false } = {}) {
   const list = group.userData.plants; if (!list?.length) return null;
   group.updateMatrixWorld(true);
   const buckets = new Map(), R = rng(seed * 7919 + list.length);
@@ -272,14 +273,20 @@ export function growPlants(scene, group, { seed = 1 } = {}) {
     }, s, p);
   }
   const out = new THREE.Group(); out.userData.plantsOf = group;
+  const all = [];
   for (const [col, geos] of buckets) {
     const geo = mergeGeometries(geos, false); if (!geo) continue;
     geo.computeBoundingSphere();
     const m = new THREE.Mesh(geo, mat(col));
     m.userData.noInk = true;
-    const line = new THREE.Mesh(geo, swayInk()); line.userData.isInk = true; line.renderOrder = -1; line.raycast = () => {};
-    m.add(line);
+    if (oneInk) all.push(geo);
+    else { const line = new THREE.Mesh(geo, swayInk()); line.userData.isInk = true; line.renderOrder = -1; line.raycast = () => {}; m.add(line); }
     out.add(m);
+  }
+  if (all.length) {
+    const geo = mergeGeometries(all, false); geo.computeBoundingSphere();
+    const line = new THREE.Mesh(geo, swayInk()); line.userData.isInk = true; line.renderOrder = -1; line.raycast = () => {};
+    out.add(line);
   }
   scene.add(out);
   return out;
