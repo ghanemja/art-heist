@@ -6,6 +6,7 @@ import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
 import { createGame } from './game.js';
 import { createCitizens } from './citizens.js';
+import { createCuller } from './cull.js';
 import { createPlaza } from './plaza.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -52,7 +53,8 @@ const plaza = createPlaza({ scene, town, game, player });                  // Ma
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
-window.__v2 = { scene, camera, renderer, town, player, game, citizens, plaza, ROADS, ZONES };
+const culler = createCuller(scene, camera);
+window.__v2 = { culler, scene, camera, renderer, town, player, game, citizens, plaza, ROADS, ZONES };
 
 const clock = new THREE.Clock();
 function loop() {
@@ -80,6 +82,7 @@ function loop() {
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
+  culler.update();                                // people and cars round the far side of the planet aren't drawn
   renderer.render(scene, camera);
   game.afterRender?.();                              // the phone's camera grabs the frame here
 }

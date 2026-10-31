@@ -128,6 +128,7 @@ function fadeInk(weight) {
 
 // ink(obj): give every mesh under obj its outline. Hull reuses the mesh's own
 // geometry (no copy), so the cost is one extra draw per inked mesh.
+const NO_RAY = () => {};                     // a shared no-op raycast (a closure would keep its maker's scope alive)
 export function ink(root, weight = 'mid') {
   const mat = INK[weight] || INK.mid;
   const list = [];
@@ -140,19 +141,86 @@ export function ink(root, weight = 'mid') {
   for (const o of list) {
     const line = new THREE.Mesh(o.geometry, o.geometry.attributes.inkW ? fadeInk(weight) : mat);
     line.userData.isInk = true;
-    line.raycast = () => {};
+    line.raycast = NO_RAY;
     line.renderOrder = -1;
     if (o.isSkinnedMesh) {                       // a skinned hull must skin too
       // (a geometry with an `inkW` attribute fades its stroke per vertex — limbs use it so
       // no line is drawn where an arm or leg grows out of the body)
       const sk = new THREE.SkinnedMesh(o.geometry, skinnedInk(weight, !!o.geometry.attributes.inkW));
       sk.bind(o.skeleton, o.bindMatrix);
-      sk.userData.isInk = true; sk.raycast = () => {}; sk.frustumCulled = false;
+      sk.userData.isInk = true; sk.raycast = NO_RAY; sk.frustumCulled = false;
       o.parent.add(sk);
       sk.position.copy(o.position); sk.quaternion.copy(o.quaternion); sk.scale.copy(o.scale);
       continue;
     }
     o.add(line);
+  }
+  return root;
+}
+// mergeStatic(obj): bake a finished, inked thing that never moves (a parked car) into one
+// mesh per material — its fills and its ink hulls alike — so it costs a handful of draws
+// instead of hundreds (a built car is ~235). Every merged mesh shares ONE set of vertex
+// buffers (each has only its own index), so a hull costs no extra memory, as before.
+// The ink is screen-space, so it looks the same. `keep`: parts that move on their own (a
+// car's wheels) — left as they are.
+export function mergeStatic(root, keep = []) {
+  const skip = new Set(keep);
+  root.updateMatrixWorld(true);
+  const inv = root.matrixWorld.clone().invert(), m4 = new THREE.Matrix4(), nm = new THREE.Matrix3();
+  const parts = [], used = new Set();
+  const walk = (o) => {
+    if (skip.has(o) || (o !== root && !o.visible)) return;
+    if (o.isMesh && !o.isSkinnedMesh && !o.isInstancedMesh && !o.userData.isInk && !o.geometry.morphAttributes.position) {
+      // its hulls: ink children drawn from this same geometry (a fading hull keeps its own mesh)
+      const inks = o.children.filter(c => c.isMesh && c.userData.isInk && c.geometry === o.geometry && !o.geometry.attributes.inkW && c.visible);
+      inks.forEach(c => used.add(c)); used.add(o);
+      parts.push({ o, inks });
+    }
+    for (const c of o.children) walk(c);
+  };
+  walk(root);
+  if (!parts.length) return root;
+  const withUv = parts.some(p => p.o.material.map);
+  // each part's vertices: only those its index uses (an already-merged part shares a big
+  // buffer with its siblings — copy just its own)
+  const used_ = parts.map(({ o }) => { const g = o.geometry, I = g.index, n = g.attributes.position.count;
+    if (!I) return null; const seen = new Int32Array(n).fill(-1); let k = 0; for (let t = 0; t < I.count; t++) { const x = I.getX(t); if (seen[x] < 0) seen[x] = k++; } return { seen, k }; });
+  let nv = 0; parts.forEach((p, i) => { nv += used_[i] ? used_[i].k : p.o.geometry.attributes.position.count; });
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = withUv ? new Float32Array(nv * 2) : null;
+  const buckets = new Map();                                // material + order → triangle indices
+  const into = (mat, order, ink, tris) => { const k = mat.uuid + ':' + order; let b = buckets.get(k); if (!b) buckets.set(k, b = { mat, order, ink, idx: [] }); for (const t of tris) b.idx.push(t); };
+  const v = new THREE.Vector3();
+  let base = 0;
+  parts.forEach(({ o, inks }, pi) => {
+    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, n = P.count, I = g.index, map = used_[pi];
+    m4.multiplyMatrices(inv, o.matrixWorld); nm.getNormalMatrix(m4);
+    for (let i = 0; i < n; i++) {
+      const at = map ? map.seen[i] : i; if (at < 0) continue;
+      const j = (base + at) * 3;
+      v.fromBufferAttribute(P, i).applyMatrix4(m4); pos[j] = v.x; pos[j + 1] = v.y; pos[j + 2] = v.z;
+      if (N) { v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); nor[j] = v.x; nor[j + 1] = v.y; nor[j + 2] = v.z; }
+      if (uv && U && o.material.map) { uv[(base + at) * 2] = U.getX(i); uv[(base + at) * 2 + 1] = U.getY(i); }
+    }
+    const tris = [];
+    if (I) for (let k = 0; k < I.count; k++) tris.push(base + map.seen[I.getX(k)]); else for (let k = 0; k < n; k++) tris.push(base + k);
+    if (m4.determinant() < 0) for (let k = 0; k < tris.length; k += 3) { const t = tris[k + 1]; tris[k + 1] = tris[k + 2]; tris[k + 2] = t; }   // a mirrored part keeps its facing
+    into(o.material, o.renderOrder, false, tris);
+    for (const h of inks) into(h.material, h.renderOrder, true, tris);
+    base += map ? map.k : n;
+  });
+  const A = { position: new THREE.BufferAttribute(pos, 3), normal: new THREE.BufferAttribute(nor, 3) };
+  if (uv) A.uv = new THREE.BufferAttribute(uv, 2);
+  // out with the old: the merged parts and their hulls, then any group left empty
+  for (const o of used) o.removeFromParent();
+  const prune = (o) => { for (const c of [...o.children]) prune(c); if (o !== root && !skip.has(o) && o.type === 'Group' && !o.children.length) o.removeFromParent(); };
+  prune(root);
+  for (const { mat, order, ink, idx } of buckets.values()) {
+    const g = new THREE.BufferGeometry();
+    for (const [k, a] of Object.entries(A)) g.setAttribute(k, a);
+    g.setIndex(idx);
+    const m = new THREE.Mesh(g, mat); m.renderOrder = order;
+    if (ink) { m.userData.isInk = true; m.raycast = NO_RAY; }      // (a module-level no-op: a closure here would keep the whole merge's scratch alive)
+    root.add(m);
   }
   return root;
 }
