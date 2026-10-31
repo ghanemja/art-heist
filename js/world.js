@@ -31,7 +31,8 @@ const extraFlats = [];                                          // {d, r, h} —
 // plane: a tangent point (unit dir). Then the ground is levelled to a true flat PLANE
 // touching the planet there, not a curved shell: on a radius-40 planet a 14-unit
 // building's edges would otherwise sit ~0.6 above the ground (floating, looking slanted).
-export function flatten(d, r, h = LAND, { plane = null, blend = null } = {}) { extraFlats.push({ d: d.clone(), r, h, plane: plane?.clone(), blend }); }
+// lawn: paint the levelled ground (and its easing) grass however high it stands — see inLawn()
+export function flatten(d, r, h = LAND, { plane = null, blend = null, lawn = false } = {}) { extraFlats.push({ d: d.clone(), r, h, plane: plane?.clone(), blend, lawn }); }
 
 // rivers and lakes carved like the sea (after everything else): isWater sees them, and the sea
 // sheet (one sphere at sea level) shows through wherever the ground dips under it.
@@ -213,6 +214,22 @@ export function smooth(pts, passes = 3, closed = false) {
 
 // ── roads: every carriageway's centre-line samples, so nothing builds on one ──
 export const ROADS = [];          // {pts, half}
+// every lamp in the world, once the town is built (collectLamps): { dir, kind } — kind 'street'
+// (props lamp()), 'post' (a building's lampPost) or 'low' (the grounds' bollard lamps). Lamps
+// leave a marker (userData.lampMark) that bake() keeps as userData.lamps [x, z, kind]; the dev
+// check (?lamps=1) reads this to keep every lamp off the carriageways and clear of doors
+export const LAMPS = [];
+export function collectLamps(roots) {
+  const v = new THREE.Vector3();
+  for (const r of roots) {
+    r.updateMatrixWorld(true);
+    r.traverse(o => {
+      if (o.userData.lampMark) LAMPS.push({ dir: o.getWorldPosition(v).clone().normalize(), kind: o.userData.lampMark });
+      for (const [x, z, kind] of o.userData.lamps || []) LAMPS.push({ dir: o.localToWorld(v.set(x, 0, z)).clone().normalize(), kind });
+    });
+  }
+  return LAMPS;
+}
 // paved ground a car may drive off the road onto (car parks and their drives): (dir) => bool.
 // Inside one, the car's keep-to-the-road assist lets go (player.js keepOnRoad)
 export const LOTS = [];
@@ -620,7 +637,7 @@ function noteJunctions(idx) {
 // lay a road: pts = centre-line directions. Options: half (half-width), closed, dashed,
 // bulb ('start' | 'end' | 'both': a turning circle there), deck (drawn by its own structure),
 // meet (false: leave the ends exactly where given), except (zones its curve may enter)
-export function buildRoad(scene, pts, { half = 1.1, closed = false, dashed = true, bulb = null, meet = true, except = null } = {}) {
+export function buildRoad(scene, pts, { half = 1.1, closed = false, dashed = true, bulb = null, meet = true, except = null, square = null } = {}) {
   pts = resample(pts, 0.6, closed);
   let disc = closed ? discOf(pts, half) : null;
   if (!disc) {
@@ -640,7 +657,9 @@ export function buildRoad(scene, pts, { half = 1.1, closed = false, dashed = tru
     if (tc.sb > 0.05) pts = trimEnd(pts, e, tc.sb);
     circles.push(tc);
   }
-  const rd = { pts, half, closed, dashed: dashed && half > 0.8 && !disc, disc };
+  // square: 'end' (or 'start'): that end is cut off square, not rounded — it runs a lap under paving
+  // (a forecourt's front edge), so a round end would show past it
+  const rd = { pts, half, closed, dashed: dashed && half > 0.8 && !disc, disc, square };
   ROADS.push(rd);
   noteJunctions(ROADS.length - 1);
   for (const tc of circles) {
@@ -700,7 +719,8 @@ export function buildRoadSurface(scene) {
     if (rd.deck) return;
     if (rd.disc) { const c = rd.disc.c.clone().multiplyScalar(R); addSeg({ road: i, h: rd.disc.r, ax: c.x, ay: c.y, az: c.z, bx: c.x, by: c.y, bz: c.z }); return; }
     const P = lines[i], n = P.length, m = rd.closed ? n : n - 1;
-    for (let k = 0; k < m; k++) { const a = P[k], b = P[(k + 1) % n]; addSeg({ road: i, h: rd.half, ax: a.x * R, ay: a.y * R, az: a.z * R, bx: b.x * R, by: b.y * R, bz: b.z * R }); }
+    for (let k = 0; k < m; k++) { const a = P[k], b = P[(k + 1) % n]; addSeg({ road: i, h: rd.half, ax: a.x * R, ay: a.y * R, az: a.z * R, bx: b.x * R, by: b.y * R, bz: b.z * R,
+      fa: !rd.closed && k === 0 && rd.square === 'start', fb: !rd.closed && k === m - 1 && rd.square === 'end' }); }
   });
   const dRoad = new Float64Array(ROADS.length).fill(1e9), touched = [];
   const field = (v) => {                                              // v: unit dir → signed distance to the carriageway's edge
@@ -709,9 +729,13 @@ export function buildRoadSurface(scene) {
     for (const id of list) {
       const s = segs[id];
       const abx = s.bx - s.ax, aby = s.by - s.ay, abz = s.bz - s.az, l2 = abx * abx + aby * aby + abz * abz;
-      let t = l2 > 1e-12 ? ((x - s.ax) * abx + (y - s.ay) * aby + (z - s.az) * abz) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const t0 = l2 > 1e-12 ? ((x - s.ax) * abx + (y - s.ay) * aby + (z - s.az) * abz) / l2 : 0, t = t0 < 0 ? 0 : t0 > 1 ? 1 : t0;
       const dx = x - s.ax - abx * t, dy = y - s.ay - aby * t, dz = z - s.az - abz * t;
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) - s.h;
+      let d = Math.sqrt(dx * dx + dy * dy + dz * dz) - s.h;
+      if ((s.fb && t0 > 1) || (s.fa && t0 < 0)) {                     // a square end: a box past it, not a round cap
+        const over = (t0 > 1 ? t0 - 1 : -t0) * Math.sqrt(l2), ex = x - s.ax - abx * t0, ey = y - s.ay - aby * t0, ez = z - s.az - abz * t0;
+        d = Math.max(Math.sqrt(ex * ex + ey * ey + ez * ez) - s.h, over);
+      }
       if (dRoad[s.road] === 1e9) touched.push(s.road);
       if (d < dRoad[s.road]) dRoad[s.road] = d;
     }
@@ -978,9 +1002,26 @@ export function groundColour(v, h, c, fresh = h < SEA + 0.02 && inFreshWater(v))
   }
   if (h < SEA - 0.05) return c.copy(GC(PAL.waterDeep));
   if (h < SEA + 0.22) return c.copy(GC(PAL.sand));
-  if (h > 2.6) return c.copy(GC(PAL.snow));
-  if (h > 1.4) return c.copy(GC(PAL.rock)).lerp(GC(PAL.earth), wash > 0 ? 0.3 : 0);
+  if (h > 1.4 && !inLawn(v, wash)) {
+    if (h > 2.6) return c.copy(GC(PAL.snow));
+    return c.copy(GC(PAL.rock)).lerp(GC(PAL.earth), wash > 0 ? 0.3 : 0);
+  }
   return c.copy(GC(wash > 0.45 ? PAL.meadow : wash < -0.5 ? PAL.grassDeep : PAL.grass));
+}
+// A levelled site that asked for a lawn (flatten { lawn: true }) is painted grass however high
+// it stands. The bands above go by height alone (over 1.4 is rock/earth, over 2.6 snow), and a
+// site levelled to a true PLANE on a hilltop sits high: Makers' Row's plane touches the planet at
+// ~1.2 and rises off the sphere toward its rim (~2.9 at r 11), so its whole yard and easing ring
+// came out bare beige "earth" round the car park. Opt-in, so no other site changes. The lawn
+// reaches into the easing ring by a wash-wobbled amount, so where it meets the natural hillside's
+// colour the edge is soft and irregular, not a drawn circle.
+function inLawn(v, wash) {
+  for (const f of extraFlats) {
+    if (!f.lawn) continue;
+    const blend = f.blend ?? (f.plane ? 9 : 5);
+    if (arc(v, f.d) < f.r + blend * (0.72 + 0.14 * wash)) return true;
+  }
+  return false;
 }
 export let groundMaterial = null;
 export function buildPlanet(scene) {

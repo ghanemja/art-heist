@@ -703,3 +703,63 @@ export function sit(inst) {
   for (const n of ['lowerarmL', 'lowerarmR']) turn(inst, n, side, 0.4);
   turn(inst, 'upperarmL', fwd, 0.09); turn(inst, 'upperarmR', fwd, -0.09);
 }
+
+// ── the country club's activities (club.js): she swims, she swings a golf club ──
+// swimming breaststroke, the body tipped forward by the caller: c is the stroke's phase (0…1:
+// pull, tuck, reach, glide), k how hard she's swimming (0 treading water … 1 full strokes)
+export function swimPose(inst, c, k = 1) {
+  if (!inst.bones.hips) return;
+  for (const n of BONES) if (inst.bones[n]) inst.bones[n].quaternion.copy(inst.bind[n]);
+  const { fwd, up, side } = AX, S = (x) => x * x * (3 - 2 * x);
+  // arms: pull (from overhead, sweep wide and down to the shoulders) → tuck (hands in under the
+  // chin, elbows bent) → reach (overhead, together) → glide. Treading water: a small scull in front.
+  let lift, spread, bend;
+  if (c < 0.3) { const u = S(c / 0.3); lift = 2.6 - 1.0 * u; spread = 0.2 + 0.85 * u; bend = 0.1 + 0.4 * u; }
+  else if (c < 0.5) { const u = S((c - 0.3) / 0.2); lift = 1.6 - 0.3 * u; spread = 1.05 - 0.85 * u; bend = 0.5 + 1.3 * u; }
+  else if (c < 0.75) { const u = S((c - 0.5) / 0.25); lift = 1.3 + 1.3 * u; spread = 0.2; bend = 1.8 - 1.7 * u; }
+  else { lift = 2.6; spread = 0.2; bend = 0.1; }
+  const tread = 1 - k, sc = Math.sin(c * Math.PI * 2);
+  lift = lift * k + tread * 1.2; spread = spread * k + tread * (0.45 + 0.25 * sc); bend = bend * k + tread * 1.1;
+  turn(inst, 'upperarmL', side, lift); turn(inst, 'upperarmR', side, lift);
+  turn(inst, 'upperarmL', fwd, spread); turn(inst, 'upperarmR', fwd, -spread);
+  turn(inst, 'lowerarmL', side, bend); turn(inst, 'lowerarmR', side, bend);
+  // legs: the frog kick — knees draw up and out while the arms tuck, then snap straight together
+  const kick = c < 0.35 ? 0 : c < 0.55 ? S((c - 0.35) / 0.2) : c < 0.75 ? 1 - S((c - 0.55) / 0.2) : 0;
+  const kk = kick * k + tread * (0.35 + 0.25 * sc);
+  for (const [L, s] of [['L', 1], ['R', -1]]) {
+    turn(inst, 'upperleg' + L, side, 0.7 * kk);
+    turn(inst, 'upperleg' + L, fwd, s * 0.45 * kk);
+    turn(inst, 'lowerleg' + L, side, -1.5 * kk);
+    turn(inst, 'foot' + L, side, 0.5 - 0.3 * kk);              // toes pointed on the glide
+  }
+  // head up out of the water, looking where she's going; the chest lifts on the pull
+  turn(inst, 'neck', side, -0.45);
+  turn(inst, 'head', side, -0.5 - 0.12 * k * sc);
+  turn(inst, 'spine2', side, -0.12 * k * Math.max(0, sc));
+  turn(inst, 'head', up, 0.25 * Math.sin(c * Math.PI * 2) * tread);
+}
+// a golf swing: s runs −1 (the top of the backswing) … 0 (address / impact) … 1 (the follow-
+// through); she faces the ball, the target off her left shoulder
+export function swingPose(inst, s, t = 0) {
+  if (!inst.bones.hips) return;
+  for (const n of BONES) if (inst.bones[n]) inst.bones[n].quaternion.copy(inst.bind[n]);
+  const { fwd, up, side } = AX;
+  const back = Math.max(0, -s), thru = Math.max(0, s);
+  // the stance: knees soft, a bend from the hips, the head down over the ball
+  for (const L of ['L', 'R']) { turn(inst, 'upperleg' + L, side, 0.22); turn(inst, 'lowerleg' + L, side, -0.34); turn(inst, 'foot' + L, side, 0.12); }
+  turn(inst, 'upperlegL', fwd, 0.08); turn(inst, 'upperlegR', fwd, -0.08);
+  turn(inst, 'spine1', side, 0.38 - 0.18 * thru);
+  turn(inst, 'head', side, 0.25 - 0.35 * thru);
+  // the turn: shoulders coil away (right) on the backswing and unwind through to face the
+  // target; the hips go half as far
+  const coil = -1.25 * back + 1.45 * thru;
+  turn(inst, 'hips', up, coil * 0.4);
+  turn(inst, 'spine2', up, coil * 0.6);
+  turn(inst, 'head', up, -coil * 0.45 * (1 - thru * 0.6));     // the eyes stay on the ball, then follow it
+  // arms hang together to the grip, then rise with the club: high at the top, high again at the finish
+  const lift = 0.42 + 1.25 * back + 1.5 * thru;
+  turn(inst, 'upperarmL', side, lift); turn(inst, 'upperarmR', side, lift);
+  turn(inst, 'upperarmL', fwd, -0.3 - 0.3 * back + 0.15 * thru); turn(inst, 'upperarmR', fwd, 0.3 + 0.1 * back - 0.3 * thru);   // (the arms cross the chest to keep both hands on the grip)
+  turn(inst, 'lowerarmL', side, 0.1 + 0.25 * thru); turn(inst, 'lowerarmR', side, 0.25 + 0.9 * back + 0.35 * thru);
+  if (!s) turn(inst, 'spine2', up, 0.03 * Math.sin(t * 2.3));  // a little waggle at address
+}

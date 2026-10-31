@@ -390,7 +390,7 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
 
   function update(dt, t) {
     const M = MODES[st.mode];
-    stickEl.classList.toggle('on', !!(st.enabled && st.playing));
+    stickEl.classList.toggle('on', !!((st.enabled || st.stickOn) && st.playing));   // (stickOn: club.js steers her swimming with it)
     const up = st.dir;
     // the camera keeps its own facing, carried over the curve of the planet;
     // walking is relative to it, and it never chases your turns (no spiralling)
