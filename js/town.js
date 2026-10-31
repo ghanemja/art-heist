@@ -636,7 +636,7 @@ export function buildTown(scene) {
     feet(g);
     // its flower beds' planting (plants.js), in the shared breeze — none on a road or rail
     g.userData.plants = g.userData.plants.filter(p => !decoBlocked(g.localToWorld(new THREE.Vector3(p.x, 0, p.z)).normalize(), 0.1));
-    g.userData.plantMesh = growPlants(scene, g, { seed: 77, oneInk: true });
+    g.userData.plantMesh = growPlants(scene, g, { seed: 77, merge: true });
     out.park = { dir: d, root: g, ...g.userData.park };
   }
   for (const [k, s] of Object.entries(PLAN.sites)) {
