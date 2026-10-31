@@ -6,13 +6,13 @@ import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked } from './world.js';
-import { PAL, paint, ink, blobShadow } from './style.js';
+import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js?v=13';
+import { buildMuseum } from '../museum.js?v=16';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
-import { museumGrounds, shopApproach, APPROACH_STOP, makersRow, ROW_X } from './grounds.js';
+import { museumGrounds, shopApproach, APPROACH_STOP, APPROACH_Z1, MOUTH_LAP, makersRow, ROW_X, ROW, ROW_MOUTH_LAP } from './grounds.js';
 import { addKoi } from './pondwater.js';
 import { growPlants } from './plants.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
@@ -85,6 +85,32 @@ function resolveRow() {
   return ROWP;
 }
 
+// a ground piece's frame as placeOnPlanet sets it down at `hub` facing `yaw`, with exact
+// conversions between a world direction and its own (x, z) — the piece is laid on the ground
+// along its OWN up (placeOnPlanet's conform), so frame()'s tangent-plane units and a radius-R
+// point run through the inverse matrix are both a few % off at its edge (that put a spur's end
+// ~0.4 out). Used to run a spur road exactly onto a paved edge (Makers' Row, the shops' forecourts)
+function placeFrame(hub, yaw) {
+  const probe = new THREE.Object3D();
+  settle(probe, hub, 0, 0, yaw); probe.updateMatrixWorld(true);
+  const inv = probe.matrixWorld.clone().invert();
+  const toLocal = (dir) => dir.clone().normalize().multiplyScalar(radiusAt(dir)).applyMatrix4(inv);
+  const toDir = (x, z) => {                        // the ground straight below local (x, z), as a direction
+    const v = new THREE.Vector3(x, 0, z);
+    for (let it = 0; it < 3; it++) { const w = probe.localToWorld(v.clone()).normalize(); v.y = toLocal(w).y; }
+    return probe.localToWorld(v).normalize();
+  };
+  return { hub, yaw, probe, inv, toLocal, toDir };
+}
+// the row's car park as it is placed (makersRow, below)
+function rowPlace() {
+  const RW = resolveRow(), hub = RW.L(0, 0);
+  return placeFrame(hub, yawToFace(hub, RW.L(0, 40)));
+}
+// a project shop's cobbled forecourt (shopApproach, below), where it has one: not in the row, no car park
+const hasForecourt = (p) => isProjectShop(p.style) && !ROW_KEYS.includes(p.key) && !p.lot;
+const shopPlace = (p) => placeFrame(PDIR[p.key], yawToFace(PDIR[p.key], TOWN_C));
+
 // ── the museum's sculpture garden (landscaping) sits on its OWN level terrace: behind the museum
 // the ground rises off the museum's flat, and laid onto that slope the pool tilted and floated.
 // Its spot (museum-local [x, z]) is picked here, before the planet is shaped, well behind the
@@ -144,7 +170,14 @@ export function planTown() {
   }
   // Makers' Row: its shops and car park on one true plane (at the ground's own height there), so
   // nothing on it floats or tilts
-  { const c = RW.L(0, 4.2); reserve(c, 10.6, 'lm:row'); flatten(c, 11.4, Math.max(0.45, surfH(c)), { plane: c, blend: 8 }); }
+  // (sized to the redesigned court, grounds.js ROW.site: it used to reserve r 10.6 and level r 11.4
+  // easing over 8 round a car park twice the size. The plane must still take both shops and
+  // Behavior Search's outer ramp, so it centres a little nearer the shops. lawn: the site stands
+  // on a hilltop, and the plane rising off the sphere put the whole yard in the ground's rock/earth
+  // colour band — it is painted grass instead, see world.js inLawn)
+  { const S = ROW.site, c = RW.L(0, S.cz), cl = RW.L(0, S.levelZ);
+    reserve(c, S.reserve, 'lm:row');
+    flatten(cl, S.level, Math.max(0.45, surfH(cl)), { plane: cl, blend: S.blend, lawn: true }); }
   reserve(llv(PLAN.park.at), PLAN.park.r, 'park'); flatten(llv(PLAN.park.at), PLAN.park.r + 1, undefined, { blend: 6 });
   planMuseumGarden();                                     // last: it keeps clear of everything reserved above
 }
@@ -228,19 +261,33 @@ export function buildTown(scene) {
   for (const L of lines) buildRoad(scene, L.pts, { half: L.half, dashed: L.half > 0.9 });
 
   // spurs: boulevard → each site / project, ending in front of it
-  const spur = (target, stopShort, key) => {
+  // (via: a point it passes on its way in — a forecourt's spur comes in square to the paving's
+  // edge from there, so its square end lies along that edge: no wedge of grass at one corner)
+  const spur = (target, stopShort, key, via = null) => {
     let best = out.boulevard[0];
     for (const p of out.boulevard) if (arc(p, target) < arc(best, target)) best = p;
     const total = arc(best, target);
     if (total < stopShort + 1.5) return null;
     const pts = [];
-    const n = Math.max(6, Math.round(total / 1.5));
-    for (let k = 0; k <= n; k++) pts.push(slerpDir(best, target, (k / n) * (1 - stopShort / total)));
+    let lock = Infinity;                           // points from here on (the curve round via and the lead-in) stay put
+    if (via && arc(best, via) > 4 && arc(best, via) < total) {
+      // in to A, round the corner at via (a quadratic curve A → B, via its control point), then
+      // straight from B onto the target
+      const dIn = arc(best, via), dOut = arc(via, target), A = slerpDir(best, via, 1 - 2.5 / dIn), B = slerpDir(via, target, 1.5 / dOut);
+      const n = Math.max(3, Math.round((dIn - 2.5) / 1.5)), m = Math.max(3, Math.round((dOut - 1.5) / 0.5));
+      for (let k = 0; k <= n; k++) pts.push(slerpDir(best, A, k / n));
+      lock = pts.length;
+      for (let k = 1; k <= 6; k++) { const t = k / 6; pts.push(A.clone().multiplyScalar((1 - t) ** 2).addScaledVector(via, 2 * t * (1 - t)).addScaledVector(B, t * t).normalize()); }
+      for (let k = 1; k <= m; k++) pts.push(slerpDir(B, target, k / m));
+    } else {
+      const n = Math.max(6, Math.round(total / 1.5));
+      for (let k = 0; k <= n; k++) pts.push(slerpDir(best, target, (k / n) * (1 - stopShort / total)));
+    }
     const mine = z => z.key === key || z.key === key.replace('lm:', 'lot:');     // its own shop and car park
-    deflect(pts, { keep: i => i === 0 || i === pts.length - 1, except: mine, clear: 1.8 });
+    deflect(pts, { keep: i => i === 0 || i >= lock || i === pts.length - 1, except: mine, clear: 1.8 });
     // smoothing rounds corners back INTO reserved ground: push the smoothed line out again
     const sm = smooth(pts, 2);
-    deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: mine, clear: 1.8 });
+    deflect(sm, { keep: i => i === 0 || i >= lock || i === sm.length - 1, except: mine, clear: 1.8 });
     const built = buildRoad(scene, sm, { half: 0.85, dashed: false });
     out.spurs.push({ key, pts: built });
     return built;
@@ -249,14 +296,21 @@ export function buildTown(scene) {
   // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
   // everything built after (blocks, lamps, the verge trees and bushes) see them —
   // laid later, a spur ran straight over the verge planting it crossed
-  // (landscaping: each shop's spur stops short of its cobbled forecourt — see shopApproach)
+  // (landscaping: a shop's spur runs onto its cobbled forecourt's front edge — see shopApproach)
   const spurEnds = {}, groundsKeep = [];       // groundsKeep: ground the landscaping has taken (not solid)
   for (const p of PLAN.projects) {
     if (ROW_KEYS.includes(p.key)) continue;               // the row's shops share one spur, below
-    const pts = spur(PDIR[p.key], p.style === 'library' ? 4.6 : isProjectShop(p.style) ? APPROACH_STOP : 3.7, 'lm:' + p.key);
+    // a shop with a cobbled forecourt: its spur runs right onto the forecourt's front edge, centred,
+    // MOUTH_LAP under it (it stopped APPROACH_STOP out, and a cobble lane patched the gap)
+    const F = hasForecourt(p) && shopPlace(p);
+    const pts = F ? spur(F.toDir(0, APPROACH_Z1 - MOUTH_LAP), 0, 'lm:' + p.key, F.toDir(0, APPROACH_Z1 + 3.2))
+      : spur(PDIR[p.key], p.style === 'library' ? 4.6 : isProjectShop(p.style) ? APPROACH_STOP : 3.7, 'lm:' + p.key);
     if (pts) spurEnds[p.key] = pts[pts.length - 1].clone();
   }
-  { const RW = resolveRow(), pts = spur(RW.L(0, 6.0), 6.1, 'lm:row');   // ends just past the car park's aisle
+  // Makers' Row: the spur runs right up to the parking court's front edge (ROW.z1) and just
+  // under it, centred on the lot — an entrance, not a road stopping 1.2 short with a wider,
+  // offset cobble tongue patched across the gap (makersRow() builds the mouth to this end)
+  { const pts = spur(rowPlace().toDir(0, ROW.z1 - ROW_MOUTH_LAP), 0, 'lm:row');
     if (pts) spurEnds.row = pts[pts.length - 1].clone(); }
   for (const [k, s] of Object.entries(PLAN.sites))
     // (the harbour's road runs on onto the quay's paving: it stopped half a metre short, on the grass)
@@ -265,7 +319,7 @@ export function buildTown(scene) {
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
   {
-    const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/', openDoor: true });
+    const mus = buildMuseum({ lite: false, glowMats: [], artBase: './artworks/', openDoor: true, spin: 0.22 });
     restyle(mus.group);
     ink(mus.group, 'mid', { merge: true });              // (one hull for its static parts)
     settle(mus.group, mDir, 6, 0.1, yawToFace(mDir, TOWN_C));
@@ -343,15 +397,32 @@ export function buildTown(scene) {
   out.vanSpot = [2 * P - 0.2, -(0.5) * P];
   out.vanYaw = yawToFace(fC(...out.vanSpot), fC(out.vanSpot[0], out.vanSpot[1] + 5));
   add(batchPlaced(out.shops.map(sp => sp.root)));      // the shops stay as frames for their floors
-  // Main Street's lamps stand at the kerb; bunting is strung across the street
+  // ── downtown's street lamps stand where real ones do: on the kerb side of the pavement, LAMP_IN
+  // in from the carriageway's edge (past the kerb strip, half + 0.28), at the corners and between
+  // shopfronts — never mid-pavement, never in front of a door, a window, steps or the pavement's
+  // furniture, never two within 1.5 (a building's own lanterns count: the library's at its steps).
+  // They're gathered into one group and baked to one draw per material (lampsDone, below) ──
+  const LAMP_IN = 0.45, lampsG = new THREE.Group(), lampAt = [];
+  const kerbGap = (d) => { let m = 1e9; for (const rd of ROADS) for (const q of rd.pts) { const e = arc(d, q) - rd.half; if (e < m) m = e; } return m; };
+  for (const sp of out.shops) for (const [x, z] of sp.root.userData.lamps || []) lampAt.push(sp.root.localToWorld(new THREE.Vector3(x, 0, z)).normalize());
+  const lampOK = (d, minGap = 1.5) => {
+    const g = kerbGap(d);
+    if (g < LAMP_IN - 0.1 || g > LAMP_IN + 0.2 || zoneHit(d, 0.3)) return false;           // at the kerb, off the road
+    if (out.colliders.some(c => !c.soft && arc(d, c.dir) < c.r + 0.4)) return false;        // clear of furniture and walls
+    if (out.cafeSpot && arc(d, fC(...out.cafeSpot)) < 1.25) return false;                   // the café's tables (story.js)
+    return !lampAt.some(q => arc(d, q) < minGap);
+  };
+  const putLamp = (d) => { lampsG.add(settle(lamp(), d, 0.2, 0.02)); solid(d, 0.15); lampAt.push(d); };
+  // Main Street: each terrace's kerb gets a lamp at its corners and on its party walls (between two
+  // shopfronts), as many as it had before (one per ~2.8 of frontage), corners first
   for (const t of [...MAIN_STREET.north, ...MAIN_STREET.south]) {
-    const n = Math.max(1, Math.round((t.x[1] - t.x[0]) / 2.8)), s = MAIN_STREET.north.includes(t) ? 1 : -1;
-    for (let k = 0; k < n; k++) {
-      const x = t.x[0] + (t.x[1] - t.x[0]) * (k + 0.5) / n, y = s * (SHOP_Y - 1.2);
-      if (out.cafeSpot && Math.abs(x - out.cafeSpot[0]) < 1.2 && Math.sign(out.cafeSpot[1]) === s) continue;
-      add(settle(lamp(), fC(x, y), 0.2, 0.02));
-      solid(fC(x, y), 0.15);
-    }
+    const s = MAIN_STREET.north.includes(t) ? 1 : -1, y = s * (ROAD_MAJOR + LAMP_IN);
+    const n = Math.max(1, Math.round((t.x[1] - t.x[0]) / 2.8)), mid = (t.x[0] + t.x[1]) / 2;
+    const walls = [], tot = t.shops.reduce((a, sp) => a + sp.w, 0);
+    let acc = 0; for (const sp of t.shops.slice(0, -1)) { acc += sp.w; walls.push(t.x[0] + (t.x[1] - t.x[0]) * acc / tot); }
+    const cands = [t.x[0] - 0.08, t.x[1] + 0.08, ...walls.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))];
+    let k = 0;
+    for (const x of cands) { if (k >= n) break; const d = fC(x, y); if (lampOK(d, 2.0)) { putLamp(d); k++; } }
   }
   for (const x of [-4.4, 4.4, -7.2, 7.2, 1.6, -1.6]) add(bunting(fC, x, SHOP_Y));
   // the story's shopfronts: the café (tables out front) and Frame & Co. (the van)
@@ -402,20 +473,59 @@ export function buildTown(scene) {
     }
     (out.infills ??= []).push({ dir: md, front: fC(mx, my + 3 * A.faceY), kind: A.kind === 'block' && Bn.kind === 'block' ? 'block' : 'pocket' });
   }
-  // street lamps at junctions, trees along the boulevard verge
+  // the grid's junctions: a lamp on one of its four kerb corners, the first that's at the kerb and
+  // clear — beside a building's side, never in front of its face (blocks face ±y: 0.8 clear of a
+  // front or back, 0.3 of a side), off a little park's lawn, and 3 from the next. (They stood
+  // 1.6 off every other junction's middle: there, two main roads meet and the block's building
+  // reaches to 0.34 off each kerb, so the lamp stood in the building's corner)
+  const inCell = (x, y) => [...cells.values()].some(c => c.kind === 'park' ? Math.hypot(x - c.x, y - c.y) < P / 2 - ROAD_MAJOR + 0.15
+    : Math.abs(x - c.x) < c.w / 2 + 0.3 && Math.abs(y - c.y) < c.d / 2 + 0.8);
   for (let i = -K; i <= K; i++) for (let j = -K; j <= K; j++) {
-    if ((i + j) % 2) continue;
-    const x = i * P + 1.6, y = j * P + 1.6;
-    if (!inTown(x, y) || inShops(x, y, 0.5)) continue;
-    const d = fC(x, y);
-    if (zoneHit(d, 0.4) || onRoad(d, 0.35)) continue;
-    add(settle(lamp(), d, 0.2, 0.02));
-    solid(d, 0.15);
+    const hx = i % 2 === 0 ? ROAD_MAJOR : ROAD_MINOR, hy = j % 2 === 0 ? ROAD_MAJOR : ROAD_MINOR;
+    for (const [sx, sy] of [[1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      // (+0.07: the frame's grid runs a touch wide of the true arc out here)
+      const x = i * P + sx * (hx + LAMP_IN + 0.07), y = j * P + sy * (hy + LAMP_IN + 0.07);
+      if (!inTown(x, y) || inShops(x, y, 0.4) || inCell(x, y)) continue;
+      const d = fC(x, y);
+      if (!lampOK(d, 3.0)) continue;
+      putLamp(d); break;
+    }
   }
+  add(mergeStatic(lampsG, [], { vc: true }));                 // downtown's lamps: one draw per material
   // Maple Plaza: the strip mall out past the boulevard, its lot opening onto it
   {
     const d = fC(...MALL.at), yaw = yawToFace(d, fC(MALL.at[0] - 10, MALL.at[1]));
-    const g = add(placeOnPlanet(stripMall(), d, yaw));
+    // the side roads curve round the lot's ends: find, in the mall's own frame, where their kerbs
+    // begin (|x| on side s at depth z) so its corners, verges and end pavements follow them.
+    // Every road near it, flattened onto the mall's ground plane (along the radius), as segments
+    const kerbU = (() => {
+      const probe = settle(new THREE.Group(), d, 0.25, 0.04, yaw); probe.updateMatrixWorld(true);
+      const inv = probe.matrixWorld.clone().invert(), c = new THREE.Vector3().applyMatrix4(inv), q = new THREE.Vector3();
+      const segs = [];
+      for (const rd of ROADS) {
+        let prev = null;
+        for (const p of rd.pts) {
+          if (arc(p, d) > 16) { prev = null; continue; }
+          q.copy(p).multiplyScalar(R).applyMatrix4(inv);
+          const t = -c.y / (q.y - c.y), cur = [c.x + (q.x - c.x) * t, c.z + (q.z - c.z) * t];
+          if (prev) segs.push([prev[0], prev[1], cur[0], cur[1], rd.half + 0.28]);
+          prev = cur;
+        }
+      }
+      const inKerb = (x, z) => segs.some(([ax, az, bx, bz, h]) => {
+        const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+        return Math.hypot(x - ax - dx * t, z - az - dz * t) < h;
+      });
+      return (s, z) => {
+        for (let u = 4.0; u < 9.5; u += 0.1) if (inKerb(s * u, z)) {
+          let lo = u - 0.1, hi = u;
+          for (let k = 0; k < 12; k++) { const m = (lo + hi) / 2; if (inKerb(s * m, z)) hi = m; else lo = m; }
+          return lo;
+        }
+        return null;
+      };
+    })();
+    const g = add(placeOnPlanet(stripMall({ kerbU }), d, yaw));
     out.mall = { dir: d, root: g };
     // the drive, built to the boulevard's real carriageway edge: for each x across it, walk out
     // from the lot (in the mall's frame) to where the road's surface begins
@@ -489,11 +599,10 @@ export function buildTown(scene) {
         lm.lot = { side: s, root: g };
       }
       out.landmarks.push(lm);
-      // ── landscaping (grounds.js): a cobbled forecourt and lane out to where the spur now
-      // stops, edging stones, planters, a lamp, a bench, and planting round the shop ──
+      // ── landscaping (grounds.js): a cobbled forecourt the spur runs onto,
+      // edging stones, planters, a lamp, a bench, and planting round the shop ──
       if (!inRow && !lm.lot) {                          // (a shop with its own car park beside it has that instead)
-        base.updateMatrixWorld(true);
-        const inv = base.matrixWorld.clone().invert(), L = (q) => q.clone().multiplyScalar(R).applyMatrix4(inv);
+        const L = shopPlace(p).toLocal;                  // (exact: the mouth is built to the spur's end)
         let end = spurEnds[p.key] ? L(spurEnds[p.key]) : null;
         if (!end) {                                     // no spur of its own: run the lane to the nearest road
           let bd = 9;
@@ -515,16 +624,16 @@ export function buildTown(scene) {
     solid(d, 2.1);
     out.landmarks.push({ ...p, dir: d, root: g });
   }
-  // ── landscaping (grounds.js): Makers' Row's shared cobbled car park, garden square, apron,
-  // planting; plaza.js parks cars in its bays ──
+  // ── landscaping (grounds.js): Makers' Row's shared parking court — six bays off a central
+  // aisle on the spur's axis, a pavement past both doors, the pocket between the shops, lawns,
+  // beds, hedges and kerbs; plaza.js parks cars in its bays ──
   {
-    const RW = resolveRow(), hub = RW.L(0, 0), yaw = yawToFace(hub, RW.L(0, 40));
-    const solids = out.colliders.slice(), probe = new THREE.Object3D();
-    settle(probe, hub, 0, 0, yaw); probe.updateMatrixWorld(true);
-    const inv = probe.matrixWorld.clone().invert(), W = (x, z) => probe.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
-    const e = spurEnds.row ? spurEnds.row.clone().multiplyScalar(R).applyMatrix4(inv) : null;
+    const { hub, yaw, probe, toLocal } = rowPlace(), solids = out.colliders.slice();
+    const W = (x, z) => probe.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
+    const e = spurEnds.row ? toLocal(spurEnds.row) : null;          // (exact: the mouth is built to it)
     const ok = (x, z, r) => { const w = W(x, z); return !isWater(w, 0.2) && !onRoad(w, r + 0.35) && !solids.some(c => arc(w, c.dir) < c.r + r); };
-    const g = add(placeOnPlanet(makersRow({ ex: e?.x ?? null, ez: e?.z ?? null, ok }), hub, yaw, { weight: 'fine', sink: 0, drawn: true }));
+    const bs = Math.sign(toLocal(PDIR.behaviors).x) || 1;           // which side Behavior Search (and its drop rig) stands on
+    const g = add(placeOnPlanet(makersRow({ ex: e?.x ?? null, ez: e?.z ?? null, ok, bs }), hub, yaw, { weight: 'fine', sink: 0, drawn: true }));
     feet(g);
     growPlants(scene, g, { seed: (out.grounds?.length || 0) + 1 });   // its planting, on the ground as drawn, in the breeze
     (out.grounds ||= []).push(g);

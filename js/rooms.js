@@ -11,8 +11,10 @@
 // Walk back out over the mat (or press E on it) and you're on the street at the door.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { PAL, paint, ink, blobShadow } from './style.js';
+import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { pose } from './human.js';
+import { makeFolk, poseFolk, ikArm, gripHand } from './folk.js';
+import { frameKit } from '../museum.js?v=13';
 import { audio } from './audio.js';
 
 // the rooms: keyed by the shop's style (and 'museum')
@@ -366,31 +368,32 @@ const SETS = {
     // a thin band of canvas round its inside edge. One frame came down (a pale patch and a
     // bare nail where it hung), one leans on the skirting; a rope still hangs from the dome
     // over a scatter of glass, taped off; the police have pinned the catalogue to a board.
-    const gilt = paint(PAL.gold), deep = paint(0xb8872f), HPI = Math.PI / 2;
-    const cutBand = (w, h) => texMat(Math.round(256 * Math.min(2.4, w / h)), 256, (c, cw, ch) => {
-      const b = Math.max(6, ch * 0.045), R = rng(Math.round(w * 97 + h * 31));
-      c.fillStyle = '#ece0c4';                            // the canvas left on the stretcher
-      c.fillRect(0, 0, cw, b); c.fillRect(0, ch - b, cw, b); c.fillRect(0, 0, b, ch); c.fillRect(cw - b, 0, b, ch);
-      c.strokeStyle = 'rgba(42,34,48,0.75)'; c.lineWidth = 2;          // one straight blade line
-      c.strokeRect(b, b, cw - 2 * b, ch - 2 * b);
-      c.strokeStyle = 'rgba(160,140,110,0.8)'; c.lineWidth = 1.2;      // a few loose threads
-      for (let i = 0; i < 9; i++) {
-        const side = i % 4, u = 0.1 + R() * 0.8, L = 4 + R() * 9;
-        const [x, y, dx, dy] = [[u * cw, b, 0, 1], [u * cw, ch - b, 0, -1], [b, u * ch, 1, 0], [cw - b, u * ch, -1, 0]][side];
-        c.beginPath(); c.moveTo(x, y); c.lineTo(x + dx * L + (R() - 0.5) * 4, y + dy * L + (R() - 0.5) * 4); c.stroke();
+    const gilt = paint(PAL.gold), HPI = Math.PI / 2;
+    // every empty frame is a real museum frame (the kit the forecourt's frames are built from,
+    // museum.js): carved, deep-moulded, scalloped or plain with carved corners; portrait,
+    // landscape, oval or arched; bright or antique gilt, walnut with a gilt lip, or silver.
+    // Each keeps its stretcher, dust board and the torn band of canvas the knife left. They
+    // hang straight between the chair rail and the picture rail, on wires from the rail;
+    // the lot is merged into one mesh per material once built.
+    const FG = new THREE.Group(); K.g.add(FG);
+    const { ornateFrame } = frameKit({ S: (col, o = {}) => paint(col, { map: o.map, side: o.side, hatch: o.map ? 0 : 0.35 }), GOLD: gilt, lite: true });
+    const wireM = paint(0x8a8392, { hatch: 0 });
+    // hang(w, h, along the wall, centre height, wall, style, shape, finish): wall 'back' | 'west' | 'east'
+    const WALLS = { back: [(u) => [u, -D + 0.5], 0, [1, 0]], west: [(u) => [-W / 2, u], HPI, [0, -1]], east: [(u) => [W / 2, u], -HPI, [0, 1]] };
+    const hang = (w, h, u, y, wall, style, shape = 'rect', finish = 'gold') => {
+      const [at, ry, [ax, az]] = WALLS[wall], [x, z] = at(u);
+      const g = new THREE.Group(); g.rotation.y = ry; FG.add(g);
+      g.position.set(x, y, z).add(new THREE.Vector3(0, 0, 0.04).applyAxisAngle(_Y, ry));   // its back on the wallpaper
+      ornateFrame(w, h, g, style, { shape, finish });
+      const top = shape === 'arch' ? Math.max(h, w) / 2 : h / 2, hook = new THREE.Vector3(0, Math.min(top + 0.13, 2.07 - y), -0.03);
+      for (const s of [-1, 1]) {                          // a picture wire up to its hook (on the rail, on the back wall)
+        const a = new THREE.Vector3(s * w * 0.2, top - (shape === 'rect' ? 0.03 : w * 0.06), -0.035);
+        const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, a.distanceTo(hook), 4), wireM);
+        wire.position.copy(a).add(hook).multiplyScalar(0.5); wire.quaternion.setFromUnitVectors(_Y, hook.clone().sub(a).normalize());
+        wire.userData.noInk = true; g.add(wire);
       }
-    });
-    // an empty frame: gilt bars, the cut band, and the wall showing through
-    const empty = (w, h, x, y, z, ry = 0, tilt = 0, lean = 0, t = 0.05) => {
-      const g = new THREE.Group(); g.position.set(x, y, z);
-      g.rotation.order = 'YXZ'; g.rotation.set(lean, ry, tilt);
-      const F = kit(g);
-      F.box(w + 2 * t, t, 0.045, gilt, 0, h / 2 + t / 2, 0, 0.012);
-      F.box(w + 2 * t, t, 0.045, gilt, 0, -h / 2 - t / 2, 0, 0.012);
-      F.box(t, h, 0.045, gilt, -w / 2 - t / 2, 0, 0, 0.012);
-      F.box(t, h, 0.045, gilt, w / 2 + t / 2, 0, 0, 0.012);
-      F.flat(w, h, cutBand(w, h), 0, 0, 0.006).renderOrder = 2;
-      K.g.add(g); return g;
+      const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.04, 6), wireM); nail.rotation.x = HPI; nail.position.copy(hook); g.add(nail);
+      return g;
     };
     // where a painting came down: a fresher patch of wallpaper and the nail it hung from
     const ghost = (w, h, x, y, z, ry = 0) => {
@@ -402,20 +405,11 @@ const SETS = {
       const nail = K.put(new THREE.CylinderGeometry(0.012, 0.012, 0.05, 6), paint(0x8a8392), x, y + h / 2 + 0.08, z, [HPI, ry, 0]);
       nail.position.add(new THREE.Vector3(0, 0, 0.02).applyAxisAngle(new THREE.Vector3(0, 1, 0), ry));
     };
-    // ── the back wall: the collection's centrepiece, its heaviest frame, empty ──
+    // ── the back wall: the collection's centrepiece, its heaviest frame, hung on the wall's
+    // centre line from the picture rail (clear of the chair rail below and the sign above) ──
+    hang(1.3, 1.0, 0, 1.49, 'back', 'baroque');
     {
-      const w = SCR_W, h = SCR_H, z = -D + 0.6;
-      const grp = new THREE.Group(); grp.position.set(0, SCR_Y, z); K.g.add(grp);
-      const F = kit(grp);
-      frameBars(F, w, h, 0.2, (len, tt, hz) => {
-        const g = new THREE.Group();
-        g.add(new THREE.Mesh(rb(hz ? len : tt, hz ? tt : len, 0.1, 0.03), gilt));
-        g.add(new THREE.Mesh(rb(hz ? len - 0.1 : 0.05, hz ? 0.05 : len - 0.1, 0.13, 0.01), deep));
-        return g;
-      });
-      for (const sx of [-1, 1]) for (const sy of [-1, 1]) F.put(new THREE.SphereGeometry(0.13, 12, 10).scale(1, 1, 0.5), gilt, sx * (w / 2 + 0.1), sy * (h / 2 + 0.1), 0.06);
-      F.flat(w, h, cutBand(w, h), 0, 0, 0.02).renderOrder = 2;
-      // its card, still on the wall: what hung here, stamped STOLEN
+      // its card, still on the wall beside it at eye height: what hung here, stamped STOLEN
       const card = K.flat(0.5, 0.36, texMat(250, 180, (c, cw, ch) => {
         c.fillStyle = '#fbf6ea'; c.fillRect(0, 0, cw, ch);
         c.strokeStyle = INKC; c.lineWidth = 4; c.strokeRect(2, 2, cw - 4, ch - 4);
@@ -426,44 +420,37 @@ const SETS = {
         c.strokeStyle = '#c8402f'; c.lineWidth = 5; c.strokeRect(-70, -22, 140, 44);
         c.font = `700 34px ${HAND}`; c.fillStyle = '#c8402f'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('STOLEN', 0, 2);
         c.restore();
-      }), -w / 2 - 0.62, 0.62, -D + 0.56);
+      }), -1.02, 1.3, -D + 0.56);
       card.renderOrder = 2;
     }
-    empty(0.8, 0.62, -2.75, 1.95, -D + 0.56, 0, 0.05);
-    empty(0.5, 0.66, -3.6, 1.7, -D + 0.56, 0, -0.06);
-    empty(0.6, 0.48, 3.55, 2.0, -D + 0.56, 0, 0.08);
-    empty(0.55, 0.7, 3.5, 1.0, -D + 0.56, 0, -0.04);
+    hang(0.5, 0.7, -1.95, 1.55, 'back', 'corners', 'oval', 'antique');
+    hang(0.62, 0.84, -3.1, 1.5, 'back', 'fluted', 'rect', 'gold');
+    hang(0.52, 0.78, 1.5, 1.56, 'back', 'deep', 'arch', 'walnut');
+    hang(0.66, 0.5, 3.35, 1.62, 'back', 'scallop', 'rect', 'silver');
     // the side walls
-    empty(0.95, 0.72, -W / 2 + 0.06, 1.6, -4.3, HPI, -0.06);
-    empty(0.8, 0.6, -W / 2 + 0.06, 1.85, -2.85, HPI, 0.05);
-    ghost(0.9, 0.6, -W / 2 + 0.055, 1.0, -1.6, HPI);
-    empty(0.9, 0.6, -3.2, 0.03, -1.35, 0.4, 0, -HPI);                     // …the one that came down, face up
-    empty(0.9, 0.7, W / 2 - 0.06, 1.7, -4.4, -HPI, 0.07);
-    empty(0.78, 0.6, W / 2 - 0.2, 0.36, -0.95, -HPI, 0.03, -0.28);          // propped against the skirting
-    // ── the police's board: the catalogue, pinned up, red string between them ──
+    hang(0.95, 0.72, -4.4, 1.5, 'west', 'walnut');
+    hang(0.56, 0.74, -3.05, 1.55, 'west', 'corners', 'rect', 'silver');
+    ghost(0.9, 0.6, -W / 2 + 0.055, 1.48, -1.85, HPI);
+    hang(0.56, 0.56, -0.55, 1.55, 'west', 'scallop', 'oval', 'antique');
+    hang(0.76, 0.92, -4.5, 1.5, 'east', 'baroque', 'rect', 'antique');
+    // …the one that came down, face up on the floor below its patch
     {
-      const bx = W / 2 - 0.05, bz = -2.5, by = 1.55;
-      K.box(0.04, 0.95, 1.5, paint(0x8a6448), bx - 0.02, by, bz, 0.01);
-      K.flat(1.42, 0.87, texMat(284, 174, (c, cw, ch) => {
-        c.fillStyle = '#c99a62'; c.fillRect(0, 0, cw, ch);
-        const R = rng(4); for (let i = 0; i < 260; i++) { c.fillStyle = `rgba(90,60,30,${R() * 0.25})`; c.fillRect(R() * cw, R() * ch, 2, 2); }
-        c.fillStyle = '#fbf6ea'; c.fillRect(cw * 0.62, ch * 0.66, cw * 0.34, ch * 0.28);
-        c.font = `700 22px ${SCRIPT}`; c.fillStyle = '#c8402f'; c.fillText('45 MISSING', cw * 0.64, ch * 0.86);
-      }), bx - 0.045, by, bz, [0, -HPI, 0]).renderOrder = 2;
-      const pins = [];
-      const shots = ['art_IMG_7121', 'art_IMG_9240', 'art_IMG_5265', 'art_IMG_8538', 'art_IMG_9606'];
-      shots.forEach((name, i) => {
-        const pz = bz - 0.5 + (i % 3) * 0.45, py = by + 0.2 - Math.floor(i / 3) * 0.42 + (i % 2) * 0.04;
-        const g = new THREE.Group(); g.position.set(bx - 0.055, py, pz); g.rotation.set(0, -HPI, ((i * 7) % 5 - 2) * 0.04); K.g.add(g);
-        const P = kit(g);
-        P.flat(0.3, 0.3, paint(0xfbf6ea, { hatch: 0 }), 0, 0, 0);
-        P.flat(0.26, 0.21, shotMat('artworks/' + name + '.jpg', null, 0.26 / 0.21), 0, 0.025, 0.003);
-        P.put(new THREE.SphereGeometry(0.018, 8, 6), paint(0xc8402f), 0, 0.13, 0.01);
-        pins.push(new THREE.Vector3(bx - 0.07, py + 0.13, pz));
-      });
-      const str = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([pins[0], pins[4], pins[2], pins[3], pins[1]]), 40, 0.005, 4), paint(0xc8402f, { hatch: 0 }));
-      str.userData.noInk = true; K.g.add(str);
+      const g = new THREE.Group(); g.position.set(-3.2, 0.05, -1.55); g.rotation.order = 'YXZ'; g.rotation.set(-HPI, 0.4, 0); FG.add(g);
+      ornateFrame(0.9, 0.6, g, 'corners', { finish: 'gold' });
     }
+    // …and one propped against the wainscot, its foot on the floor, its top on the panel
+    {
+      const fw = 0.78, fh = 0.6, lean = 0.2;
+      const g = new THREE.Group(); g.position.set(W / 2 - 0.19, 0, -0.95); g.rotation.y = -HPI; FG.add(g);
+      const f = ornateFrame(fw, fh, g, 'deep', { finish: 'gold' });
+      f.rotation.x = -lean; f.position.set(0, Math.cos(lean) * fh / 2 + 0.03 * Math.sin(lean) + 0.005, -Math.sin(lean) * fh / 2);
+    }
+    FG.traverse(o => { if (o.isMesh && Math.max(o.scale.x, o.scale.y) < 0.012) o.userData.noInk = true; });   // (beads and pearls: too small to outline)
+    ink(FG, 'mid');
+    mergeStatic(FG);
+    FG.traverse(o => { if (o.isMesh && !o.userData.isInk) o.userData.noInk = true; });     // (already inked)
+    // ── the police's board: the catalogue on a stand, red string between them (BOARD) ──
+    officers(K, policeBoard(K));
     // ── through the dome: a climbing rope still hangs down, over a scatter of glass ──
     {
       const rx = 1.25, rz = -2.75;
@@ -535,6 +522,354 @@ const SETS = {
     K.cols.push({ x0: -3.45, x1: -3.15, z0: -D + 1.55, z1: -D + 1.85 });
   },
 };
+
+// ─── THE MUSEUM'S POLICE BOARD, AND THE TWO OFFICERS WORKING IT ─────────────────
+// One layout, drawn twice: on the board in the room, and in the close-up you get by
+// pressing E at it. Metres from the board's centre (x to the right as you face it, y up);
+// r: a card's tilt. The officers re-pin the photos as they work, so both views follow r.
+const _Y = new THREE.Vector3(0, 1, 0);
+const BOARD_W = 1.42, BOARD_H = 0.87, BOARD_AT = { x: 3.72, y: 1.0, z: -2.5 };   // (the board's face, room coords)
+const PH_W = 0.24, PH_H = 0.25, PIC_W = 0.21, PIC_H = 0.16;                       // a photo card, and the photo on it
+const BOARD = {
+  photos: [            // the catalogue's photos: the same paintings that hung here
+    { img: 'art_cows_in_storm', x: -0.5, y: 0.2, r: -0.04, cap: 'Cows in Storm' },
+    { img: 'art_IMG_7121', x: -0.2, y: 0.22, r: 0.05, cap: '#2' },
+    { img: 'art_IMG_9240', x: 0.1, y: 0.19, r: -0.03, cap: '#3' },
+    { img: 'art_IMG_5265', x: -0.52, y: -0.19, r: 0.06, cap: '#4' },
+    { img: 'art_IMG_8538', x: -0.21, y: -0.18, r: -0.05, cap: '#5' },
+    { img: 'art_IMG_9606', x: 0.09, y: -0.2, r: 0.03, cap: '#6' },
+  ],
+  notes: [             // only what anyone in the room can see for themselves
+    { kind: 'card', x: 0.47, y: 0.2, w: 0.3, h: 0.2, r: 0.03, pin: 0x3f6a8a, pinAt: [-0.13, 0.082], lines: ['OPENING NIGHT', 'all 45 gone by 3 a.m.', 'dome: one pane out'] },
+    { kind: 'sticky', x: 0.36, y: -0.01, w: 0.15, h: 0.13, r: -0.08, pin: 0xe4b84f, lines: ['frames', 'left on', 'the walls'] },
+    { kind: 'miss', id: 'miss', x: 0.47, y: -0.24, w: 0.3, h: 0.2, r: -0.02, pin: 0xc8402f, lines: ['45 MISSING', 'nothing to be moved'] },
+  ],
+  string: [0, 4, 2, 5, 1, 3, 'miss'],     // the red string, pin to pin
+};
+const pinOf = (it) => { const [ax, ay] = it.pinAt || [0, (it.h ?? PH_H) / 2 - 0.018], c = Math.cos(it.r), s = Math.sin(it.r); return [it.x + ax * c - ay * s, it.y + ax * s + ay * c]; };
+const stringPts = () => BOARD.string.map(k => pinOf(typeof k === 'number' ? BOARD.photos[k] : BOARD.notes.find(n => n.id === k)));
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+
+// the cork and the paper notes pinned to it, onto a canvas cw × ch that IS the board
+function drawCork(c, cw, ch) {
+  const S = cw / BOARD_W, cx = cw / 2, cy = ch / 2;
+  c.fillStyle = '#c99a62'; c.fillRect(0, 0, cw, ch);
+  const R = rng(4), n = Math.round(3200 * (cw / 1024) ** 2);
+  for (let i = 0; i < n; i++) { c.fillStyle = `rgba(${R() < 0.5 ? '90,60,30' : '235,200,150'},${R() * 0.28})`; const s = S * (0.0015 + R() * 0.002); c.fillRect(R() * cw, R() * ch, s, s); }
+  const v = c.createRadialGradient(cx, cy, ch * 0.35, cx, cy, cw * 0.62);
+  v.addColorStop(0, 'rgba(70,40,20,0)'); v.addColorStop(1, 'rgba(70,40,20,0.22)');
+  c.fillStyle = v; c.fillRect(0, 0, cw, ch);
+  for (const nt of BOARD.notes) {
+    c.save(); c.translate(cx + nt.x * S, cy - nt.y * S); c.rotate(-nt.r);
+    const w = nt.w * S, h = nt.h * S;
+    c.fillStyle = 'rgba(60,35,20,0.3)'; c.fillRect(-w / 2 + S * 0.006, -h / 2 + S * 0.008, w, h);
+    c.fillStyle = nt.kind === 'sticky' ? '#f4d968' : '#fbf6ea'; c.fillRect(-w / 2, -h / 2, w, h);
+    c.strokeStyle = 'rgba(42,34,48,0.55)'; c.lineWidth = S * 0.0025; c.strokeRect(-w / 2, -h / 2, w, h);
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    if (nt.kind === 'card') {                                  // a ruled index card
+      c.strokeStyle = 'rgba(200,64,47,0.55)'; c.lineWidth = S * 0.002;
+      c.beginPath(); c.moveTo(-w / 2, -h / 2 + S * 0.052); c.lineTo(w / 2, -h / 2 + S * 0.052); c.stroke();
+      c.strokeStyle = 'rgba(90,120,170,0.35)';
+      for (let k = 1; k < 4; k++) { const yy = -h / 2 + S * (0.052 + k * 0.038); c.beginPath(); c.moveTo(-w / 2, yy); c.lineTo(w / 2, yy); c.stroke(); }
+      c.fillStyle = INKC; c.font = `700 ${S * 0.036}px ${SCRIPT}`; c.fillText(nt.lines[0], 0, -h / 2 + S * 0.03);
+      c.font = `400 ${S * 0.027}px ${HAND}`;
+      nt.lines.slice(1).forEach((l, k) => c.fillText(l, 0, -h / 2 + S * (0.072 + k * 0.038)));
+    } else if (nt.kind === 'sticky') {
+      c.fillStyle = INKC; c.font = `700 ${S * 0.03}px ${SCRIPT}`;
+      nt.lines.forEach((l, k) => c.fillText(l, 0, -h / 2 + S * (0.047 + k * 0.03)));
+    } else {
+      c.fillStyle = '#c8402f'; c.font = `700 ${S * 0.056}px ${SCRIPT}`; c.fillText(nt.lines[0], 0, -S * 0.02);
+      c.fillStyle = '#5a4e5e'; c.font = `400 ${S * 0.025}px ${HAND}`; c.fillText(nt.lines[1], 0, S * 0.05);
+    }
+    c.restore();
+  }
+}
+// the photo's crop on its card: as the room's (shotMat): centred across, the top kept when tall
+function cropOf(iw, ih) {
+  const a = PIC_W / PIC_H, ia = iw / ih;
+  return ia > a ? [(iw - ih * a) / 2, 0, ih * a, ih] : [0, 0, iw, iw / a];
+}
+function captionTex(cap) {
+  return canvasTex(120, 125, (c, w, h) => {
+    c.fillStyle = '#fbf8ee'; c.fillRect(0, 0, w, h);
+    c.fillStyle = INKC; c.textAlign = 'center'; c.textBaseline = 'middle';
+    fitLine(c, cap, 22, SCRIPT, w - 12); c.fillText(cap, w / 2, h - 13);
+  });
+}
+
+// the board in the room: on a wheeled-free police stand in front of the east wall
+function policeBoard(K) {
+  const HPI = Math.PI / 2, { x: BX, y: BY, z: BZ } = BOARD_AT;
+  const g = new THREE.Group(); g.position.set(BX, BY, BZ); g.rotation.y = -HPI; K.g.add(g);
+  const P = kit(g), wood = paint(0x8a6448), steel = paint(0x6f7d92);
+  P.box(BOARD_W + 0.08, BOARD_H + 0.08, 0.04, wood, 0, 0, -0.022, 0.012);
+  const cork = P.flat(BOARD_W, BOARD_H, paint(0xffffff, { map: canvasTex(1024, Math.round(1024 * BOARD_H / BOARD_W), drawCork), hatch: 0, unique: true }), 0, 0, 0.001);
+  cork.renderOrder = 1;
+  // the stand: two uprights on feet, standing on the floor
+  const UX = BOARD_W / 2 + 0.07, top = 0.58;
+  for (const s of [-1, 1]) {
+    P.box(0.05, BY + top, 0.05, steel, s * UX, (top - BY) / 2, -0.02, 0.015);
+    P.box(0.07, 0.04, 0.44, steel, s * UX, -BY + 0.02, -0.02, 0.015);
+    P.put(new THREE.SphereGeometry(0.035, 10, 8), steel, s * UX, top + 0.01, -0.02);
+    P.box(0.07, 0.03, 0.06, steel, s * UX - s * 0.05, 0, -0.022, 0.01);     // the clamp holding the board
+  }
+  const pinGeo = new THREE.SphereGeometry(0.016, 10, 8);
+  const photos = BOARD.photos.map((p) => {
+    const pg = new THREE.Group(); pg.position.set(p.x, p.y, 0.006); g.add(pg);
+    const Q = kit(pg);
+    Q.flat(PH_W, PH_H, paint(0xffffff, { map: captionTex(p.cap), hatch: 0, unique: true }), 0, 0, 0).renderOrder = 2;
+    Q.flat(PIC_W, PIC_H, shotMat('artworks/' + p.img + '.jpg', null, PIC_W / PIC_H), 0, PH_H / 2 - 0.015 - PIC_H / 2, 0.002).renderOrder = 2;
+    Q.put(pinGeo, paint(0xc8402f), 0, PH_H / 2 - 0.018, 0.01);
+    return pg;
+  });
+  for (const nt of BOARD.notes) { const [px, py] = pinOf(nt); P.put(pinGeo, paint(nt.pin), px, py, 0.012); }
+  const strM = paint(0xb8302a, { hatch: 0 }), seg = new THREE.CylinderGeometry(0.0045, 0.0045, 1, 5);
+  const strs = BOARD.string.slice(1).map(() => { const m = P.put(seg, strM); m.userData.noInk = true; return m; });
+  const _a = new THREE.Vector3(), _b = new THREE.Vector3();
+  const update = () => {
+    BOARD.photos.forEach((p, i) => { photos[i].rotation.z = p.r; });
+    const pts = stringPts();
+    strs.forEach((m, i) => {
+      _a.set(pts[i][0], pts[i][1], 0.016); _b.set(pts[i + 1][0], pts[i + 1][1], 0.016);
+      m.position.copy(_a).add(_b).multiplyScalar(0.5); m.scale.y = _a.distanceTo(_b);
+      m.quaternion.setFromUnitVectors(_Y, _b.sub(_a).normalize());
+    });
+  };
+  update();
+  LIVE.push(update);
+  K.cols.push({ x0: BX - 0.25, x1: BX + 0.25, z0: BZ - UX - 0.05, z1: BZ + UX + 0.05 });
+  // board-local → room coords
+  return { toRoom: (x, y, z = 0, out = new THREE.Vector3()) => out.set(BX - z, BY + y, BZ + x) };
+}
+
+// two officers at the board, in uniform and peaked caps (the police look of the guard's
+// uniform, folk.js), each their own person. One keeps re-pinning photos, running a hand along
+// the string, pointing things out and stepping back to look; the other writes it all down.
+const OFFICERS = {
+  pinner: { skin: 'tan', hair: 0x2b1d1a, hairStyle: 'bun', hat: 'cap', hatColor: 0x1f2a44, top: 0x2c3a5a, outfit: 'uniform',
+    bottom: 0x1e2433, shoes: 0x161416, sole: 0x4a4246, height: 1.02, build: 0.94,
+    // brisk and focused: an oval face, a straight nose, a set mouth, brows drawn together
+    face: { shape: { jaw: 0.35, chin: 0.55, cheeks: 0.35, long: 0.25, skull: 0.5, brow: 0.45 }, nose: 'straight', noseSize: 0.9, mouth: 'flat',
+      eyes: 'round', brows: 'frown', browW: 0.9, lashes: true, hair: 'bun', blush: 0.4 } },
+  writer: { skin: 'deep', hair: 0x1a1414, hairStyle: 'crop', hat: 'cap', hatColor: 0x1f2a44, top: 0x2c3a5a, outfit: 'uniform', stance: 'writing',
+    bottom: 0x1e2433, shoes: 0x161416, sole: 0x4a4246, height: 0.98, build: 1.1, belly: 0.25,
+    // patient and a little amused: a broad square face, a snub nose, raised brows, a half-smile
+    face: { shape: { jaw: 0.8, chin: 0.45, cheeks: 0.6, long: 0.05, skull: 0.55, brow: 0.6 }, nose: 'snub', noseSize: 1.1, mouth: 'smirk',
+      eyes: 'round', brows: 'raised', browW: 1.3, hair: 'crop', blush: 0.3 } },
+};
+function officers(K, brd) {
+  const HPI = Math.PI / 2, ss = THREE.MathUtils.smoothstep, lerp = THREE.MathUtils.lerp;
+  const add = (spec, x, z, ry) => {
+    const inst = makeFolk(spec), root = new THREE.Group();
+    root.position.set(x, 0, z); root.rotation.y = ry; root.add(inst.rig, blobShadow(0.24)); K.g.add(root);
+    root.traverse(o => { if (o.isMesh && !o.userData.isInk) o.userData.noInk = true; });   // (inked fine already: no second hull from the room's)
+    return { inst, root, J: inst.J };
+  };
+  const A = add(OFFICERS.pinner, 3.42, -2.75, HPI), B = add(OFFICERS.writer, 3.45, -1.5, 2.6);
+  K.cols.push({ x0: 3.33, x1: 3.57, z0: -1.62, z1: -1.38 });
+  const colA = { x0: 0, x1: 0, z0: 0, z1: 0 }; K.cols.push(colA);
+  // ── the pinner: a loop of jobs, picked at random (never the same twice running) ──
+  const R = rng(23), LOW = [3, 4, 5], HIGH = [0, 1, 2];
+  const pick = (a) => a[Math.floor(R() * a.length)];
+  const FRONT = 3.42, BACK = 3.08;
+  let job = null, last = '', prevT = null;
+  const next = () => {
+    const kinds = ['pin', 'string', 'point', 'back', 'pin'].filter(k => k !== last);
+    const kind = pick(kinds); last = kind;
+    const i = kind === 'pin' ? pick(LOW) : kind === 'point' ? pick(HIGH) : 3;
+    const p = BOARD.photos[i];
+    const back = R() < 0.5, sp = stringPts()[back ? 6 : 5];
+    const z = kind === 'string' ? BOARD_AT.z + sp[0] - 0.05 : kind === 'back' ? BOARD_AT.z - 0.2 + R() * 0.3 : BOARD_AT.z + p.x + (kind === 'point' ? 0.2 : 0.02);
+    job = { kind, i, side: R() < 0.5 ? 'L' : 'R', z: THREE.MathUtils.clamp(z, -3.0, -2.1), x: kind === 'back' ? BACK : FRONT,
+      t: 0, dur: { pin: 4.2, string: 4.6, point: 3.4, back: 3.6 }[kind], rT: (R() - 0.5) * 0.14, back };
+  };
+  next();
+  const _w = new THREE.Vector3(), _l = new THREE.Vector3(), _q0 = new THREE.Quaternion();
+  // put a hand on a board point (board-local), blended in by k; the elbow out to its side
+  const reach = (P, side, bx, by, k, off = 0.035) => {
+    if (k <= 0.001) return;
+    const arm = P.J['arm' + side], fore = P.J['fore' + side];
+    _q0.copy(arm.quaternion); const b0 = fore.rotation.x;
+    brd.toRoom(bx, by, off, _w); K.g.localToWorld(_w);
+    P.J.spine.worldToLocal(_l.copy(_w));
+    ikArm(P.J, side, _l, new THREE.Vector3(side === 'R' ? 0.7 : -0.7, -0.7, -0.1));
+    arm.quaternion.slerpQuaternions(_q0, arm.quaternion.clone(), k);
+    fore.rotation.x = lerp(b0, fore.rotation.x, k);
+    P.J['hand' + side].rotation.set(lerp(0, -0.4, k), 0, lerp(0, side === 'R' ? 0.5 : -0.5, k));
+  };
+  // turn the head (and a little of the neck) to a board point
+  const look = (P, bx, by, k) => {
+    brd.toRoom(bx, by, 0, _w); P.root.worldToLocal(K.g.localToWorld(_w));
+    const yaw = THREE.MathUtils.clamp(Math.atan2(_w.x, _w.z), -1.1, 1.1), pitch = THREE.MathUtils.clamp(Math.atan2(1.0 - _w.y, Math.hypot(_w.x, _w.z)), -0.6, 0.6);
+    P.J.neck.rotation.y = lerp(P.J.neck.rotation.y, yaw * 0.35, k); P.J.head.rotation.y = lerp(P.J.head.rotation.y, yaw * 0.65, k);
+    P.J.head.rotation.x = lerp(P.J.head.rotation.x, pitch * 0.9, k);
+  };
+  const hips = (P, side, k) => {                     // a hand on the hip
+    const sg = side === 'L' ? -1 : 1;
+    P.J['arm' + side].rotation.set(lerp(P.J['arm' + side].rotation.x, 0.12, k), lerp(P.J['arm' + side].rotation.y, -sg * 1.6, k), lerp(P.J['arm' + side].rotation.z, sg * (0.56 + P.inst.armOut), k));
+    P.J['fore' + side].rotation.x = lerp(P.J['fore' + side].rotation.x, -1.35, k);
+    gripHand(P.J['grip' + side], 0.3);
+  };
+  LIVE.push((t) => {
+    const dt = prevT == null ? 0 : Math.min(0.05, t - prevT); prevT = t;
+    // ── walk to the spot for this job, turned the way she's going; then face the board ──
+    const r = A.root.position, dx = job.x - r.x, dz = job.z - r.z, dist = Math.hypot(dx, dz);
+    const D = job.dur, p = BOARD.photos[job.i];
+    let k = 0, faceTo = HPI, env = 0, hx = 0, hy = 0;
+    if (dist > 0.02 && job.t === 0) {
+      const sp = dt > 0 ? Math.min(dist / dt, 0.5) : 0;
+      r.x += dx / dist * sp * dt; r.z += dz / dist * sp * dt;
+      const backing = job.kind === 'back' && dx < 0;             // stepping back: still facing the board
+      k = Math.min(backing ? 0.4 : 0.7, dist * 4);
+      if (!backing) faceTo = Math.atan2(dx, dz);
+    } else {
+      job.t += dt;
+      env = ss(job.t, 0, 0.7) * (1 - ss(job.t, D - 0.7, D));
+      if (job.kind === 'string') {                               // walking along with the hand
+        const pts = stringPts(), a = pts[5], b = pts[6], s = ss(job.t, 0.6, D - 0.6), f = job.back ? 1 - s : s;
+        hx = lerp(a[0], b[0], f); hy = lerp(a[1], b[1], f);
+        const z1 = THREE.MathUtils.clamp(BOARD_AT.z + hx - 0.05, -3.0, -2.1);
+        k = dt > 0 ? Math.min(0.45, Math.abs(z1 - r.z) / dt * 0.9) : 0;
+        r.z = z1;
+      }
+    }
+    let d = faceTo - A.root.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+    A.root.rotation.y += d * Math.min(1, dt * 6);
+    A.inst.rig.position.y = poseFolk(A.inst, dt, k);
+    colA.x0 = r.x - 0.12; colA.x1 = r.x + 0.12; colA.z0 = r.z - 0.12; colA.z1 = r.z + 0.12;
+    if (job.t > 0) {
+      const u = job.t;
+      A.root.updateMatrixWorld(true);
+      if (job.kind === 'pin') {
+        // re-pin a photo: one hand on its pin, the other steadying its corner; it turns to its new angle
+        if (u > 0.8 && u < D - 0.9) p.r += (job.rT - p.r) * Math.min(1, dt * 1.6);
+        const [px, py] = pinOf(p);
+        reach(A, 'R', px + 0.004 * Math.sin(u * 9), py + 0.004 * Math.cos(u * 7), env);
+        reach(A, 'L', p.x - 0.1 * Math.cos(p.r) + 0.1 * Math.sin(p.r), p.y - 0.1 * Math.cos(p.r) - 0.1 * Math.sin(p.r), env * 0.9, 0.03);
+        gripHand(A.J.gripR, lerp(0.25, 0.85, env)); gripHand(A.J.gripL, lerp(0.25, 0.1, env));
+        look(A, px, py - 0.05, Math.max(env, 0.5));
+      } else if (job.kind === 'string') {
+        // run a hand along the string from one pin to the next
+        reach(A, 'R', hx, hy, env, 0.03);
+        gripHand(A.J.gripR, 0.55);
+        look(A, hx, hy, 1);
+      } else if (job.kind === 'point') {
+        // point out a photo up top: arm out, index finger extended, a couple of taps
+        const side = job.side, tap = 0.03 * Math.max(0, Math.sin(u * 7)) * ss(u, 0.9, 1.2);
+        reach(A, side, p.x, p.y, env, 0.12 - tap);
+        const h = A.J['grip' + side]; gripHand(h, lerp(0.25, 1.3, env)); if (env > 0.3) h.userData.fingers[0].forEach((b) => { b.rotation.z = 0; });
+        hips(A, side === 'L' ? 'R' : 'L', env);
+        look(A, p.x, p.y, 1);
+      } else {
+        // step back, hands on hips, and take the whole board in
+        hips(A, 'L', env); hips(A, 'R', env);
+        look(A, -0.15 + 0.35 * Math.sin(u * 0.9), 0.05, 1);
+        A.J.head.rotation.z = 0.12 * env * Math.sin(u * 0.7);
+      }
+      if (u >= D) { job.t = 0; const was = job.kind; next(); if (was === 'back') job.x = FRONT; }
+    }
+    // ── the writer: notes on his clipboard, looking up at the board between lines ──
+    const lookUp = ss(Math.sin(t * 0.31), 0.55, 0.85);
+    B.root.rotation.y = 2.6 + 0.3 * lookUp + 0.05 * Math.sin(t * 0.23);
+    poseFolk(B.inst, dt, 0, { talk: 0 });
+    if (lookUp > 0.01) { B.root.updateMatrixWorld(true); look(B, lerp(-0.3, 0.2, 0.5 + 0.5 * Math.sin(t * 0.17)), 0.05, lookUp); }
+  });
+}
+
+// ── the close-up: press E at the board and it fills the screen, drawn from the same layout ──
+let _bv = null;
+const _imgs = {};
+function boardView() {
+  if (_bv) return _bv;
+  const css = document.createElement('style');
+  css.textContent = `
+    #boardView { inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+      padding: max(12px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+      background: rgba(42,34,48,.55); }
+    #boardView .pn { position: relative; box-sizing: border-box; width: min(1080px, 100%, calc((100vh - 130px) * 1.63 + 40px)); width: min(1080px, 100%, calc((100dvh - 130px) * 1.63 + 40px));
+      padding: 12px 18px 12px; transform: rotate(-0.5deg); }
+    #boardView h3 { font-family: 'Caveat', cursive; font-size: clamp(26px, 4vw, 36px); line-height: 1; margin: 0 0 8px; padding-right: 110px; }
+    #boardView .cw { overflow: auto; border: 2.5px solid var(--ink); border-radius: 6px; overscroll-behavior: contain; }
+    #boardView canvas { display: block; width: 100%; height: auto; background: #c99a62; touch-action: pan-x pan-y; }
+    #boardView .ft .w { display: none; }
+    /* a tall phone: the board drawn bigger, swiped along */
+    @media (max-aspect-ratio: 4/5) { #boardView .pn { width: 100%; padding: 10px 12px; } #boardView canvas { width: 190%; } #boardView .ft .w { display: inline; } }
+    #boardView .x { position: absolute; right: 14px; top: 10px; font-size: 18px; padding: 4px 14px; min-height: 40px; }
+    #boardView .ft { font-size: 15px; color: var(--ink2); margin-top: 6px; text-align: center; }
+    body.touch #boardView .ft .k { display: none; } body:not(.touch) #boardView .ft .t { display: none; }`;
+  document.head.append(css);
+  const el = document.createElement('div');
+  el.id = 'boardView'; el.className = 'ui fade hide';
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'the police board, close up');
+  el.innerHTML = `<div class="pn sk"><h3>The police board</h3><button class="sk x" aria-label="close">close ✕</button>
+    <div class="cw"><canvas width="1704" height="1044"></canvas></div>
+    <div class="ft"><span class="w">swipe along the board · </span><span class="k">E or Esc to close</span><span class="t">tap outside the board to close</span></div></div>`;
+  document.body.append(el);
+  const cv = el.querySelector('canvas'), c = cv.getContext('2d');
+  c.lineJoin = c.lineCap = 'round';
+  const draw = () => {
+    const cw = cv.width, ch = cv.height, S = cw / BOARD_W, cx = cw / 2, cy = ch / 2;
+    drawCork(c, cw, ch);
+    for (const p of BOARD.photos) {
+      c.save(); c.translate(cx + p.x * S, cy - p.y * S); c.rotate(-p.r);
+      const w = PH_W * S, h = PH_H * S;
+      c.fillStyle = 'rgba(60,35,20,0.32)'; c.fillRect(-w / 2 + S * 0.007, -h / 2 + S * 0.009, w, h);
+      c.fillStyle = '#fbf8ee'; c.fillRect(-w / 2, -h / 2, w, h);
+      c.strokeStyle = 'rgba(42,34,48,0.45)'; c.lineWidth = S * 0.002; c.strokeRect(-w / 2, -h / 2, w, h);
+      const px = -PIC_W / 2 * S, py = -h / 2 + 0.015 * S, pw = PIC_W * S, ph = PIC_H * S;
+      const img = _imgs[p.img];
+      if (img?.complete && img.naturalWidth) { const [sx, sy, sw, sh] = cropOf(img.naturalWidth, img.naturalHeight); c.drawImage(img, sx, sy, sw, sh, px, py, pw, ph); }
+      else { c.fillStyle = '#b9ad98'; c.fillRect(px, py, pw, ph); }
+      c.strokeStyle = 'rgba(42,34,48,0.35)'; c.strokeRect(px, py, pw, ph);
+      c.fillStyle = INKC; c.textAlign = 'center'; c.textBaseline = 'middle';
+      fitLine(c, p.cap, S * 0.036, SCRIPT, w * 0.9); c.fillText(p.cap, 0, h / 2 - S * 0.027);
+      c.restore();
+    }
+    // the red string, pin to pin (a shadow on the cork under it), then the pins on top
+    const pts = stringPts().map(([x, y]) => [cx + x * S, cy - y * S]);
+    for (const [col, off, wd] of [['rgba(60,30,20,0.3)', S * 0.006, S * 0.006], ['#b8302a', 0, S * 0.005]]) {
+      c.strokeStyle = col; c.lineWidth = wd; c.beginPath();
+      pts.forEach(([x, y], i) => (i ? c.lineTo(x + off, y + off) : c.moveTo(x + off, y + off))); c.stroke();
+    }
+    const pin = (x, y, col) => {
+      const r = S * 0.016;
+      c.fillStyle = 'rgba(40,20,10,0.35)'; c.beginPath(); c.arc(x + r * 0.5, y + r * 0.7, r, 0, 7); c.fill();
+      c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
+      c.strokeStyle = INKC; c.lineWidth = S * 0.0025; c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.55)'; c.beginPath(); c.arc(x - r * 0.35, y - r * 0.35, r * 0.32, 0, 7); c.fill();
+    };
+    for (const p of BOARD.photos) { const [x, y] = pinOf(p); pin(cx + x * S, cy - y * S, '#c8402f'); }
+    for (const n of BOARD.notes) { const [x, y] = pinOf(n); pin(cx + x * S, cy - y * S, hex(n.pin)); }
+  };
+  for (const p of BOARD.photos) if (!_imgs[p.img]) { const im = new Image(); im.onload = () => { if (_bv?.open) draw(); }; im.src = 'artworks/' + p.img + '.jpg'; _imgs[p.img] = im; }
+  let M = null, tick = 0;
+  const close = () => {
+    if (!_bv.open) return;
+    _bv.open = false; el.classList.add('hide'); clearInterval(tick);
+    removeEventListener('keydown', keys, true);
+    M?.ui(false); M = null;
+  };
+  // E and Esc close it (caught before the game's own keys see them)
+  const keys = (e) => {
+    if (e.code !== 'KeyE' && e.code !== 'Escape') return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (!e.repeat) close();
+  };
+  el.querySelector('.x').onclick = close;
+  el.addEventListener('pointerdown', (e) => { if (e.target === el) close(); });       // a tap outside the board
+  _bv = {
+    open: false,
+    show(m) {
+      if (_bv.open) return;
+      M = m; M.ui(true);
+      _bv.open = true; draw(); el.classList.remove('hide');
+      addEventListener('keydown', keys, true);
+      tick = setInterval(draw, 250);                   // (the officers keep re-pinning while you look)
+    },
+    close,
+  };
+  return _bv;
+}
 
 // ─── THE FUN LAYER: every room gets life ────────────────────────────────────
 // Small looping animations in room-local coordinates, registered in LIVE.
@@ -1448,12 +1783,14 @@ const MINI = {
     let i = -1;
     mini(K, 0, -4.35, 'look at the empty frame', (m) => { i = (i + 1) % FRAME.length; m.say(FRAME[i]); });
     mini(K, 1.25, -1.5, 'look up', (m) => m.say('One pane of the dome is missing. A climbing rope still hangs from the gap, over the broken glass.'), 0.7);
+    // the police board: a close-up of it fills the screen (boardView)
+    mini(K, 3.0, -2.5, 'look at the board', (m) => boardView().show(m), 0.85);
     let j = -1;
-    const BOARD = [
-      'The police pinned the catalogue up: every painting that hung in here.',
-      'Forty-five of Janelle\'s paintings. They are out there somewhere.',
+    const COPS = [
+      'Evening. We\'re only putting the board in order. Please stay behind the tape.',
+      'One photo for every painting in the catalogue. Forty-five to pin.',
     ];
-    mini(K, 3.25, -2.5, 'look at the board', (m) => { j = (j + 1) % BOARD.length; m.say(BOARD[j]); }, 0.75);
+    mini(K, 3.0, -1.35, 'talk to the officer', (m) => { j = (j + 1) % COPS.length; m.say(COPS[j]); }, 0.6);
     mini(K, -0.4, -4.0, 'look at the tape', (m) => m.say('A roll of grey gallery tape — the museum\'s own kind — left on the floor.'), 0.55);
   },
 };
@@ -1514,6 +1851,7 @@ export function createRooms({ scene, camera, player, game }) {
   const M = {
     say(text) { say.textContent = text; say.classList.remove('hide'); clearTimeout(sayT); sayT = setTimeout(() => say.classList.add('hide'), 4800); },
     see(filter) { document.querySelector('canvas').style.filter = filter || ''; },
+    ui(on) { G.ui = on ? 'room' : null; st.enabled = !on; if (on) { prompt.classList.add('hide'); say.classList.add('hide'); } },
   };
   const fadeDo = (fn) => {
     busy = true; fade.style.opacity = '1';

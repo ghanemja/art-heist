@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, registerGround, standAt, paintRoadMarkings } from './world.js';
+import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, registerGround, standAt, paintRoadMarkings, LAMPS, collectLamps } from './world.js';
 import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
@@ -12,7 +12,9 @@ import { createPark } from './park.js';
 import { createShopInteriors } from './shopinterior.js';
 import { createRooms, ROOM_STYLES } from './rooms.js';
 import { createCarParks } from './carparks.js';
+import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
+import { createMeadow } from './meadow.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -29,6 +31,7 @@ const sky = buildSky(scene);
 const lights = buildLights(scene);
 const clouds = buildClouds(scene);
 const town = buildTown(scene);
+collectLamps([scene, ...town.shops.map(sp => sp.root)]);   // every lamp's spot, before the props are baked (the shops' own are in their frames)
 // the town's loose props (trees, lamps, benches, planters…), each baked down in place to a fill
 // and a hull — before anything reads the ground, so the walk rays index the baked meshes
 bakeScenery(scene, new Set(scene.children));
@@ -61,6 +64,8 @@ const plaza = createPlaza({ scene, town, game, player });                  // Ma
 const park = createPark({ scene, town, game, player });                    // Lantern Park: strollers, a reader, a coffee
 const northLife = createNorthLife({ scene, town, game, player });          // the club's players, the swimmer, the golfer, the Close's neighbours
 createCarParks({ scene, town });                                         // the project shops' car parks: a parked car each
+// the wildflower meadow across the road from Lantern Park: run through it, the flowers squash and spring back
+const meadow = createMeadow({ scene, town, player, camera });
 const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper && !ROOM_STYLES.has(l.style)));   // the project shops' living rooms
 // YarnFlow, Borrowed Eyes and QR Compass open into whole rooms (rooms.js): walk in at the door.
 // The museum's front door is an E prompt on the forecourt: inside is the crime scene.
@@ -83,12 +88,14 @@ game.doors.push({ dir: mf(0, -1.75), r: 1.3, label: 'go inside the museum', act:
   const dir = mf(0, -1.0);
   return { dir, heading: mf(0, 2).sub(dir).projectOnPlane(dir).normalize() };
 } }) });
+const telescope = createTelescope({ town, game, player, camera });   // the Summit Overlook's telescope: E for a look at the town
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera);
-window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES };
+window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, LAMPS };
+window.__v2.meadow = meadow;
 
 const clock = new THREE.Clock();
 function loop() {
@@ -102,6 +109,7 @@ function loop() {
     if (atm.t >= 1) atm.dur = 0;
   }
   town.museum.tick(t, 1 - atm.k);
+  telescope?.update(dt);
   if (!game.update(dt, t)) { rooms.watch(roomDoors); if (!rooms.update(dt, t)) player.update(dt, t); }
   town.tickShops(player.st.dir);                 // inside a project shop: its upper walls lift away
   // inside a carriage of the parked train: its roof lifts off and the camera rises to look in
@@ -118,6 +126,7 @@ function loop() {
     northLife.update(dt);
     shopInside.update(dt, t, player);
   }
+  if (!rooms.inside) meadow.update(dt);          // the meadow's stomp trail + "stomp!" words
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);

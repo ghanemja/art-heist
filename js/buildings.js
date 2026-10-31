@@ -40,6 +40,66 @@ function prism(prof, len, bevel = 0.01) {
   g.translate(len / 2, 0, 0);
   return g;
 }
+// the same profile run ROUND a w × d rectangle of walls (centred on the origin) in one mitred
+// piece: a cornice or band that goes round every side, so no corner is left open and no two
+// runs overlap there (coplanar tops z-fight, and the overlap read as separate blocks). The
+// corners turn on a small radius, so the shading and the ink hull run on round them. `flush`:
+// sides that butt a neighbour ('+x', '-x', '+z', '-z'); the profile doesn't stand out there.
+// The straight runs carry a vertex every ≤0.4 (STEP), as the roof on it does: placeOnPlanet lays
+// every vertex on the curve and only splits edges longer than 1.6, so a long run would sag
+// ~1cm between its ends — and differently from the roof resting on it
+const STEP = 0.4;
+function ringPrism(prof, w, d, { flush = [], rc = 0.03, seg = 3 } = {}) {
+  let area = 0;
+  for (let j = 0; j < prof.length; j++) { const [a, b] = prof[j], [c, e] = prof[(j + 1) % prof.length]; area += a * e - c * b; }
+  const P = area > 0 ? prof : prof.slice().reverse();          // counter-clockwise in (out, up)
+  const fx = [flush.includes('+x'), flush.includes('-x')], fz = [flush.includes('+z'), flush.includes('-z')];
+  const nw = Math.max(1, Math.ceil(w / STEP)), nd = Math.max(1, Math.ceil(d / STEP));
+  const N = 4 * (seg + 1) + 2 * (nw - 1) + 2 * (nd - 1), pos = [], idx = [];
+  for (const [o, u] of P) {
+    const loop = [];
+    for (let c = 0; c < 4; c++) {                                // the corners in turn: (+x,+z) (-x,+z) (-x,-z) (+x,-z)
+      const sx = c === 0 || c === 3 ? 1 : -1, sz = c < 2 ? 1 : -1;
+      const ox = fx[sx > 0 ? 0 : 1] ? Math.min(o, 0) : o, oz = fz[sz > 0 ? 0 : 1] ? Math.min(o, 0) : o;
+      const cx = sx * (w / 2 + ox - rc), cz = sz * (d / 2 + oz - rc);
+      const arc = [];
+      for (let k = 0; k <= seg; k++) { const a = (c + k / seg) * Math.PI / 2; arc.push([cx + Math.cos(a) * rc, cz + Math.sin(a) * rc]); }
+      loop.push(arc);
+    }
+    for (let c = 0; c < 4; c++) {                                // each corner, then the straight run to the next
+      for (const [x, z] of loop[c]) pos.push(x, u, z);
+      const [x0, z0] = loop[c][seg], [x1, z1] = loop[(c + 1) % 4][0], n = c % 2 ? nd : nw;
+      for (let k = 1; k < n; k++) pos.push(x0 + (x1 - x0) * k / n, u, z0 + (z1 - z0) * k / n);
+    }
+  }
+  // (the loop runs toward +z along the +x side; with the profile anticlockwise, this winding
+  // turns every face outward)
+  for (let j = 0; j < P.length; j++) {
+    const j2 = (j + 1) % P.length;
+    for (let i = 0; i < N; i++) {
+      const i2 = (i + 1) % N, a = j * N + i, b = j * N + i2, c = j2 * N + i, e = j2 * N + i2;
+      idx.push(a, c, b, b, c, e);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+// a cornice run round the walls, set at y (its foot at the wall top)
+function corniceRing(K, mat, prof, x, y, z, w, d, opts) { return K.put(ringPrism(prof, w, d, opts), mat, x, y, z); }
+const profOut = (prof) => Math.max(...prof.map(p => p[0])), profTop = (prof) => Math.max(...prof.map(p => p[1]));
+// a hipped roof that sits ON a cornice ring: its eaves rest on the cornice's top and stand
+// `ov` past its outer edge on every side, so no roof plane cuts through the trim
+const _roofTess = new TessellateModifier(STEP, 10);
+export const hipRoofFine = (w, d, h, k = 1) => _roofTess.modify(hipRoof(w, d, h, k));   // (split to STEP, like the ring under it)
+// (`flush`: as the ring's — no eave stands out on those sides, the roof stops at the wall line)
+function roofOnRing(K, mat, prof, x, y, z, w, d, h, k = 1, ov = 0.04, flush = []) {
+  const e = profOut(prof) + ov, E = (sd) => flush.includes(sd) ? 0 : e;
+  const x0 = -w / 2 - E('-x'), x1 = w / 2 + E('+x'), z0 = -d / 2 - E('-z'), z1 = d / 2 + E('+z');
+  return K.put(hipRoofFine(x1 - x0, z1 - z0, h, k), mat, x + (x0 + x1) / 2, y + profTop(prof) + 0.005, z + (z0 + z1) / 2);
+}
 // an opening: a rectangle with an optional semicircular head, in absolute coords
 function opening(w, y0, ySpring, arch, path = new THREE.Shape()) {
   path.moveTo(-w / 2, y0); path.lineTo(w / 2, y0); path.lineTo(w / 2, ySpring);
@@ -398,9 +458,10 @@ function bench(K, x, z, ry = 0, col = PAL.bark, y = 0.07) {
   s.box(0.9, 0.22, 0.05, paint(col), 0, 0.55, -0.13, 0.02, [-0.15, 0, 0]);
   for (const sx of [-0.38, 0.38]) s.box(0.05, 0.36, 0.28, DARK(), sx, 0.18, 0, 0.015);
 }
-function lampPost(K, x, z, h = 2.1) {
-  K.foot(x, z, 0.1);
-  K.put(lathe([[0.001, 0], [0.1, 0], [0.1, 0.08], [0.05, 0.18], [0.035, h - 0.1], [0.06, h - 0.04], [0.001, h]], 12), DARK(), x, 0.05, z);
+function lampPost(K, x, z, h = 2.1, mark = 'post') {
+  K.foot(x, z, 0.1).userData.lampMark = mark;                // (world.js collectLamps)
+  // (the post's top flares into a collar the lantern's base sits in: it met the lantern at a point)
+  K.put(lathe([[0.001, 0], [0.1, 0], [0.1, 0.08], [0.05, 0.18], [0.035, h - 0.12], [0.05, h - 0.1], [0.075, h - 0.05], [0.097, h - 0.012], [0.097, h], [0.001, h]], 14), DARK(), x, 0.05, z);
   K.put(lathe([[0.001, 0], [0.08, 0.02], [0.13, 0.14], [0.1, 0.3], [0.03, 0.36], [0.001, 0.38]], 14), GLOW(), x, h + 0.02, z);
   K.put(lathe([[0.001, 0], [0.15, 0], [0.04, 0.1], [0.001, 0.16]], 14), DARK(), x, h + 0.36, z);
 }
@@ -582,13 +643,20 @@ function bayWindow(K, x, y, bw, bh, wall, trim, gv) {
 function roofTop(K, o, w, d, H, wall, trim) {
   const roofMat = paint(o.roofCol ?? PAL.roofSlate), deck = paint(0x9a93a0);
   const kind = o.roof ?? 'parapet';
+  // the roofline trim runs round every side (it was on the front only, so the sides and back
+  // had none, and a roof sat over bare wall); against a neighbour (a side that isn't one of
+  // `ends`) it doesn't stand out, so it never pokes into the next shop's roof
+  const flush = [1, -1].filter(s => !(o.ends || []).includes(s)).map(s => s > 0 ? '+x' : '-x');
+  const ringAt = (prof, y) => corniceRing(K, trim, prof, 0, y, -d / 2, w, d, { flush });
+  const descr = (k, prof, y, roof) => { K.g.userData.trimName = kind; K.g.userData.trims = [{ x: 0, z: -d / 2, w, d, y, top: y + profTop(prof), out: profOut(prof), kind: k, trim: trim.color.getHex(), roof, skip: flush }]; };
   if (kind === 'parapet' || kind === 'deco') {
-    K.put(prism(CORNICE, w + 0.08), trim, 0, H, 0);
+    ringAt(CORNICE, H);
     const nb = Math.max(3, Math.round(w / 0.42));
     for (let k = 0; k < nb; k++) K.put(prism(BRACKET, 0.07), trim, -w / 2 + 0.12 + k * (w - 0.24) / (nb - 1), H - 0.17, 0);
-    K.box(w, 0.3, 0.13, wall, 0, H + 0.39, -0.06, 0.03);
+    K.box(w, 0.48, 0.13, wall, 0, H + 0.3, -0.06, 0.03);                       // the raised front, down to the deck
     K.box(w + 0.05, 0.06, 0.18, trim, 0, H + 0.56, -0.06, 0.02);
-    K.box(w - 0.04, 0.06, d - 0.2, deck, 0, H + 0.03, -d / 2 - 0.06, 0.02);
+    K.box(w - 0.06, 0.06, d - 0.06, deck, 0, H + 0.03, -d / 2, 0.02);       // the flat roof, inside the parapet
+    descr('flat', CORNICE, H, 0x9a93a0);
     if (kind === 'deco') {
       for (const [sx, hh] of [[0, 0.62], [-w * 0.3, 0.38], [w * 0.3, 0.38]]) {
         K.box(w * 0.22, hh, 0.14, wall, sx, H + 0.54 + hh / 2, -0.06, 0.03);
@@ -601,10 +669,13 @@ function roofTop(K, o, w, d, H, wall, trim) {
     }
     chimney(K, w * 0.28, H, -d + 0.35);
   } else if (kind === 'mansard') {
-    K.put(prism(CORNICE, w + 0.08), trim, 0, H, 0);
+    // the mansard stands ON the cornice ring (it sat 0.02 down in it), a ledge of trim all round
+    ringAt(CORNICE, H);
+    const MB = H + profTop(CORNICE) + 0.005;
     const mh = 0.78, prof = [[0.02, 0], [-0.3, mh], [-(d - 0.55), mh], [-(d - 0.05), 0]];
-    K.put(prism(prof, w + 0.02), roofMat, 0, H + 0.22, 0);
-    K.box(w + 0.04, 0.06, d - 0.75, paint(shade(o.roofCol ?? PAL.roofSlate, 0.85)), 0, H + 0.22 + mh, -d / 2 + 0.1, 0.02);
+    K.put(prism(prof, w + 0.02), roofMat, 0, MB, 0);
+    K.box(w + 0.04, 0.06, d - 0.75, paint(shade(o.roofCol ?? PAL.roofSlate, 0.85)), 0, MB + mh, -d / 2 + 0.1, 0.02);
+    descr('ledge', CORNICE, H, o.roofCol ?? PAL.roofSlate);
     const nd = w > 1.9 ? 2 : 1;
     for (let k = 0; k < nd; k++) {
       const x = -w / 2 + (k + 0.5) * w / nd, y0 = H + 0.36;
@@ -615,7 +686,9 @@ function roofTop(K, o, w, d, H, wall, trim) {
     }
     chimney(K, -w * 0.3, H + 0.8, -d + 0.45);
   } else if (kind === 'gable' || kind === 'dutch') {
-    K.put(prism(BAND, w + 0.1), trim, 0, H, 0);
+    ringAt(BAND, H);
+    descr('band', BAND, H, o.roofCol ?? PAL.roofSlate);
+    K.g.userData.trims[0].skip = ['+x', '-x'];         // (the eave sides: the roof hangs over the band there)
     const gh = kind === 'gable' ? w * 0.42 : w * 0.34;
     const tri = shape([[-w / 2, 0], [w / 2, 0], [0, gh]]);
     K.put(extrude(tri, d - 0.05, 0.012), wall, 0, H, -d + 0.05);
@@ -709,15 +782,18 @@ export function library(o) {
   for (const x of [-1.0, 0, 1.0]) windowAt(BK, { x, y: 0.45, w: 0.4, h: 1.1, arch: true, frame: trim, glass: upperGlass(x + 2), cols: 2, rows: 3, hood: 'key' });
   // cornice, hipped roof, cupola
   const rY = P + BH, rz = bodyZ - (d - 0.65) / 2;
-  const cor = K.sub(0, rY, bodyZ); cor.put(prism(CORNICE, w - 0.12), trim, 0, 0, 0);
-  K.put(hipRoof(w - 0.06, d - 0.55, 0.7, 1), paint(PAL.roofSlate), 0, rY + 0.2, rz);
-  const cy = rY + 0.75;
+  // (the cornice was on the front only, and the roof sat 0.04 down through it and past the
+  // sides: now it runs round the body and the roof's eaves rest on it)
+  corniceRing(K, trim, CORNICE, 0, rY, rz, w - 0.2, d - 0.65);
+  roofOnRing(K, paint(PAL.roofSlate), CORNICE, 0, rY, rz, w - 0.2, d - 0.65, 0.7);
+  K.g.userData.trimName = 'library'; K.g.userData.trims = [{ x: 0, z: rz, w: w - 0.2, d: d - 0.65, y: rY, top: rY + 0.24, out: 0.2, kind: 'hip', trim: 0xfffaf0, roof: PAL.roofSlate }];
+  const cy = rY + 0.8;
   K.put(lathe([[0.001, 0], [0.42, 0], [0.42, 0.06], [0.36, 0.08], [0.36, 0.5], [0.42, 0.54], [0.42, 0.6], [0.001, 0.6]], 24), trim, 0, cy, rz);
   for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; K.box(0.05, 0.36, 0.05, stone, Math.cos(a) * 0.37, cy + 0.28, rz + Math.sin(a) * 0.37, 0.01); }
   K.put(lathe([[0.001, 0], [0.42, 0], [0.4, 0.14], [0.32, 0.3], [0.18, 0.42], [0.001, 0.46]], 24), paint(0x5fae9a), 0, cy + 0.6, rz);
   K.put(lathe([[0.001, 0], [0.04, 0], [0.02, 0.2], [0.06, 0.24], [0.001, 0.32]], 10), paint(PAL.gold), 0, cy + 1.04, rz);
   // lamp standards at the steps, a book-return box
-  for (const s of [-1, 1]) lampPost(K, s * 1.25, 0.4, 1.5);
+  for (const s of [-1, 1]) lampPost(K, s * 1.25, 0.4, 1.5, 'feature');   // (the library's own: they stay, street lamps keep 1.5 off them)
   K.box(0.32, 0.5, 0.26, paint(0x3f5872), 1.55, 0.32, 0.7, 0.05); K.foot(1.55, 0.7, 0.18);
   K.flat(0.2, 0.08, signMat('BOOK RETURN', { bg: '#3f5872', w: 256, h: 96, border: false, font: '400 $px ' + HAND }), 1.55, 0.45, 0.832);
   const pv = uvFrom(rb(w + (o.pave?.[0] ?? 0) + (o.pave?.[1] ?? 0) + 0.02, 0.07, PAVE + 0.02, 0.02), 'x', 'z', 0.75);
@@ -908,19 +984,21 @@ export function townBlock(o = {}) {
   K.box(w + 0.1, 0.14, d + 0.1, trim, 0, 1.42, 0, 0.05);
   for (let y = 1.4 + 1.7; y < h - 0.5; y += 1.7) K.box(bw + 0.05, 0.06, bd + 0.05, trim, 0, y, 0, 0.02);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) K.box(0.16, h - 1.5, 0.16, trim, sx * bw / 2, 1.45 + (h - 1.5) / 2, sz * bd / 2, 0.03);
-  // the parapet, then the cornice and brackets on all four faces capping it: the cornice is
-  // the roofline (it used to sit under a band of bare parapet, so the trim read as too low)
+  // the roofline: ONE cornice run round all four faces (it was four straight runs, each 0.4
+  // too long, overlapping as blocks at every corner), on brackets; its top is the parapet's
+  // coping, and the flat roof sits down inside it
+  corniceRing(K, trim, CORNICE, 0, h + 0.04, 0, bw, bd);
   for (let k = 0; k < 4; k++) {
     const along = k % 2 ? bd : bw, F = K.sub(Math.sin(k * Math.PI / 2) * bw / 2, h + 0.04, Math.cos(k * Math.PI / 2) * bd / 2, k * Math.PI / 2);
-    F.put(prism(CORNICE, along + 0.4), trim, 0, 0, 0);
     const nb = Math.max(2, Math.round(along / 0.55));
     for (let b = 0; b < nb; b++) F.put(prism(BRACKET, 0.07), trim, -along / 2 + 0.2 + b * (along - 0.4) / (nb - 1), -0.17, 0);
   }
-  K.box(bw, 0.26, bd, wall, 0, h + 0.13, 0, 0.03);
-  K.box(bw - 0.02, 0.04, bd - 0.02, paint(shade(col, 0.82)), 0, h + 0.27, 0, 0.01);   // the flat roof, inside the cornice
+  K.box(bw, 0.1, bd, wall, 0, h + 0.05, 0, 0.02);                                         // the wall up into the cornice
+  K.box(bw - 0.06, 0.04, bd - 0.06, paint(shade(col, 0.82)), 0, h + 0.12, 0, 0.01);   // the flat roof, down inside the parapet
+  K.g.userData.trimName = 'townBlock'; K.g.userData.trims = [{ x: 0, z: 0, w: bw, d: bd, y: h + 0.04, top: h + 0.28, out: 0.2, kind: 'flat', trim: PAL.kerb, roof: shade(col, 0.82) }];
   if (h > 4.5) {
     const cw = w * 0.56, cd = d * 0.56;
-    K.box(cw, 0.85, cd, wall, 0, h + 0.68, 0, 0.06);
+    K.box(cw, 0.985, cd, wall, 0, h + 0.6125, 0, 0.06);           // (standing on the roof deck)
     K.put(prism(BAND, cw + 0.12), trim, 0, h + 1.08, cd / 2);
     K.box(cw + 0.14, 0.1, cd + 0.14, trim, 0, h + 1.16, 0, 0.03);
     if (rnd() > 0.45) {                                   // a timber water tank on iron legs
@@ -931,7 +1009,7 @@ export function townBlock(o = {}) {
       K.put(lathe([[0.001, 0], [0.37, 0], [0.001, 0.32]], 16), paint(PAL.roofSlate), tx, ty + 1.05, tz);
     } else K.put(lathe([[0.001, 0], [0.24, 0], [0.24, 0.12], [0.2, 0.16], [0.2, 0.55], [0.04, 1.0], [0.001, 1.05]], 14), paint(PAL.roofSlate), 0, h + 1.2, 0);
   } else {
-    K.box(0.4, 0.25, 0.3, paint(0xb8b2bd), w * 0.18, h + 0.38, -d * 0.12, 0.03);   // a rooftop vent
+    K.box(0.4, 0.25, 0.3, paint(0xb8b2bd), w * 0.18, h + 0.265, -d * 0.12, 0.03);   // a rooftop vent, on the deck
   }
   // street level: a proper doorway (it was a flat slab stuck on the shop window), a step and
   // a striped awning. A trim surround stands just proud of the wall; inside it a dark reveal
@@ -968,7 +1046,7 @@ const MALL_UNITS = [
   { name: 'Holey Donuts', kind: 'donuts', col: 0xf6c6d0, sign: '#d0607a', w: 2.6, tall: true },
   { name: 'Rewind Video', kind: 'video', col: 0x8f7ae8, sign: '#5a48b0', w: 2.2 },
 ];
-export function stripMall() {
+export function stripMall(o = {}) {
   const K = kit();
   const units = MALL_UNITS;
   const W = units.reduce((a, u) => a + u.w, 0), D = 3.0, H = 2.1;
@@ -1019,23 +1097,89 @@ export function stripMall() {
     K.put(lathe([[0.001, 0], [0.08, 0], [0.08, 0.06], [0.045, 0.1], [0.045, H - 0.32], [0.08, H - 0.28], [0.08, H - 0.24], [0.001, H - 0.24]], 12), trim, px, 0, cz + 0.6);
   }
   K.box(W + tower * 2, 0.08, 1.6, paint(0xe2d6bd), 0, 0.04, 0.75, 0.02);
-  // parking lot: asphalt, painted bays, wheel stops, planted islands, lamps
-  const LD = 4.6, lotZ = 1.55;
-  // the asphalt, its two front corners cut back on the diagonal: the roads either side bend in
-  // there and their kerbs used to run over the lot's square corners
-  const lotHalf = (W + tower * 2 + 0.6) / 2, CUT = 1.0, lotEnd = lotZ + LD;
-  {
-    const sh = new THREE.Shape();
-    sh.moveTo(-lotHalf, lotZ); sh.lineTo(lotHalf, lotZ); sh.lineTo(lotHalf, lotEnd - CUT); sh.lineTo(lotHalf - CUT, lotEnd);
-    sh.lineTo(-lotHalf + CUT, lotEnd); sh.lineTo(-lotHalf, lotEnd - CUT); sh.closePath();
-    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: false });
-    geo.rotateX(Math.PI / 2); geo.translate(0, 0.05, 0);
-    K.put(geo, paint(0x8a8392, { hatch: 0 }), 0, 0, 0).userData.noInk = true;   // asphalt meets asphalt: no drawn edge
+  // parking lot: asphalt, painted bays, wheel stops, planted end islands, lamps — and its ends
+  // finished like a real strip-mall corner. Each side road curves round the lot (o.kerbU(s, z):
+  // where that road's kerb begins, |x| on side s at depth z, in this frame). Out from the road:
+  // its kerb, a grass verge of one even width (VG), then a pavement that follows the kerb line
+  // all the way — along the tower's end wall it runs out from the building line, along the lot
+  // it runs beside the lot's own kerb. The lot is square to the building (its sides on the
+  // building line, X0) and only bends in, parallel to the road, where the road closes in at its
+  // front corners (it used to be a rectangle with cut corners: ragged wedges of grass and bare
+  // ground between it, a loose slab of an island, the end of the walk and the road's kerb).
+  const LD = 4.6, lotZ = 1.55, lotEnd = lotZ + LD;
+  const X0 = W / 2 + tower, KB = 0.15, VG = 0.35, SW = 0.85, zB = -D / 2 - (D + 0.25) / 2, DRV = 1.95;
+  const kerbAt = (s, z) => o.kerbU?.(s, z) ?? X0 + VG + SW + 0.6;
+  const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4; };
+  const zs = [];
+  for (let z = zB; z < lotEnd + KB - 1e-6; z += 0.2) zs.push(z);
+  for (const z of [lotZ - 1e-3, lotZ, lotEnd, lotEnd + KB]) { for (let i = zs.length - 1; i >= 0; i--) if (Math.abs(zs[i] - z) < 0.05) zs.splice(i, 1); zs.push(z); }
+  zs.sort((a, b) => a - b);
+  const SIDE = {};
+  for (const s of [-1, 1]) {
+    const k = zs.map(z => kerbAt(s, z));
+    const lot = k.map(kk => smin(X0, kk - VG - SW, 0.6));               // the lot's edge (inside face of its kerb)
+    SIDE[s] = { k, lot, out: k.map(kk => kk - VG) };                    // …and the pavement's outer edge
   }
+  const lerpAt = (arr, z) => {                                          // sample a per-z array
+    if (z <= zs[0]) return arr[0];
+    for (let i = 1; i < zs.length; i++) if (z <= zs[i]) { const t = (z - zs[i - 1]) / Math.max(1e-6, zs[i] - zs[i - 1]); return arr[i - 1] + (arr[i] - arr[i - 1]) * t; }
+    return arr[arr.length - 1];
+  };
+  const lotU = (s, z) => lerpAt(SIDE[s].lot, Math.min(lotEnd, Math.max(lotZ, z)));
+  const lotZs = zs.filter(z => z >= lotZ && z <= lotEnd);
+  // a flat slab from an outline [[x, z]…], y0 → y1, its top shaded flat like the ground
+  const slab = (poly, y0, y1, mat) => {
+    const sh = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: y1 - y0, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2); geo.translate(0, y0, 0);
+    const n = geo.attributes.normal; for (let i = 0; i < n.count; i++) if (n.getY(i) > 0.5) n.setXYZ(i, 0, 1, 0);
+    return K.put(geo, mat, 0, 0, 0);
+  };
+  const kerbM = paint(PAL.kerb), paveM = paint(0xe2d6bd), asph = paint(0x8a8392, { hatch: 0 });
+  // the asphalt (asphalt meets asphalt at the drive: no drawn edge)
+  slab([...lotZs.map(z => [lotU(1, z), z]), ...lotZs.slice().reverse().map(z => [-lotU(-1, z), z])], 0, 0.05, asph).userData.noInk = true;
   // (the drive out to the boulevard is mallDrive(), built to the road's real edge once it's placed)
+  const PAVE = {};
+  for (const s of [-1, 1]) {
+    // the lot's kerb: up its side and across its front to the drive's dropped kerb, offset
+    // outward with mitred corners
+    const kl = [...lotZs.map(z => [s * lotU(s, z), z]), [s * DRV, lotEnd]];
+    const segN = [];
+    for (let i = 0; i < kl.length - 1; i++) {
+      const dx = kl[i + 1][0] - kl[i][0], dz = kl[i + 1][1] - kl[i][1], l = Math.hypot(dx, dz) || 1;
+      segN.push(s > 0 ? [dz / l, -dx / l] : [-dz / l, dx / l]);
+    }
+    const outer = kl.map((p, i) => {
+      const a = segN[Math.max(0, i - 1)], b = segN[Math.min(segN.length - 1, i)];
+      let nx = a[0] + b[0], nz = a[1] + b[1]; const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
+      const m = KB / Math.max(0.5, nx * b[0] + nz * b[1]);
+      return [p[0] + nx * m, p[1] + nz * m];
+    });
+    slab([...kl, ...outer.reverse()], 0, 0.1, kerbM);
+    // the pavement: from the building line (beside the tower) or the lot's edge (under its kerb)
+    // out to the verge, from the back of the tower to the front of the lot's kerb. Where the
+    // road crowds the building it simply ends, square across, at a sensible width
+    const S = SIDE[s], inner = zs.map(z => z < lotZ ? X0 : lotU(s, z));
+    const ok = zs.map((z, i) => S.out[i] - inner[i] >= 0.35);
+    let a = zs.findIndex(z => z >= lotZ), b = a;
+    if (ok[a]) {
+      while (a > 0 && ok[a - 1]) a--;
+      while (b < zs.length - 1 && ok[b + 1]) b++;
+      const run = zs.slice(a, b + 1).map((z, j) => [z, inner[a + j], S.out[a + j]]);
+      const poly = [];
+      for (let j = 0; j < run.length; j++) {
+        const [z, u] = run[j];
+        if (j && run[j - 1][0] < lotZ && z >= lotZ) poly.push([s * run[j - 1][1], z]);   // the step from the tower's face to the lot's edge
+        poly.push([s * u, z]);
+      }
+      for (let j = run.length - 1; j >= 0; j--) poly.push([s * run[j][2], run[j][0]]);
+      slab(poly, 0, 0.08, paveM);
+      PAVE[s] = { z0: zs[a], z1: zs[b], inner: (z) => z < lotZ ? X0 : lotU(s, z), out: (z) => lerpAt(S.out, z) };
+    }
+  }
   // one row of car-sized bays along the shops (nose in, a wheel stop at the kerb end); the
   // front row is gone, so the drive from the boulevard opens straight into the aisle
-  const line = paint(0xf6eedb, { hatch: 0 }), span = W + tower * 2 - 0.6;
+  const line = paint(0xf6eedb, { hatch: 0 });
   const NB = 5, bayX0 = -4.4, bayW = 8.8 / NB, bayZ0 = lotZ + 0.15, bayD = 3.0;
   const bays = [];
   for (let k = 0; k <= NB; k++) K.box(0.05, 0.012, bayD, line, bayX0 + k * bayW, 0.055, bayZ0 + bayD / 2, 0.004).userData.noInk = true;
@@ -1044,19 +1188,34 @@ export function stripMall() {
     K.box(0.6, 0.08, 0.1, paint(0xd8cab0), bx, 0.09, bayZ0 + 0.2, 0.02);
     bays.push({ x: bx, z: bayZ0 + bayD / 2, stopZ: bayZ0 + 0.2 });
   }
+  // the end islands: a kerbed bed the depth of the bays, from just past the last bay's line out
+  // to the lot's kerb (from the walk's edge to the aisle), a shrub, a little tree and a lamp
+  const IU = -bayX0 + 0.08, IZ0 = lotZ, IZ1 = bayZ0 + bayD, bed = paint(PAL.grassDeep);
+  const isZs = [IZ0, ...lotZs.filter(z => z > IZ0 && z < IZ1), IZ1];
   for (const s of [-1, 1]) {
-    const ix = s * (span / 2 - 0.2);
-    K.box(0.9, 0.12, 1.5, paint(0xd8cab0), ix, 0.06, lotZ + LD / 2, 0.04);
-    K.put(_puff.clone().scale(0.38, 0.32, 0.38), paint(PAL.leaf), ix, 0.5, lotZ + LD / 2);
-    K.put(lathe([[0.001, 0], [0.06, 0], [0.04, 0.35], [0.001, 0.36]], 8), paint(PAL.bark), ix, 0.1, lotZ + LD / 2);
-    lampPost(K, ix + s * 0.0, lotZ + LD / 2 - 0.6, 2.4);
+    slab([...isZs.map(z => [s * IU, z]), ...isZs.slice().reverse().map(z => [s * lotU(s, z), z])], 0, 0.1, kerbM);
+    const bz = isZs.filter(z => z > IZ0 + 0.1 && z < IZ1 - KB);
+    const bedZs = [IZ0 + 0.1, ...bz, IZ1 - KB];
+    slab([...bedZs.map(z => [s * (IU + KB), z]), ...bedZs.slice().reverse().map(z => [s * (lotU(s, z) - 0.02), z])], 0.09, 0.115, bed).userData.noInk = true;
+    const iu = (IU + lotU(s, (IZ0 + IZ1) / 2)) / 2, zc = (IZ0 + IZ1) / 2 - 0.2;
+    K.put(_puff.clone().scale(0.34, 0.3, 0.34), paint(PAL.leaf), s * iu, 0.42, zc - 0.5);
+    K.put(lathe([[0.001, 0], [0.06, 0], [0.04, 0.35], [0.001, 0.36]], 8), paint(PAL.bark), s * iu, 0.1, zc + 0.35);
+    K.put(_puff.clone().scale(0.38, 0.32, 0.38), paint(PAL.leaf), s * iu, 0.6, zc + 0.35);
+    lampPost(K, s * iu, IZ1 - 0.4, 2.4);
   }
   // (the pylon sign is mallPylon(), stood up on its own on the verge by the drive: laid onto
   // the ground vertex by vertex with the rest of the mall, a tall post leant and sheared)
   bench(K, -W * 0.18, 0.5, 0, PAL.bark, 0.08); bench(K, W * 0.3, 0.5, 0, PAL.bark, 0.08);
-  const half = W / 2 + tower;
-  K.g.userData.floor = (x, z) => (z > -0.05 && z < 1.55 && Math.abs(x) < half) ? 0.08
-    : (z >= 1.55 && z < lotEnd && Math.abs(x) < lotHalf && Math.abs(x) + z < lotHalf + lotEnd - CUT) ? 0.05 : null;
+  const half = W / 2 + tower, lotHalf = X0;
+  K.g.userData.floor = (x, z) => {
+    const s = x < 0 ? -1 : 1, u = Math.abs(x);
+    if (z > -0.05 && z < lotZ && u < half) return 0.08;                              // the covered walk
+    if (z >= lotZ && z < lotEnd && u < lotU(s, z)) return u > IU && z < IZ1 ? 0.11 : 0.05;   // the lot (an island)
+    if (z >= lotZ && z < lotEnd + KB && u >= DRV && u < lotU(s, z) + KB) return 0.1;     // its kerb
+    const P = PAVE[s];
+    if (P && z >= P.z0 && z <= P.z1 && u >= P.inner(z) && u <= P.out(z)) return 0.08; // the end pavement
+    return null;
+  };
   // for the plaza's life (js/plaza.js): the shop doors, the bays, the aisle
   let ux = -W / 2;
   K.g.userData.mall = { bays, aisleZ: lotZ + LD - 0.75, walkZ: 1.05, lotEnd, lotHalf, pylonAt: [-3.4, lotEnd + 0.85],
@@ -1162,8 +1321,9 @@ export function shopLot(s, roadX) {
   K.box(0.16, 0.1, L.z1 - L.z0, kerb, s * (L.x1 + 0.02), TOP + 0.02, (L.z0 + L.z1) / 2, 0.03);
   K.box(L.x1 - L.x0 + 0.18, 0.1, 0.16, kerb, s * (L.x0 + L.x1) / 2, TOP + 0.02, L.z0 - 0.02, 0.03);
   K.box(L.x1 - L.aisle, 0.1, 0.16, kerb, s * (L.aisle + L.x1) / 2, TOP + 0.02, L.z1 + 0.02, 0.03);
-  // a lamp at the far corner, and a P sign at the apron
-  lampPost(K, s * (L.x1 - 0.35), L.z0 + 0.35, 2.3);
+  // a lamp just outside the far corner's kerb (it stood inside the end bay, in front of a parked
+  // car's nose), and a P sign at the apron
+  lampPost(K, s * (L.x1 + 0.34), L.z0 + 0.3, 2.3);
   const sg = K.sub(s * (L.x0 - 0.35), 0, L.z1 + 0.25, 0);
   sg.foot(0, 0, 0.1);
   sg.box(0.06, 1.5, 0.06, DARK(), 0, 0.75, 0, 0.02);
@@ -1193,17 +1353,23 @@ export function station() {
   for (const [qx, qh] of [[-MW / 2, H], [MW / 2, H], [-(MW / 2 + WW), WH], [MW / 2 + WW, WH]]) {
     for (let y = 0.35, k = 0; y < qh - 0.15; y += 0.22, k++) K.box(k % 2 ? 0.16 : 0.24, 0.16, 0.05, stone, qx - Math.sign(qx) * (k % 2 ? 0.08 : 0.12), y, front + 0.02 - (Math.abs(qx) > MW / 2 + 0.1 ? 0.3 : 0), 0.015);
   }
-  // cornices
-  K.put(prism(CORNICE, MW + 0.1), trim, 0, H, front);
-  for (const s of [-1, 1]) { const S = K.sub(s * (MW / 2 + WW / 2), WH, front - 0.3); S.put(prism(CORNICE.map(([a, b]) => [a * 0.8, b * 0.8]), WW + 0.08), trim, 0, 0, 0); }
-  // roofs: hipped slate on the hall, the wings
-  K.put(hipRoof(MW + 0.2, D + 0.2, 1.0, 1), slate, 0, H + 0.2, bz);
-  for (const s of [-1, 1]) K.put(hipRoof(WW + 0.1, D - 0.1, 0.7, 1), slate, s * (MW / 2 + WW / 2), WH + 0.18, bz - 0.15);
+  // cornices round the hall and both wings (they were on the front only), and the hipped slate
+  // roofs resting on them — they used to sit down through the cornice and hang past it
+  const C8 = CORNICE.map(([a, b]) => [a * 0.8, b * 0.8]);
+  corniceRing(K, trim, CORNICE, 0, H, bz, MW, D);
+  roofOnRing(K, slate, CORNICE, 0, H, bz, MW, D, 1.0);
+  for (const s of [-1, 1]) {
+    corniceRing(K, trim, C8, s * (MW / 2 + WW / 2), WH, bz - 0.15, WW, D - 0.3);
+    roofOnRing(K, slate, C8, s * (MW / 2 + WW / 2), WH, bz - 0.15, WW, D - 0.3, 0.7);
+  }
+  K.g.userData.trimName = 'station'; K.g.userData.trims = [{ x: 0, z: bz, w: MW, d: D, y: H, top: H + 0.24, out: 0.2, kind: 'hip', trim: 0xfffaf0, roof: PAL.roofSlate },
+    ...[-1, 1].map(s => ({ x: s * (MW / 2 + WW / 2), z: bz - 0.15, w: WW, d: D - 0.3, y: WH, top: WH + 0.192, out: 0.16, kind: 'hip', trim: 0xfffaf0, roof: PAL.roofSlate })),
+    { x: 0, z: front + 0.22 - 1.35 / 2, w: 1.35, d: 1.35, y: 5.2, top: 5.2 + 0.192, out: 0.16, kind: 'hip', trim: 0xfffaf0, roof: 0x5fae9a }];
   // the clock tower over the entrance
   const TW = 1.35, TH = 5.2, tz = front + 0.22 - TW / 2;
   K.box(TW, TH, TW, brick, 0, TH / 2, tz, 0.05);
   K.box(TW + 0.06, 0.12, TW + 0.06, stone, 0, H + 0.1, tz, 0.02);
-  const tc = K.sub(0, TH, tz + TW / 2); tc.put(prism(CORNICE.map(([a, b]) => [a * 0.8, b * 0.8]), TW + 0.08), trim, 0, 0, 0);
+  corniceRing(K, trim, C8, 0, TH, tz, TW, TW);
   for (let k = 0; k < 4; k++) {
     const F = K.sub(Math.sin(k * Math.PI / 2) * (TW / 2), 0, tz + Math.cos(k * Math.PI / 2) * (TW / 2), k * Math.PI / 2);
     F.put(new THREE.CylinderGeometry(0.46, 0.46, 0.08, 32), trim, 0, TH - 0.62, 0.02, [Math.PI / 2, 0, 0]);
@@ -1211,8 +1377,10 @@ export function station() {
     windowAt(F, { y: H + 0.5, w: 0.36, h: 0.8, arch: true, frame: trim, glass: upperGlass(k), cols: 2, rows: 2, hood: 'key' });
   }
   K.put(new THREE.SphereGeometry(0.035, 8, 6), dk, 0, TH - 0.62, tz + TW / 2 + 0.1);
-  K.put(lathe([[0.001, 0], [0.98, 0], [0.5, 0.75], [0.12, 1.25], [0.001, 1.3]], 4), paint(0x5fae9a), 0, TH + 0.2, tz, [0, Math.PI / 4, 0]);
-  K.put(lathe([[0.001, 0], [0.05, 0], [0.025, 0.35], [0.06, 0.4], [0.001, 0.55]], 10), paint(PAL.gold), 0, TH + 1.45, tz);
+  // the spire's square foot rests on the tower's cornice, 0.04 past it all round
+  const SB = TH + profTop(C8) + 0.005, SR = (TW / 2 + profOut(C8) + 0.04) * Math.SQRT2;
+  K.put(lathe([[0.001, 0], [SR, 0], [0.62, 0.72], [0.13, 1.25], [0.001, 1.3]], 4), paint(0x5fae9a), 0, SB, tz, [0, Math.PI / 4, 0]);
+  K.put(lathe([[0.001, 0], [0.05, 0], [0.025, 0.35], [0.06, 0.4], [0.001, 0.55]], 10), paint(PAL.gold), 0, SB + 1.25, tz);
   const vane = K.sub(0, TH + 1.8, tz, 0.6);
   vane.box(0.5, 0.03, 0.02, dk, 0, 0, 0, 0.008);
   vane.put(extrude(shape([[0.25, -0.08], [0.38, 0], [0.25, 0.08]]), 0.01, 0.004), dk, 0, 0, -0.005);
@@ -1481,8 +1649,9 @@ function bake(g, roots = [g]) {
   const inv = g.matrixWorld.clone().invert(), buckets = new Map(), m4 = new THREE.Matrix4();
   const keepMats = new Set([g, ...roots].flatMap(r => r.userData?.roofMats || []));
   for (const r of roots) r.updateMatrixWorld(true);
-  const foots = [], fp = new THREE.Vector3();
+  const foots = [], lamps = [], fp = new THREE.Vector3();
   for (const r of roots) r.traverse(o => {
+    if (o.userData.lampMark) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); lamps.push([fp.x, fp.z, o.userData.lampMark]); }
     if (o.userData.foot) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); foots.push([fp.x, fp.z, o.userData.foot]); return; }
     if (!o.isMesh || o.userData.isInk) return;
     const geo = o.geometry.clone().applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
@@ -1509,6 +1678,7 @@ function bake(g, roots = [g]) {
   });
   const ud = g.userData;
   if (foots.length) ud.foots = foots;
+  if (lamps.length) ud.lamps = lamps;
   const out = new THREE.Group();
   out.userData = ud;
   for (const { mat, noInk, noGround, geos } of buckets.values()) {
@@ -1561,6 +1731,7 @@ function conform(g, sink, groundAt = radiusAt) {
     const i = Math.floor(fx), k = Math.floor(fz), u = fx - i, w = fz - k;
     return (grid[i * nz + k] * (1 - u) + grid[(i + 1) * nz + k] * u) * (1 - w) + (grid[i * nz + k + 1] * (1 - u) + grid[(i + 1) * nz + k + 1] * u) * w;
   };
+  g.userData.lift = (x, z) => at(x, z) - sink;     // (the height it laid a point at: the roof-trim check reads it)
   for (const m of g.children) {
     m.geometry = (exact ? _tessFine : _tess).modify(m.geometry);
     const p = m.geometry.attributes.position;
@@ -1716,13 +1887,15 @@ export function bookLibrary() {
   // the reading room: brick body, stone plinth, a cornice, a slate hipped roof
   K.box(W + 0.12, 0.18, D + 0.12, paint(0xd8cab0), 0, 0.09, FZ - D / 2, 0.04);
   K.box(W, H, D, brick, 0, H / 2 + 0.1, FZ - D / 2, 0.06);
-  const cor = K.sub(0, H + 0.05, FZ - D + 0.02, Math.PI); cor.put(prism(CORNICE, W), trim, 0, 0, 0);
+  // the cornice runs round the back and both sides in one piece (three separate runs left the
+  // back corners open); at the front it stays flush, behind the bookcase's crown
+  corniceRing(K, trim, CORNICE, 0, H + 0.05, FZ - D / 2, W, D, { flush: ['+z'] });
   for (const sd of [-1, 1]) {
     const S = K.sub(sd * W / 2, 0.1, FZ - D / 2, sd * Math.PI / 2);
     for (const x of [-0.5, 0.5]) windowAt(S, { x, y: 0.75, w: 0.4, h: 1.2, arch: true, frame: trim, glass: upperGlass(2), cols: 2, rows: 3, hood: 'key' });
-    S.put(prism(CORNICE, D), trim, 0, H - 0.05, 0);
   }
-  K.put(hipRoof(W + 0.1, D + 0.1, 0.75, 1), paint(PAL.roofSlate), 0, H + 0.28, FZ - D / 2);
+  roofOnRing(K, paint(PAL.roofSlate), CORNICE, 0, H + 0.05, FZ - D / 2, W, D, 0.75, 1, 0.04, ['+z']);
+  K.g.userData.trimName = 'bookLibrary'; K.g.userData.trims = [{ x: 0, z: FZ - D / 2, w: W, d: D, y: H + 0.05, top: H + 0.29, out: 0.2, kind: 'hip', trim: 0xfffaf0, roof: PAL.roofSlate, skip: ['+z'] }];
   // the bookcase front: sides, plinth, two shelves, a crowned top with the name board
   const CW = W + 0.3, CD = 0.5, CZ = FZ + CD / 2 - 0.05, TOP = H + 0.35, SH = [0.22, 1.5];
   for (const s of [-1, 1]) K.box(0.16, TOP, CD, wood, s * (CW / 2 - 0.08), TOP / 2, CZ, 0.04);
