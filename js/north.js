@@ -20,7 +20,7 @@ import { R, ll, arc, slerpDir, frame, reserve, flatten, addRiver, addLake, radiu
   settle, yawToFace, alignToSurface, addFloor, buildRoad, deflect, smooth, ROADS, onRoad, standAt, zoneHit, LOTS } from './world.js';
 import { PAL, paint, ink, mergeStatic } from './style.js';
 import { kit, lathe, signMat, upperGlass, DARK, placeOnPlanet, batchPlaced, hipRoof } from './buildings.js';
-import { house, tree, pine, bush, lamp, bench, rbox } from './props.js';
+import { tree, pine, bush, lamp, bench, rbox } from './props.js';
 import { buildCar, fitToGround } from './player.js';
 import { person } from './human.js';
 import { poseFolk, STANCES } from './folk.js';
@@ -33,7 +33,7 @@ export const NORTH = {
   lakes: [[53.2, -19.6, 3.4], [47.8, 69.6, 3.6]],
   half: 2.5, depth: 0.9,
   bridge: [51.2, 22], bridgeLen: 8.4, bridgeW: 2.3,
-  junction: [62, 22],
+  junction: [65, 26],
   club: { at: [70, 4], r: 5.4 },
   range: { at: [68.5, 58], r: 5.0 },
   close: { at: [87, 120], loop: 4.0, ring: 6.4, r: 7.4, houses: 10 },
@@ -250,11 +250,54 @@ function drivingRange() {
   return K.g;
 }
 
+// ── a suburban house, light on the browser: the town's house() is ~34k triangles (flower
+// boxes of tiny spheres, bevels everywhere); this one is ~4k and reads the same at street
+// distance — boards, a gabled roof with fascias, a porch, framed windows with shutters ──
+const HOUSE_COLS = [[0xf1e4c8, 0xb85a3e, 0x3e6b52], [0x93abc0, 0x6f7d92, 0xe1b95c], [0xe1b95c, 0xb85a3e, 0x7fb3a8],
+  [0xa8b994, 0x6f9a7c, 0xe8604c], [0xdc9e9a, 0x6f7d92, 0xf6eedb], [0xf6eedb, 0x6f9a7c, 0x3f5872], [0xb7a3c6, 0xb85a3e, 0xe1b95c], [0xd58b63, 0x6f7d92, 0xf6eedb]];
+function bungalow(i, w = 2.2, d = 1.8, h = 1.5) {
+  const K = kit(), [wc, rc, dc] = HOUSE_COLS[i % HOUSE_COLS.length];
+  const wall = paint(wc), roofM = paint(rc), trim = paint(0xfaf6ec), door = paint(dc), glass = upperGlass(i % 3), stone = paint(0xb3a99a);
+  const bx = (W, H, D, m, x, y, z, r = 0.04, rot) => K.put(rbox(W, H, D, r, 1), m, x, y, z, rot);
+  bx(w + 0.08, 0.16, d + 0.08, stone, 0, 0.08, 0, 0.03);
+  bx(w, h, d, wall, 0, 0.16 + h / 2, 0, 0.05);
+  bx(w + 0.12, 0.08, d + 0.12, trim, 0, 0.16 + h, 0, 0.03);
+  // the roof: two slabs over a gable, a ridge
+  const rh = h * 0.6, ov = 0.18, half = w / 2 + ov, sl = Math.hypot(half, rh), ang = Math.atan2(rh, half);
+  for (const sx of [-1, 1]) { const r = bx(sl + 0.04, 0.09, d + ov * 2, roofM, sx * half / 2, 0.16 + h + rh / 2 + 0.03, 0, 0.03); r.rotation.z = -sx * ang; }
+  K.put(new THREE.CylinderGeometry(0.05, 0.05, d + ov * 2, 8).rotateX(Math.PI / 2), roofM, 0, 0.16 + h + rh + 0.04, 0);
+  { const tri = new THREE.Shape(); tri.moveTo(-w / 2, 0); tri.lineTo(w / 2, 0); tri.lineTo(0, rh * 0.95); tri.closePath();
+    const g = new THREE.ExtrudeGeometry(tri, { depth: d - 0.04, bevelEnabled: false }); g.translate(0, 0, -(d - 0.04) / 2);
+    K.put(g, wall, 0, 0.16 + h, 0); }
+  for (const sz of [-1, 1]) K.put(new THREE.TorusGeometry(0.13, 0.03, 6, 14), trim, 0, 0.16 + h + rh * 0.38, sz * (d / 2 + 0.01));
+  if (i % 3 !== 1) { bx(0.26, 0.6, 0.26, paint(0xd58b63), w * 0.25, 0.16 + h + rh * 0.65, -d * 0.15, 0.03); }
+  // front: a door under a little porch roof, a window either side with shutters; a window each side and back
+  const fz = d / 2 + 0.01, wy = 0.16 + h * 0.55;
+  bx(0.52, 0.95, 0.05, trim, 0, 0.16 + 0.47, fz, 0.02);
+  bx(0.4, 0.84, 0.04, door, 0, 0.16 + 0.43, fz + 0.025, 0.015);
+  K.put(new THREE.SphereGeometry(0.028, 6, 5), paint(PAL.gold, { hatch: 0 }), 0.13, 0.16 + 0.43, fz + 0.06);
+  bx(0.8, 0.06, 0.42, roofM, 0, 0.16 + 1.08, fz + 0.18, 0.02).rotation.x = 0.18;
+  for (const sx of [-1, 1]) bx(0.05, 0.16, 0.36, trim, sx * 0.34, 0.16 + 0.98, fz + 0.18, 0.015);
+  bx(0.7, 0.08, 0.32, stone, 0, 0.04, fz + 0.18, 0.02);
+  const win = (x, y, z, ry, shutters = true) => {
+    const S = K.sub(x, y, z, ry);
+    S.put(rbox(0.5, 0.56, 0.05, 0.02, 1), trim, 0, 0, 0);
+    S.flat(0.4, 0.46, glass, 0, 0, 0.03);
+    S.put(rbox(0.035, 0.46, 0.03, 0.01, 1), trim, 0, 0, 0.045); S.put(rbox(0.4, 0.035, 0.03, 0.01, 1), trim, 0, 0.02, 0.045);
+    S.put(rbox(0.6, 0.05, 0.1, 0.02, 1), trim, 0, -0.3, 0.04);
+    if (shutters) for (const s of [-1, 1]) S.put(rbox(0.14, 0.54, 0.03, 0.01, 1), door, s * 0.34, 0, 0.02);
+  };
+  for (const sx of [-1, 1]) win(sx * (w / 2 - 0.42), wy, fz, 0);
+  win(0, wy, -fz, Math.PI, false);
+  for (const sx of [-1, 1]) win(sx * (w / 2 + 0.01), wy, 0, sx * Math.PI / 2, false);
+  return K.g;
+}
+
 // ── a house lot on the Close (local +z: toward the road) — the house, a lawn, a picket
 // fence along the front with a gate, a driveway out to the kerb, a tree, a mailbox ──
 function houseLot(i) {
   const K = kit(), R0 = rng(907 + i * 13);
-  const h = house({ w: 2.1 + R0() * 0.3, d: 1.8, h: 1.55 + R0() * 0.3 }); h.position.set(-0.3, 0, -0.45); K.g.add(h);
+  const h = bungalow(i, 2.1 + R0() * 0.3, 1.8, 1.4 + R0() * 0.3); h.position.set(-0.3, 0, -0.45); K.g.add(h);
   const lawn = new THREE.PlaneGeometry(3.4, 3.0); lawn.rotateX(-Math.PI / 2);
   const lm = K.put(lawn, paint(0xb8cd8a, { hatch: 0 }), 0, 0.04, -0.2); lm.userData.noInk = true;
   const drive = new THREE.PlaneGeometry(0.75, 2.0); drive.rotateX(-Math.PI / 2);
@@ -314,7 +357,8 @@ function bridgeMesh(deckY, bottomY, Lh, Wd, N = 48) {
 
 // ── 2. BUILD (inside buildTown, after the town's own roads, before the countryside trees) ──
 export function buildNorth(scene, { add, solid, boulevard }) {
-  const out = {};
+  const out = { roots: [] };
+  { const add0 = add; add = (o) => { out.roots.push(o); return add0(o); }; }   // (everything placed here, for dev measurements)
   const feet = (g) => { g.updateWorldMatrix(true, false); for (const [x, z, r] of g.userData.foots || []) solid(g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r); };
   const J = L2(NORTH.junction);
 
@@ -477,19 +521,19 @@ STANCES.golf = { free: null,
 const LOOK = (o) => ({ folk: true, height: 1.0, build: 1.0, ...o });
 const PEOPLE = {
   tennisA: LOOK({ skin: 'tan', hair: 0x2a1d17, hairStyle: 'pony', top: 0xf6eedb, sleeve: 'short', bottom: 0xf6eedb, shoes: 0xf1ece0, height: 0.98, build: 0.92, stance: 'tennis',
-    face: { shape: { jaw: 0.3, chin: 0.5, cheeks: 0.4, long: 0.15, skull: 0.5, brow: 0.4 }, nose: 'snub', noseSize: 0.95, eyes: 'round', brows: 'raised', lashes: true, blush: 0.5 } }),
+    face: { shape: { jaw: 0.3, chin: 0.5, cheeks: 0.4, long: 0.15, skull: 0.5, brow: 0.4 }, nose: 'snub', noseSize: 0.95, eyes: 'round', brows: 'raised', lashes: true, hair: 'pony', blush: 0.5 } }),
   tennisB: LOOK({ skin: 'deep', hair: 0x1d1716, hairStyle: 'crop', top: 0x7fb3a8, sleeve: 'short', bottom: 0xf6eedb, shoes: 0xf1ece0, height: 1.05, build: 1.0, stance: 'tennis', hat: 'cap', hatColor: 0xf6eedb,
-    face: { shape: { jaw: 0.6, chin: 0.4, cheeks: 0.4, long: 0.2, skull: 0.5, brow: 0.55 }, nose: 'round', noseSize: 1.05, eyes: 'round', brows: 'flat', blush: 0.2 } }),
+    face: { shape: { jaw: 0.6, chin: 0.4, cheeks: 0.4, long: 0.2, skull: 0.5, brow: 0.55 }, nose: 'round', noseSize: 1.05, eyes: 'round', brows: 'flat', hair: 'crop', blush: 0.2 } }),
   swimmer: LOOK({ skin: 'rose', hair: 0xb06a3a, hairStyle: 'crop', top: 0xe8604c, sleeve: 'short', bottom: 0x3f5872, shoes: 0xdc9e9a, height: 1.0, build: 0.95,
-    face: { shape: { jaw: 0.45, chin: 0.45, cheeks: 0.45, long: 0.1, skull: 0.5, brow: 0.45 }, nose: 'straight', noseSize: 1.0, eyes: 'round', brows: 'flat', blush: 0.4 } }),
+    face: { shape: { jaw: 0.45, chin: 0.45, cheeks: 0.45, long: 0.1, skull: 0.5, brow: 0.45 }, nose: 'straight', noseSize: 1.0, eyes: 'round', brows: 'flat', hair: 'crop', blush: 0.4 } }),
   lounger: LOOK({ skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', outfit: 'dress', top: 0xe1b95c, bottom: 0xe1b95c, shoes: 0x8a5a3a, height: 0.95, build: 0.92, stance: 'reading', glasses: true,
-    face: { shape: { jaw: 0.3, chin: 0.5, cheeks: 0.45, long: 0.2, skull: 0.5, brow: 0.4 }, nose: 'roman', noseSize: 1.0, eyes: 'round', brows: 'raised', glasses: true, lashes: true, blush: 0.5 } }),
+    face: { shape: { jaw: 0.3, chin: 0.5, cheeks: 0.45, long: 0.2, skull: 0.5, brow: 0.4 }, nose: 'roman', noseSize: 1.0, eyes: 'round', brows: 'raised', glasses: true, lashes: true, hair: 'bun', blush: 0.5 } }),
   golfer: LOOK({ skin: 'rose', hair: 0xe8e2d6, hairStyle: 'crop', top: 0xdc9e9a, sleeve: 'short', bottom: 0xd8cab0, shoes: 0x6a4a3a, height: 1.04, build: 1.1, belly: 0.4, stance: 'golf', hat: 'cap', hatColor: 0x3e6b52,
-    face: { shape: { jaw: 0.6, chin: 0.35, cheeks: 0.5, long: 0.25, skull: 0.55, brow: 0.6 }, nose: 'round', noseSize: 1.1, eyes: 'round', brows: 'flat', blush: 0.5 } }),
+    face: { shape: { jaw: 0.6, chin: 0.35, cheeks: 0.5, long: 0.25, skull: 0.55, brow: 0.6 }, nose: 'round', noseSize: 1.1, eyes: 'round', brows: 'flat', hair: 'sides', blush: 0.5 } }),
   walkerA: LOOK({ skin: 'deep', hair: 0xe8e2d6, hairStyle: 'curls', outfit: 'cardigan', top: 0x8f7ae8, accent: 0xf6eedb, bottom: 0x4a4458, shoes: 0x3a2a30, height: 0.93, build: 0.95,
-    face: { shape: { jaw: 0.3, chin: 0.45, cheeks: 0.5, long: 0.25, skull: 0.5, brow: 0.4 }, nose: 'round', noseSize: 1.0, eyes: 'round', brows: 'raised', hair: 'curls', blush: 0.3 } }),
+    face: { shape: { jaw: 0.3, chin: 0.45, cheeks: 0.5, long: 0.25, skull: 0.5, brow: 0.4 }, nose: 'round', noseSize: 1.0, eyes: 'round', brows: 'raised', hair: 'fringe', blush: 0.3 } }),
   walkerB: LOOK({ skin: 'tan', hair: 0x6a3b22, hairStyle: 'crop', beard: true, top: 0x5f8f4c, sleeve: 'short', bottom: 0x2f3f55, shoes: 0xf1ece0, height: 1.06, build: 1.0,
-    face: { shape: { jaw: 0.65, chin: 0.35, cheeks: 0.4, long: 0.2, skull: 0.55, brow: 0.6 }, nose: 'straight', noseSize: 1.1, eyes: 'round', brows: 'flat', blush: 0.2 } }),
+    face: { shape: { jaw: 0.65, chin: 0.35, cheeks: 0.4, long: 0.2, skull: 0.55, brow: 0.6 }, nose: 'straight', noseSize: 1.1, eyes: 'round', brows: 'flat', hair: 'crop', blush: 0.2 } }),
 };
 // a racket / a golf club in the right fist, sized in the world's units whatever the rig's scale
 function holdProp(obj, kind) {
@@ -534,8 +578,9 @@ export function createNorthLife({ scene, town, game, player }) {
   { const d = CLW(pl.x, pl.z), obj = put(PEOPLE.swimmer, d, CLW(pl.x + 1, pl.z));
     const p = { obj, dir: d.clone(), kind: 'swim', t: 0 }; people.push(p); }
   // a reader on the middle lounger
-  { const L = club.loungers[1], d = CLW(L.x, L.z + 0.05), obj = put(PEOPLE.lounger, d, CLW(L.x, L.z - 2), 0.22);
-    obj.userData.turn.rotation.x = -0.5;                                          // leaning back on the raised backrest
+  // (the seated stance is drawn for a bench seat ~0.2 higher than a lounger's: she sits down onto it)
+  { const L = club.loungers[1], d = CLW(L.x, L.z + 0.1), obj = put(PEOPLE.lounger, d, CLW(L.x, L.z - 2), -0.04);
+    obj.userData.turn.rotation.x = -0.18;                                         // leaning back a little, on the raised backrest
     const p = { obj, dir: d.clone(), kind: 'still' }; bumpIt(p, 390, 'My SUNBATHE!'); people.push(p); }
   // a golfer at the tee line, facing down the range
   if (N.range) {
