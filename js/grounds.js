@@ -44,60 +44,83 @@ function mats() {
       }
     }
   });
-  // cobbles: hand-laid setts in offset courses — varied lengths, softly irregular rounded
-  // shapes, gently varied warm stone tints, narrow soft mortar joints (not near-black), a
-  // light pencil edge on some. Low contrast so it stays calm from far off; seamless, and
-  // laid at one scale everywhere (COBBLE_TILE metres a tile, uvs in the patch's own frame)
+  // cobbles: hand-laid setts in running-bond courses. Courses of varied depth, stones of varied
+  // length, every joint kept off the joints of the course before (no straight seams); each sett a
+  // softly irregular rounded block (a noisy superellipse) in its own stone tint, domed — lit from
+  // the upper left, shadowed lower right, a crescent of highlight — with a pencil line round it,
+  // set in dark mortar. Seamless, and laid at one scale everywhere (COBBLE_TILE metres a tile,
+  // uvs in metres in the patch's own frame), so every slab and lane shows the same stones
   const cobbleTex = groundTex(512, (c, n, R) => {
-    c.fillStyle = '#ae9f88'; c.fillRect(0, 0, n, n);                 // the mortar
-    const rows = COBBLE_COURSES, h = n / rows, J = 2.4;               // course height, half a joint (px)
-    const tints = [[36, 20, 73], [32, 15, 71], [39, 22, 75], [28, 14, 72], [34, 10, 70], [40, 17, 72], [30, 18, 74]];
+    c.fillStyle = '#5c5044'; c.fillRect(0, 0, n, n);                 // the mortar: dark, a little gritty
+    for (let i = 0; i < 900; i++) { c.fillStyle = R() > 0.5 ? 'rgba(40,32,26,0.35)' : 'rgba(140,124,104,0.25)'; c.fillRect(R() * n, R() * n, 1.5, 1.5); }
+    const rows = COBBLE_COURSES, J = 1.7;                              // courses; half a joint (px)
+    const tints = [[34, 18, 66], [30, 14, 62], [38, 22, 68], [28, 10, 60], [42, 24, 63], [33, 7, 63], [26, 16, 57], [36, 28, 70], [31, 12, 70]];
     const stone = (x, y, w, hh) => {
-      // a rounded, slightly wonky rectangle: each corner nudged, each its own radius
-      const q = [[x + J, y + J], [x + w - J, y + J], [x + w - J, y + hh - J], [x + J, y + hh - J]].map(([a, b]) => [a + (R() - 0.5) * 3.2, b + (R() - 0.5) * 2.4]);
-      const rr = q.map(() => hh * (0.2 + R() * 0.18));
-      const outline = (ox) => {
+      // the outline: a superellipse (rounded block), each its own squareness, wobbled a little
+      const cx = x + w / 2, cy = y + hh / 2, a = w / 2 - J - R() * 0.8, b = hh / 2 - J - R() * 0.8;
+      const pw = 2 / (3 + R() * 2.2), K = 14, ph = R() * 6.28, wob = 0.04 + R() * 0.05, tilt = (R() - 0.5) * 0.09;
+      const pts = [];
+      for (let k = 0; k < K; k++) {
+        const t = (k / K) * Math.PI * 2, ct = Math.cos(t), st = Math.sin(t);
+        const rr = 1 + wob * Math.sin(t * 2 + ph) + (R() - 0.5) * 0.07;
+        const px = Math.sign(ct) * Math.abs(ct) ** pw * a * rr, py = Math.sign(st) * Math.abs(st) ** pw * b * rr;
+        pts.push([cx + px - py * tilt, cy + py + px * tilt]);
+      }
+      const outline = (ox, dx = 0, dy = 0) => {                        // smooth: quadratic curves through the midpoints
         c.beginPath();
-        for (let k = 0; k < 4; k++) {
-          const p0 = q[(k + 3) % 4], p1 = q[k], p2 = q[(k + 1) % 4];
-          const d0 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), d2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-          const r = Math.min(rr[k], d0 / 2, d2 / 2);
-          const ax = p1[0] + (p0[0] - p1[0]) * r / d0, ay = p1[1] + (p0[1] - p1[1]) * r / d0;
-          if (k === 0) c.moveTo(ax + ox, ay); else c.lineTo(ax + ox, ay);
-          c.quadraticCurveTo(p1[0] + ox, p1[1], p1[0] + (p2[0] - p1[0]) * r / d2 + ox, p1[1] + (p2[1] - p1[1]) * r / d2);
+        for (let k = 0; k <= K; k++) {
+          const p0 = pts[k % K], p1 = pts[(k + 1) % K], mx = (p0[0] + p1[0]) / 2 + ox + dx, my = (p0[1] + p1[1]) / 2 + dy;
+          if (k === 0) c.moveTo(mx, my); else c.quadraticCurveTo(p0[0] + ox + dx, p0[1] + dy, mx, my);
         }
         c.closePath();
       };
-      const [hu, sa, li] = tints[Math.floor(R() * tints.length)], dl = (R() - 0.5) * 4;
-      const shade = R(), wash = R(), pencil = R(), side = Math.floor(R() * 4);
-      const specks = Array.from({ length: 5 }, () => [x + J + R() * (w - 2 * J), y + J + R() * (hh - 2 * J), 0.6 + R() * 1.1, R() > 0.5]);
-      for (const ox of [-n, 0, n]) {                                  // wrapped copies: seamless across the tile's edge
+      const [hu, sa, li] = tints[Math.floor(R() * tints.length)], dl = (R() - 0.5) * 7, dh = (R() - 0.5) * 6;
+      const crescent = R(), specks = Array.from({ length: 6 }, () => [cx + (R() - 0.5) * a * 1.5, cy + (R() - 0.5) * b * 1.4, 0.6 + R() * 1.0, R() > 0.5]);
+      for (const ox of [-n, 0, n]) {                                   // wrapped copies: seamless across the tile's edge
         if (x + w + ox < 0 || x + ox > n) continue;
         outline(ox);
-        c.fillStyle = `hsl(${hu},${sa}%,${li + dl}%)`; c.fill();
+        c.fillStyle = `hsl(${hu + dh},${sa}%,${li + dl}%)`; c.fill();
         c.save(); c.clip();
-        // soft form: a darker lower edge, a pale wash toward the upper left (gouache, not a dot)
-        c.lineWidth = hh * 0.22; c.strokeStyle = `rgba(110,88,66,${0.10 + shade * 0.08})`;
-        c.translate(hh * 0.07, hh * 0.09); outline(ox); c.stroke(); c.setTransform(1, 0, 0, 1, 0, 0);
-        c.fillStyle = `rgba(255,248,232,${0.06 + wash * 0.08})`;
-        c.beginPath(); c.ellipse(x + ox + w * 0.42, y + hh * 0.4, w * 0.36, hh * 0.26, 0, 0, 7); c.fill();
-        for (const [sx, sy, sr, lt] of specks) { c.fillStyle = lt ? 'rgba(255,250,236,0.22)' : 'rgba(96,78,62,0.16)'; c.beginPath(); c.arc(sx + ox, sy, sr, 0, 7); c.fill(); }
+        // the dome: a soft light toward the upper left, falling into shade at the lower right
+        const g = c.createRadialGradient(cx + ox - a * 0.32, cy - b * 0.38, 0, cx + ox - a * 0.1, cy - b * 0.1, Math.max(a, b) * 1.25);
+        g.addColorStop(0, 'rgba(255,250,236,0.42)'); g.addColorStop(0.42, 'rgba(255,250,236,0.06)');
+        g.addColorStop(0.75, 'rgba(70,52,36,0.10)'); g.addColorStop(1, 'rgba(60,44,30,0.42)');
+        c.fillStyle = g; c.fillRect(x + ox - 2, y - 2, w + 4, hh + 4);
+        c.lineWidth = hh * 0.2; c.strokeStyle = 'rgba(64,48,34,0.22)';  // its shaded lower-right flank
+        outline(ox, hh * 0.08, hh * 0.1); c.stroke();
+        for (const [sx, sy, sr, lt] of specks) { c.fillStyle = lt ? 'rgba(255,250,236,0.22)' : 'rgba(84,66,50,0.18)'; c.beginPath(); c.arc(sx + ox, sy, sr, 0, 7); c.fill(); }
         c.restore();
-        if (pencil > 0.45) {                                          // a light pencil edge along a side or two
-          c.save(); outline(ox); c.clip();
-          c.strokeStyle = 'rgba(86,66,58,0.30)'; c.lineWidth = 2.2;
-          const a = q[side], b = q[(side + 1) % 4], e = q[(side + 2) % 4];
-          c.beginPath(); c.moveTo(a[0] + ox, a[1]); c.lineTo(b[0] + ox, b[1]); if (pencil > 0.8) c.lineTo(e[0] + ox, e[1]);
-          c.stroke(); c.restore();
+        if (crescent > 0.25) {                                         // a hand-drawn crescent of light on the dome
+          c.strokeStyle = 'rgba(255,252,242,0.55)'; c.lineWidth = 1.6; c.lineCap = 'round';
+          c.beginPath(); c.ellipse(cx + ox, cy, a * 0.68, b * 0.58, 0, Math.PI * (1.08 + crescent * 0.1), Math.PI * (1.42 + crescent * 0.12)); c.stroke();
         }
+        c.strokeStyle = 'rgba(44,34,26,0.55)'; c.lineWidth = 1.3;     // the pencil line round it
+        outline(ox); c.stroke();
       }
     };
+    // course depths: varied, summing to the tile exactly. The first course (the canvas's top: the
+    // tile's v 1 - 1/COBBLE_COURSES…1) is exactly a twelfth deep: cobbleSlab's border course of
+    // long setts is that one course, mapped along the edge
+    const hs = Array.from({ length: rows - 1 }, () => 0.82 + R() * 0.36), hk = (n - n / rows) / hs.reduce((s, v) => s + v, 0);
+    const wrapD = (p, q) => { const d = Math.abs(p - q) % n; return Math.min(d, n - d); };
+    let y = 0, prev = null, first = null;
     for (let r = 0; r < rows; r++) {
-      // this course's lengths, scaled to fill the tile exactly, from a random offset
-      const ws = []; let sum = 0;
-      while (sum < n - h * 0.9) { const w = h * (1.15 + R() * 0.85); ws.push(w); sum += w; }
-      const k = n / sum; let x = R() * n;
-      for (const w of ws) { stone(x % n, r * h, w * k, h); x += w * k; }
+      const h = r === 0 ? n / rows : hs[r - 1] * hk;
+      let best = null;
+      for (let tries = 0; tries < 40; tries++) {                        // running bond: keep the joints off the last course's
+        const ws = []; let sum = 0;
+        while (sum < n - h * 0.8) { const w = h * (1.05 + R() * 0.95); ws.push(w); sum += w; }
+        const k = n / sum, x0 = R() * n, joints = []; let x = x0;
+        for (const w of ws) { joints.push(x % n); x += w * k; }
+        const near = (js) => js ? Math.min(...joints.map(j => Math.min(...js.map(q => wrapD(j, q))))) : n;
+        const score = Math.min(near(prev), r === rows - 1 ? near(first) : n);
+        if (!best || score > best.score) best = { ws: ws.map(w => w * k), x0, joints, score };
+        if (score > h * 0.38) break;
+      }
+      let x = best.x0;
+      for (const w of best.ws) { stone(x % n, y, w, h); x += w; }
+      prev = best.joints; if (r === 0) first = best.joints;
+      y += h;
     }
   });
   // mulch: dark bark chips
@@ -165,9 +188,47 @@ function lay(K, geo, mat, x, y, z, tile = 1) {
   return m;
 }
 // ── cobbles, shared by every cobbled place (shop forecourts, Makers' Row, any later one) ──
-// a cobbled slab: a flat shape (drawn in (x, -z), as for lay()) at the one cobble scale
-export function cobbleSlab(K, shape, curveSegs = 12) {
-  return lay(K, new THREE.ShapeGeometry(shape, curveSegs), mats().cobble, 0, 0.01, 0, COBBLE_TILE);
+// a cobbled slab: a flat shape (drawn in (x, -z), as for lay()) at the one cobble scale, framed by
+// a border course of long setts (`border` m wide) laid along its edge — fanning round the curves —
+// and the field inside it. One surface: the field is the shape inset by the border, the border
+// a ring between the two outlines sharing the field's edge vertices, so nothing overlaps (no
+// fight) and nothing gaps; both one material, so one draw. The border is the texture's first
+// course (exactly 1/COBBLE_COURSES deep) run along the edge: its setts are border/0.2 times the
+// field's, closing seamlessly round the loop
+export function cobbleSlab(K, shape, curveSegs = 12, { border = 0.34 } = {}) {
+  const mat = mats().cobble;
+  if (!border) return lay(K, new THREE.ShapeGeometry(shape, curveSegs), mat, 0, 0.01, 0, COBBLE_TILE);
+  // the outline as drawn (lines keep their exact corners), as a ccw loop without repeats
+  let O = shape.extractPoints(curveSegs).shape.map(p => [p.x, p.y]);
+  O = O.filter((p, i) => { const q = O[(i + 1) % O.length]; return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-4; });
+  let area = 0; for (let i = 0; i < O.length; i++) { const a = O[i], b = O[(i + 1) % O.length]; area += a[0] * b[1] - b[0] * a[1]; }
+  if (area < 0) O.reverse();
+  // the inner outline: each point moved in by the border (mitred, so straight edges stay parallel)
+  const N = O.length, I = O.map((p, i) => {
+    const a = O[(i + N - 1) % N], b = O[(i + 1) % N];
+    const n1 = [-(p[1] - a[1]), p[0] - a[0]], n2 = [-(b[1] - p[1]), b[0] - p[0]];      // inward (left of a ccw loop)
+    const l1 = Math.hypot(...n1), l2 = Math.hypot(...n2);
+    const mx = n1[0] / l1 + n2[0] / l2, my = n1[1] / l1 + n2[1] / l2, ml = Math.hypot(mx, my) || 1;
+    const k = border / Math.max(0.35, (mx / ml) * (n1[0] / l1) + (my / ml) * (n1[1] / l1));
+    return [p[0] + mx / ml * k, p[1] + my / ml * k];
+  });
+  // the field: the inset shape, mapped like every other cobbled surface
+  lay(K, new THREE.ShapeGeometry(new THREE.Shape(I.map(([x, y]) => new THREE.Vector2(x, y)))), mat, 0, 0.01, 0, COBBLE_TILE);
+  // the border ring: u along the edge (a whole number of tiles round the loop), v across one course
+  const S = [0]; for (let i = 1; i <= N; i++) S.push(S[i - 1] + Math.hypot(O[i % N][0] - O[i - 1][0], O[i % N][1] - O[i - 1][1]));
+  const T = border * COBBLE_COURSES, ku = Math.max(1, Math.round(S[N] / T)) / S[N];
+  const pos = [], uv = [], idx = [];
+  for (let i = 0; i <= N; i++) {
+    const o = O[i % N], q = I[i % N];
+    pos.push(o[0], o[1], 0, q[0], q[1], 0);
+    uv.push(S[i] * ku, 1, S[i] * ku, 1 - 1 / COBBLE_COURSES);
+    if (i < N) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.rotateX(-Math.PI / 2); g.computeVertexNormals();
+  const m = K.put(g, mat, 0, 0.01, 0); m.userData.noInk = true;
+  return m;
 }
 // a cobbled lane down a polyline, mapped like the slabs so where it runs into one they match
 export function cobbleLane(K, pts, half) {
@@ -203,7 +264,7 @@ export function kerbRun(K, pts, { skip = () => false, closed = false, seed = 5 }
     }
     let i = 0;
     while (i < q.length - 1) {
-      const want = 0.55 + R() * 0.35;
+      const want = 0.6 + R() * 0.06;                                  // even dressed stones (a touch of hand-cut variety)
       let j = i + 1, len = 0;
       for (; j < q.length; j++) {
         len += Math.hypot(q[j][0] - q[j - 1][0], q[j][1] - q[j - 1][1]);

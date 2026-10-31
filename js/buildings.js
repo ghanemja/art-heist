@@ -1794,7 +1794,7 @@ export function parkGarden() {
     }
     const sh = new THREE.Shape(pts), hole = new THREE.Path(Array.from({ length: 72 }, (_, i) => P(Ri, -i / 72 * Math.PI * 2)));
     sh.holes.push(hole);
-    cobbleSlab(K, sh, 12).position.y = PARK.PATH_Y;
+    cobbleSlab(K, sh, 12, { border: 0 }).position.y = PARK.PATH_Y;   // (no border course: it traces the outer outline only, and this one has a hole)
   }
   // the pond: a raised stone rim round a basin with a pale floor (coins on it); the water itself
   // (see-through, gently moving) is laid in by park.js at WATER_Y, under the rim's lip
@@ -2086,6 +2086,11 @@ function shopShell(B, U, { wall, trim, floor, stone = paint(0xd8cab0), glass = u
     U.box(0.12, DOORH - LOW, T + 0.08, trim, s * (DOOR / 2 + 0.02), LOW + (DOORH - LOW) / 2, fz, 0.03);
   }
   U.box(DOOR + 0.28, 0.12, T + 0.1, trim, 0, DOORH + 0.06, fz, 0.03);
+  // the front door, shut: E on the stoop takes you in (shopinterior.js / rooms.js). It's part of
+  // the upper, so it goes with the shopfront while you're inside (no new materials: no new draws)
+  U.box(DOOR - 0.08, DOORH - FY - 0.02, 0.07, trim, 0, FY + (DOORH - FY) / 2, fz + 0.03, 0.02);
+  U.flat(DOOR - 0.5, 0.8, glass, 0, 1.6, fz + 0.075);
+  U.put(new THREE.SphereGeometry(0.045, 10, 8), wall, DOOR / 2 - 0.2, 1.12, fz + 0.1);
   if (sideWin) for (const s of [-1, 1]) {
     B.box(0.08, 0.9, 1.3, trim, s * (W / 2 + 0.01), 1.85, -0.4, 0.03);
     B.flat(1.15, 0.76, glass, s * (W / 2 + 0.055), 1.85, -0.4, [0, s * Math.PI / 2, 0]);
