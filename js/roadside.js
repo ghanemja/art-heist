@@ -7,7 +7,7 @@
 // It runs after the railway and the north are built, so it sees every road, rail and zone.
 // Its own little random stream keeps the rest of the town's random scenery where it was.
 import * as THREE from 'three';
-import { R, arc, slerpDir, zoneHit, onRoad, isWater, settle, yawToFace, buildRoad, ROADS, deflect, smooth } from './world.js';
+import { R, arc, slerpDir, zoneHit, onRoad, isWater, settle, yawToFace, buildRoad, ROADS, deflect, smooth, decoBlocked } from './world.js';
 import { PAL, paint, ink, mergeStatic } from './style.js';
 import { tree, bush, lamp, bench, rbox, lathe } from './props.js';
 import { onRail } from './rail.js';
@@ -91,7 +91,7 @@ export function dressRoads(scene, { add, solid, spurs, boulevard, townC, ringR, 
       const isTree = rand() > 0.22, off = r.half + (isTree ? 1.55 : 1.0) + rand() * 0.3;
       const v = d.clone().multiplyScalar(R).addScaledVector(lat, side * off).addScaledVector(tang, (rand() - 0.5) * 0.6).normalize();
       // a crown reaches ~1.1 from its trunk: it never overhangs a carriageway, a rail, water or a site
-      if (zoneHit(v, 0.6) || onRoad(v, isTree ? 1.3 : 1.0) || isWater(v, -0.15) || onRail(v, 1.2)) continue;
+      if (zoneHit(v, 0.6) || onRoad(v, isTree ? 1.3 : 1.0) || decoBlocked(v, isTree ? 0.9 : 0.6) || isWater(v, -0.15) || onRail(v, 1.2)) continue;
       const o = isTree ? tree({ s: 0.85 + rand() * 0.3 }) : bush(0.5 + rand() * 0.15);
       settle(o, v, 0.5, 0.05, rand() * 6);
       G.add(o); solid(v, isTree ? 0.35 : 0.3);

@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=12';
@@ -428,6 +428,17 @@ export function buildTown(scene) {
       lm.upper.visible = !lm.inside(_sp.x, _sp.z);
     }
   };
+  // the last word, whatever order things were built in (a road laid later through a verge tree):
+  // no standalone plant on a road, a rail or a bridge deck — it goes, and its footprint with it
+  let pruned = 0;
+  for (const o of [...scene.children]) {
+    if (!o.userData.deco) continue;
+    const d = o.position.clone().normalize();
+    if (!decoBlocked(d, o.userData.deco)) continue;
+    scene.remove(o); out.statics.splice(out.statics.indexOf(o) >>> 0, 1); pruned++;
+    for (let i = out.colliders.length - 1; i >= 0; i--) if (arc(out.colliders[i].dir, d) < 0.06) out.colliders.splice(i, 1);
+  }
+  out.prunedPlants = pruned + (placeOnPlanet.pruned || 0);
   return out;
 }
 

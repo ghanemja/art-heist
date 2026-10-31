@@ -15,7 +15,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
-import { settle, radiusAt } from './world.js';
+import { settle, radiusAt, pruneDeco } from './world.js';
 import { windowWall, pick, rnd, tree, bush, bench as parkBench, lamp } from './props.js';
 
 // ── geometry kit ─────────────────────────────────────────────────────────────
@@ -1433,6 +1433,8 @@ function conform(g, sink) {
 // set a built group down at direction d facing `yaw`, bent and (unless it'll be
 // batched with its neighbours) inked; returns the placed group
 export function placeOnPlanet(raw, d, yaw, { weight = 'mid', sink = 0.04, inked = true } = {}) {
+  // its plants (trees, bushes, planters) are checked where they'll stand: none on a road or rail
+  settle(raw, d, 0.25, sink, yaw); placeOnPlanet.pruned = (placeOnPlanet.pruned || 0) + pruneDeco(raw);
   const g = bake(raw);
   settle(g, d, 0.25, sink, yaw);
   conform(g, sink);

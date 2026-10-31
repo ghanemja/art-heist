@@ -318,6 +318,26 @@ function measureStand(d) {
   }
   return best;
 }
+// ── no plant on a road, a rail or a bridge deck (the deck is in ROADS): r = the plant's own
+// footprint; the kerb strip and a little more are kept clear. Other systems (the railway)
+// add their own tests with addBlocker ──
+const BLOCKERS = [];
+export function addBlocker(f) { BLOCKERS.push(f); }
+export function decoBlocked(d, r = 0.3) { return onRoad(d, r + 0.4) || BLOCKERS.some(f => f(d, r)); }
+// drop every plant (userData.deco) inside `root` that stands on a road or rail, and the walker's
+// footprint markers placed with it; returns how many went. `root` must be placed (world matrices)
+export function pruneDeco(root) {
+  root.updateMatrixWorld(true);
+  const gone = [], w = new THREE.Vector3();
+  root.traverse(o => { if (o !== root && o.userData.deco && !gone.some(g => isAncestor(g, o))) { o.getWorldPosition(w); if (decoBlocked(w.clone().normalize(), o.userData.deco)) gone.push(o); } });
+  for (const o of gone) {
+    const par = o.parent; if (!par) continue;
+    for (const f of [...par.children]) if (f.userData.foot && f.position.distanceTo(o.position) < 0.3) par.remove(f);
+    par.remove(o);
+  }
+  return gone.length;
+}
+const isAncestor = (a, o) => { for (let q = o.parent; q; q = q.parent) if (q === a) return true; return false; };
 export function onRoad(d, pad = 0) {
   for (const rd of ROADS) for (const p of rd.pts) if (arc(d, p) < rd.half + pad) return true;
   return false;
@@ -484,38 +504,41 @@ export function paintRoadMarkings() {
 }
 
 // ── the planet mesh: painted in posterized bands with a watercolour wobble ──
+// the ground's paint at a point (direction v, height h): the planet's own bands, and a river or
+// lake bed a smooth sand → pebble → deep gradient by depth. Shared by the planet and the fine
+// riverbed mesh (riverlife.js) so their colours meet without a seam
+const _GC = {}, GC = (hex) => (_GC[hex] ??= new THREE.Color(hex));
+export function groundColour(v, h, c, fresh = h < SEA + 0.02 && inFreshWater(v)) {
+  const wash = Math.sin(v.x * 7.1 + 1.3) * Math.sin(v.z * 6.3 + 0.2) + Math.sin(v.y * 9.7) * 0.5;   // a slow watercolour wash, posterized into bands
+  if (fresh) {
+    const dd = -h;
+    return c.copy(GC(PAL.sand)).lerp(GC(0xbfae84), ss(0.02, 0.35, dd)).lerp(GC(0x8fa38e), ss(0.4, 0.85, dd));
+  }
+  if (h < SEA - 0.05) return c.copy(GC(PAL.waterDeep));
+  if (h < SEA + 0.22) return c.copy(GC(PAL.sand));
+  if (h > 2.6) return c.copy(GC(PAL.snow));
+  if (h > 1.4) return c.copy(GC(PAL.rock)).lerp(GC(PAL.earth), wash > 0 ? 0.3 : 0);
+  return c.copy(GC(wash > 0.45 ? PAL.meadow : wash < -0.5 ? PAL.grassDeep : PAL.grass));
+}
+export let groundMaterial = null;
 export function buildPlanet(scene) {
   let g = mergeVertices(new THREE.IcosahedronGeometry(R, 56));
   const p = g.attributes.position, v = new THREE.Vector3();
-  const col = new Float32Array(p.count * 3), c = new THREE.Color(), tmp = new THREE.Color(), fresh = [];
-  const C = (hex) => new THREE.Color(hex);
-  const sand = C(PAL.sand), meadow = C(PAL.meadow), grass = C(PAL.grass), deep = C(PAL.grassDeep),
-    rock = C(PAL.rock), snow = C(PAL.snow), earth = C(PAL.earth), bed = C(PAL.waterDeep), pebble = C(0xc2b48a), channel = C(0xa3ad8e);   // (close in tone: the coarse mesh drew a dark channel as polygons; the water tints the deep)
+  const col = new Float32Array(p.count * 3), c = new THREE.Color();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i).normalize();
-    const h = surfH(v);
-    const r = R + h;
+    const h = surfH(v), fresh = h < SEA + 0.02 && inFreshWater(v);
+    // under a river or lake the coarse planet sinks well out of sight: the fine bed mesh
+    // (riverlife.js) is the bed you see — the planet's big triangles showed through the clear
+    // water as starbursts and jagged blotches
+    const r = R + h - (fresh ? 1.6 : 0);
     p.setXYZ(i, v.x * r, v.y * r, v.z * r);
-    // a slow watercolour wash decides meadow vs grass, posterized into bands
-    const wash = Math.sin(v.x * 7.1 + 1.3) * Math.sin(v.z * 6.3 + 0.2) + Math.sin(v.y * 9.7) * 0.5;
-    if (h < SEA + 0.02 && inFreshWater(v)) {                    // a river or lake bed, seen through its water:
-      fresh.push(i);
-      const dd = -h, j = 0.9 + 0.2 * (Math.sin(v.x * 913.1 + v.z * 377.7) * 0.5 + 0.5);   // sand → pebbles → the dark channel
-      c.copy(sand).lerp(pebble, ss(0.04, 0.4, dd)).lerp(channel, ss(0.45, 0.85, dd)).multiplyScalar(j);
-    }
-    else if (h < SEA - 0.05) c.copy(bed);
-    else if (h < SEA + 0.22) c.copy(sand);
-    else if (h > 2.6) c.copy(snow);
-    else if (h > 1.4) c.copy(rock).lerp(earth, wash > 0 ? 0.3 : 0);
-    else c.copy(wash > 0.45 ? meadow : wash < -0.5 ? deep : grass);
+    groundColour(v, h, c, fresh);
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.computeVertexNormals();
-  // a riverbed is lit as if level: its steep banks fell into the toon shadow band and showed
-  // through the clear water as dark blotches
-  { const N = g.attributes.normal; for (const i of fresh) { v.fromBufferAttribute(p, i).normalize(); N.setXYZ(i, v.x, v.y, v.z); } }
-  const mesh = new THREE.Mesh(g, paint(0xffffff, { vertexColors: true, hatch: 0.6 }));
+  const mesh = new THREE.Mesh(g, groundMaterial = paint(0xffffff, { vertexColors: true, hatch: 0.6 }));
   mesh.userData.noInk = true;          // the ground's edge is the horizon; ink it with the rim below
   mesh.name = 'planet';
   scene.add(mesh);
