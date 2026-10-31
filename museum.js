@@ -724,7 +724,13 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     const tapeMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.5 });
     const postGeo = lathe([[0.001, 0], [0.18, 0], [0.18, 0.04], [0.06, 0.08], [0.045, 0.2], [0.045, 1.0], [0.07, 1.04], [0.07, 1.1], [0.001, 1.12]], 16);
     const xs = [-4.2, -1.5, 1.5, 4.2], z = -2.0, y0 = PZ;
-    xs.forEach(x => add(postGeo, BRONZE, x, y0, z));
+    // the outer two stand on the lawn beside the forecourt (it ends at r 3.3), not at its paving
+    // height — they floated there, and she stood on their feet — the post stretched so the tape
+    // stays level; none of them is ground to stand on
+    xs.forEach(x => {
+      const foot = Math.hypot(x, z + 0.3) < 3.3 ? y0 : 0.08, post = add(postGeo, BRONZE, x, foot, z);
+      post.scale.y = (y0 + 1.12 - foot) / 1.12; post.userData.noGround = true;
+    });
     for (let i = 0; i < xs.length - 1; i++) {
       const L = xs[i + 1] - xs[i];
       const geo = new THREE.PlaneGeometry(L, 0.11, 12, 1);
@@ -810,11 +816,11 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   for (const s of [-1, 1]) {
     for (const z of [-2.8, -6.0, -9.0]) {
       const x = s * 7.15;
-      add(potGeo, POT, x, -0.05, z);
-      add(new THREE.SphereGeometry(0.42, 14, 10), HEDGE, x, 0.82, z);
+      add(potGeo, POT, x, -0.05, z).userData.noGround = true;
+      add(new THREE.SphereGeometry(0.42, 14, 10), HEDGE, x, 0.82, z).userData.noGround = true;
     }
-    // a clipped hedge along the front of each wing
-    add(rbox(2.0, 0.5, 0.45, 0.14, 2), HEDGE, s * WING_X, Y0 + 0.25, FRONT + 0.4);
+    // a clipped hedge along the front of each wing (a prop: never a floor to stand on)
+    add(rbox(2.0, 0.5, 0.45, 0.14, 2), HEDGE, s * WING_X, Y0 + 0.25, FRONT + 0.4).userData.noGround = true;
   }
 
   // ── the ladder: someone propped it to the east wing roof ──

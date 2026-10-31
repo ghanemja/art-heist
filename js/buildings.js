@@ -1486,9 +1486,20 @@ function bake(g, roots = [g]) {
     if (o.userData.foot) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); foots.push([fp.x, fp.z, o.userData.foot]); return; }
     if (!o.isMesh || o.userData.isInk) return;
     const geo = o.geometry.clone().applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
-    const noInk = !!o.userData.noInk, M = o.material, vc = plainPaint(M, keepMats);
-    const key = (vc ? `vc|${M.side}|${M.userData.hatch}|${M.gradientMap === _SOFT() ? 's' : ''}` : M.uuid) + (noInk ? ':n' : '');
-    if (!buckets.has(key)) buckets.set(key, { mat: vc ? paint(0xffffff, { vertexColors: true, hatch: M.userData.hatch, side: M.side, soft: M.gradientMap === _SOFT() }) : M, noInk, geos: [] });
+    // (noGround: a prop the walker must not stand on — a hedge, a bench, a planter — keeps that
+    // flag on its merged mesh; a draped surface's polygon offset — its layer over the ground and
+    // the paving it meets — survives the merge into vertex colours)
+    const noInk = !!o.userData.noInk, noGround = !!o.userData.noGround, M = o.material, vc = plainPaint(M, keepMats);
+    const po = M.polygonOffset ? `|po${M.polygonOffsetFactor},${M.polygonOffsetUnits}` : '';
+    const key = (vc ? `vc|${M.side}|${M.userData.hatch}|${M.gradientMap === _SOFT() ? 's' : ''}${po}` : M.uuid) + (noInk ? ':n' : '') + (noGround ? ':g' : '');
+    if (!buckets.has(key)) {
+      let mat = M;
+      if (vc) {
+        mat = paint(0xffffff, { vertexColors: true, hatch: M.userData.hatch, side: M.side, soft: M.gradientMap === _SOFT(), unique: !!po });
+        if (po) { mat.polygonOffset = true; mat.polygonOffsetFactor = M.polygonOffsetFactor; mat.polygonOffsetUnits = M.polygonOffsetUnits; }
+      }
+      buckets.set(key, { mat, noInk, noGround, geos: [] });
+    }
     for (const n of Object.keys(geo.attributes)) if (n !== 'position' && n !== 'normal' && !(n === 'uv' && M.map) && !(n === 'color' && M.vertexColors)) geo.deleteAttribute(n);
     if (vc) { const c = M.color, n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } geo.setAttribute('color', new THREE.BufferAttribute(a, 3)); }
     if (o.material.map && !geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
@@ -1500,11 +1511,12 @@ function bake(g, roots = [g]) {
   if (foots.length) ud.foots = foots;
   const out = new THREE.Group();
   out.userData = ud;
-  for (const { mat, noInk, geos } of buckets.values()) {
+  for (const { mat, noInk, noGround, geos } of buckets.values()) {
     const merged = mergeGeometries(geos);
     if (!merged) continue;
     const m = new THREE.Mesh(merged, mat);
     m.userData.noInk = noInk;
+    if (noGround) m.userData.noGround = true;
     out.add(m);
   }
   return out;
@@ -1521,6 +1533,7 @@ const _tess = new TessellateModifier(1.6, 6);
 // planet mesh — ~0.75 between vertices — or the ground pokes up through a long flat triangle)
 const _tessFine = new TessellateModifier(0.35, 12);
 function conform(g, sink, groundAt = radiusAt) {
+  if (groundAt !== radiusAt) return bend(g, sink, groundAt);
   g.updateMatrixWorld(true);
   const box = new THREE.Box3();
   for (const m of g.children) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox); }
@@ -1553,6 +1566,45 @@ function conform(g, sink, groundAt = radiusAt) {
     const p = m.geometry.attributes.position;
     for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) + at(p.getX(i), p.getZ(i)) - sink);
     p.needsUpdate = true;
+    m.geometry.computeBoundingSphere();
+    m.geometry.computeBoundingBox();
+  }
+}
+// landscaping laid on the drawn ground (drawn: true) is BENT onto the planet the way everything
+// that reads its layout already takes it — colliders (feet), plants (growPlants), the ok() tests:
+// a point (x, z) of the group's tangent plane is the direction through it, and its height y is
+// measured along the local up there. Each vertex goes to the drawn ground under its direction
+// plus its height, its normal turned with the local up. So a lamp, a bench or a fountain stands
+// plumb wherever it is and a pool lies level. (Dropping each vertex straight down the group's own
+// axis, as for buildings, leaned whatever stood far from the group's centre by the angle round
+// the planet — the museum's sculpture garden, 20 out, by ~30° — and set it ~2 off its planned
+// spot, away from its colliders and planting.)
+function bend(g, sink, groundAt) {
+  g.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  for (const m of g.children) { m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox); }
+  const M = g.matrixWorld, inv = M.clone().invert(), toLocal = new THREE.Matrix3().setFromMatrix4(inv);
+  const S = 0.15, x0 = box.min.x - S, z0 = box.min.z - S;
+  const nx = Math.ceil((box.max.x - x0) / S) + 2, nz = Math.ceil((box.max.z - z0) / S) + 2;
+  const grid = new Float32Array(nx * nz), v = new THREE.Vector3();
+  for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) grid[i * nz + k] = groundAt(v.set(x0 + i * S, 0, z0 + k * S).applyMatrix4(M).normalize());
+  const at = (x, z) => {
+    const fx = Math.min(nx - 1.001, Math.max(0, (x - x0) / S)), fz = Math.min(nz - 1.001, Math.max(0, (z - z0) / S));
+    const i = Math.floor(fx), k = Math.floor(fz), u = fx - i, w = fz - k;
+    return (grid[i * nz + k] * (1 - u) + grid[(i + 1) * nz + k] * u) * (1 - w) + (grid[i * nz + k + 1] * (1 - u) + grid[(i + 1) * nz + k + 1] * u) * w;
+  };
+  const D = new THREE.Vector3(), up = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion(), n = new THREE.Vector3();
+  for (const m of g.children) {
+    m.geometry = _tessFine.modify(m.geometry);
+    const p = m.geometry.attributes.position, N = m.geometry.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      D.set(x, 0, z).applyMatrix4(M).normalize();
+      v.copy(D).multiplyScalar(at(x, z) + y - sink).applyMatrix4(inv);
+      p.setXYZ(i, v.x, v.y, v.z);
+      if (N) { up.copy(D).applyMatrix3(toLocal).normalize(); q.setFromUnitVectors(Y, up); n.fromBufferAttribute(N, i).applyQuaternion(q); N.setXYZ(i, n.x, n.y, n.z); }
+    }
+    p.needsUpdate = true; if (N) N.needsUpdate = true;
     m.geometry.computeBoundingSphere();
     m.geometry.computeBoundingBox();
   }

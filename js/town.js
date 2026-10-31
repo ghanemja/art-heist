@@ -8,11 +8,12 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked } from './world.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js?v=12';
+import { buildMuseum } from '../museum.js?v=13';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { museumGrounds, shopApproach, APPROACH_STOP, makersRow, ROW_X } from './grounds.js';
+import { addKoi } from './pondwater.js';
 import { growPlants } from './plants.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 import { planNorth, buildNorth } from './north.js';
@@ -273,6 +274,13 @@ export function buildTown(scene) {
     addFloor(mus.group, (x, z) => Math.hypot(x, z + 0.3) < 3.38 ? 0.45 : null);
     out.museum = { ...mus, dir: mDir, frame: mF };
     for (let z = -3.4; z >= -11; z -= 2.2) for (let x = -5.6; x <= 5.6; x += 2.8) solid(mF(x, z), 1.55);
+    // its props aren't floors (museum.js marks them noGround): she walks round them — the police
+    // line's posts, the topiary pots along the wings, the clipped hedge in front of each wing
+    for (const s of [-1, 1]) {
+      for (const x of [1.5, 4.2]) solid(mF(s * x, -2.0), 0.16);
+      for (const z of [-2.8, -6.0, -9.0]) solid(mF(s * 7.15, z), 0.42);
+      for (const x of [4.3, 5.1, 5.9]) solid(mF(s * x, -3.5), 0.3);
+    }
   }
   // ── landscaping (grounds.js): the museum's grounds — gravel walks round both wings to the
   // back, hedges, a flower strip, low lamps, trees and benches, a sculpture garden round a pool
@@ -295,6 +303,7 @@ export function buildTown(scene) {
     const g = add(placeOnPlanet(museumGrounds({ ok, pool: MGARDEN }), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0, drawn: true }));
     feet(g);
     growPlants(scene, g, { seed: (out.grounds?.length || 0) + 1 });   // its planting, on the ground as drawn, in the breeze
+    addKoi(scene, g);                                // the sculpture garden pool's fish
     out.grounds = [g];
     out.museumGarden = MGARDEN;                      // museum-local [x, z] of the sculpture garden's terrace (or null)
     groundsKeep.push(...g.userData.keep.map(([x, z, r]) => ({ dir: g.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r })));

@@ -450,7 +450,10 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         const perp = st.dir.clone().sub(c.dir.clone().multiplyScalar(c.dir.dot(st.dir))).normalize();
         const w = lim / R;
         st.dir.copy(c.dir).multiplyScalar(Math.cos(w)).addScaledVector(perp, Math.sin(w)).normalize();
-        st.speed *= 0.92;
+        // on foot she slows by how squarely she walks into it: brushing past a planter or along a
+        // bench kept braking her every frame (to under half pace in a second) on the cluttered
+        // cobbled forecourts
+        st.speed *= st.mode === 'walk' ? 1 - 0.08 * Math.max(0, -st.heading.dot(perp)) : 0.92;
       }
       // the jeep is long: its nose collides too
       if (st.mode === 'jeep') for (const c of colliders) {
