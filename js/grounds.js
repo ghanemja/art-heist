@@ -221,20 +221,7 @@ export function museumGrounds({ ok = () => true } = {}) {
     for (const da of [0.6, -0.6]) { const a = mouth + da; topiary(K, PX + Math.sin(a) * (PR + 1.7), PZ + Math.cos(a) * (PR + 1.7), 0.85); }
   }
 
-  // ── behind: a rose garden, four beds round a flagstone cross ──
-  const ROSE = 2.4;
-  const rose = pick([[-4.45, -16.9], [-3.4, -17.8], [3.2, -17.6], [-2.2, -19.4], [2.0, -21.6], [8.6, -15.4], [-5.6, -15.8]], ROSE);
-  if (rose) {
-    const [GX, GZ] = rose;
-    spurTo(GX, GZ, 1.95);
-    path(K, [[GX, GZ + 1.95], [GX, GZ - 1.95]], 0.34, M.flag, 0.07, 1.4);
-    path(K, [[GX - 1.95, GZ], [GX + 1.95, GZ]], 0.34, M.flag, 0.07, 1.4);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      const bx = GX + sx * 1.1, bz = GZ + sz * 1.1;
-      flowerBed(K, bx, bz, 1.25, 1.25, R, { bushS: 0.34 });
-      K.foot(bx, bz, 0.68);
-    }
-  }
+  // (the four-bed garden square that used to sit behind here is now Makers' Row's centrepiece)
   // trees round the back lawn and the east lawn, wherever they fit
   let n = 0;
   for (const [x, z, s] of [[10.85, -9.95, 0.7], [11.8, -11.3, 0.9], [12.0, -15.0, 0.85], [3.4, -20.4, 0.95], [-5.4, -19.5, 0.75], [-1.9, -21.2, 0.8], [1.2, -23.0, 0.9], [9.6, -19.6, 0.8], [-2.6, -15.6, 0.7]]) {
@@ -343,5 +330,86 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
     if (!clear(x, z, 0.75)) continue;
     flowerBed(K, x, z, w, d, R, { bushS: 0.26 }); K.foot(x, z, 0.65); take(x, z, 0.75);
   }
+  return K.g;
+}
+
+// ── Makers' Row: Behavior Search and Borrowed Eyes side by side, sharing a level cobbled
+// car park (row frame, like a shop's: +z toward the road, the shops at x ±ROW_X, z 0). An
+// apron in front of both shopfronts; a garden square of four planted beds round a cross in
+// the middle (the car park's centrepiece, walkway from the aisle to the shops); two bays
+// either side of it, nose-in, painted lines and wheel stops; a cobbled aisle across the
+// front; a lane out to where the spur stops (ex, ez). userData.row.bays tells plaza.js
+// where to park cars ──
+export const ROW_X = 6.0;          // Behavior Search's ramp and drop rig stand 1.7 out from its walls: room for them in the gap
+export const ROW = { half: 9.4, apron: [2.3, 4.25], bays: [4.25, 7.55], aisle: [7.55, 10.7] };
+export function makersRow({ ex = null, ez = null, ok = () => true, seed = 3 } = {}) {
+  const K = kit(), M = mats(), R = rng(seed * 104729);
+  const H = ROW.half, Z0 = ROW.apron[0], Z1 = ROW.aisle[1], CR = 1.6;
+  // the whole lot: one cobbled slab, rounded at its road-side corners
+  const sh = new THREE.Shape();
+  sh.moveTo(-H, -Z0); sh.lineTo(H, -Z0); sh.lineTo(H, -(Z1 - CR)); sh.quadraticCurveTo(H, -Z1, H - CR, -Z1);
+  sh.lineTo(-H + CR, -Z1); sh.quadraticCurveTo(-H, -Z1, -H, -(Z1 - CR)); sh.closePath();
+  const outline = sh.getSpacedPoints(120).map(p => [p.x, -p.y]);
+  lay(K, new THREE.ShapeGeometry(sh, 16), M.cobble, 0, 0.055, 0, 1.1);
+  // painted bay lines (thin pale strips on the cobbles) and a wheel stop in each bay
+  const line = (() => { const m = paint(0xf3eee4, { hatch: 0, side: THREE.DoubleSide }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -5; return m; })();
+  const [B0, B1] = ROW.bays, bays = [];
+  for (const s of [-1, 1]) {
+    const xs = [2.35, 4.95, 7.55].map(x => s * x);                // two bays a side, 2.6 wide
+    for (const x of xs) lay(K, new THREE.PlaneGeometry(0.07, B1 - B0 - 0.3), line, x, 0.06, (B0 + B1) / 2 + 0.15);
+    lay(K, new THREE.PlaneGeometry(5.2, 0.07), line, s * 4.95, 0.06, B1 - 0.02);
+    for (const i of [0, 1]) {
+      const bx = (xs[i] + xs[i + 1]) / 2, stopZ = B0 + 0.45;
+      K.put(rbox(1.2, 0.12, 0.2, 0.05, 1), M.stoneD, bx, 0.11, stopZ);
+      bays.push({ x: bx, stopZ, side: s });
+    }
+  }
+  // the garden square: four planted beds round a flagstone cross, a lamp at its heart
+  const GX = 0, GZ = (B0 + B1) / 2 + 0.1, GW = 1.9;
+  lay(K, new THREE.PlaneGeometry(0.62, GW * 2 + 0.3), M.flag, GX, 0.062, GZ, 1.4);
+  lay(K, new THREE.PlaneGeometry(GW * 2 + 0.1, 0.62), M.flag, GX, 0.063, GZ, 1.4);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const bx = GX + sx * 0.98, bz = GZ + sz * 0.98;
+    flowerBed(K, bx, bz, 1.2, 1.2, R, { bushS: 0.3 });
+    K.foot(bx, bz, 0.66);
+  }
+  bollard(K, GX + 0.42, GZ + 0.42, 1.25);
+  // kerb stones round the lot's outer edge (not along the shopfronts, not across the lane)
+  let lane = null;
+  if (ex != null) {
+    let best = outline[0];
+    for (const p of outline) if (p[1] > Z0 + 1 && Math.hypot(p[0] - ex, p[1] - ez) < Math.hypot(best[0] - ex, best[1] - ez)) best = p;
+    const L = Math.hypot(ex - best[0], ez - best[1]);
+    if (L > 0.5) {
+      const dx = (ex - best[0]) / L, dz = (ez - best[1]) / L;
+      const pts = [[best[0] - dx * 0.8, best[1] - dz * 0.8], [best[0] + dx * L * 0.4, best[1] + dz * L * 0.4], [ex + dx * 0.5, ez + dz * 0.5]];
+      strip(K, pts, 1.42, M.edge, 0.047, 1.1);
+      strip(K, pts, 1.35, M.cobble, 0.055, 1.1);
+      lane = { ax: best[0], az: best[1] };
+    }
+  }
+  for (let i = 0; i < outline.length; i += 2) {
+    const [x, z] = outline[i], [nx, nz] = outline[(i + 1) % outline.length];
+    if (z < Z0 + 0.15) continue;
+    if (lane && Math.hypot(x - lane.ax, z - lane.az) < 1.5) continue;
+    K.put(rbox(0.28, 0.1, 0.16, 0.04, 1), M.stoneD, x, 0.07, z, [0, Math.atan2(nx - x, nz - z), 0]);
+  }
+  // the apron: lamps between the shops and at its ends, planters, a bench in the gap
+  for (const x of [-H + 0.35, H - 0.35]) bollard(K, x, Z0 + 0.5, 1.2);
+  for (const x of [-1.6, 1.6]) {
+    K.box(0.62, 0.5, 0.62, M.stone, x, 0.25, Z0 + 0.55, 0.06);
+    K.box(0.52, 0.06, 0.52, M.soil, x, 0.5, Z0 + 0.55, 0.02);
+    for (let f = 0; f < 7; f++) K.put(new THREE.SphereGeometry(0.06, 8, 6), M.flowers[Math.floor(R() * M.flowers.length)], x + (R() - 0.5) * 0.4, 0.57 + R() * 0.05, Z0 + 0.55 + (R() - 0.5) * 0.4);
+    const b = bush(0.24); b.position.set(x, 0.5, Z0 + 0.55); K.g.add(b);
+    K.foot(x, Z0 + 0.55, 0.4);
+  }
+  gardenBench(K, 0, 0.9, 0);                                         // in the gap between the shops
+  // planting: trees behind and beside the shops, bushes and beds round the lot's sides
+  const placed = [];
+  const take = (x, z, r) => { if (!ok(x, z, r) || placed.some(([a, b, c]) => Math.hypot(a - x, b - z) < c + r + 0.1)) return false; placed.push([x, z, r]); return true; };
+  for (const [x, z, s] of [[-10.2, -1.0, 0.9], [10.2, -1.2, 0.85], [-7.4, -3.8, 1.0], [-2.0, -3.4, 0.85], [2.6, -3.5, 0.95], [7.6, -3.7, 0.9], [-10.6, 3.0, 0.8], [10.6, 3.2, 0.8]])
+    if (take(x, z, 0.8)) specimen(K, x, z, s, R);
+  for (const [x, z] of [[-10.5, 6.0], [10.5, 6.0], [-10.4, 8.8], [10.4, 8.8], [0, -1.6]]) if (take(x, z, 0.4)) { const b = bush(0.4 + R() * 0.12); b.position.set(x, 0, z); K.g.add(b); }
+  K.g.userData.row = { bays, half: H, z0: Z0, z1: Z1 };
   return K.g;
 }
