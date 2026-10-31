@@ -69,86 +69,211 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: lite ? 1 : 3, curveSegments: lite ? 12 : 24,
   }), keepUV);
 
-  // an ornate gilded frame, empty: a cushion moulding with a raised outer lip,
-  // a bead of pearls round the sight edge, a shell-and-boss cartouche on every
-  // corner and a pair of scrolls mid-side. Origin at its centre, face to +Z.
-  // style: 'baroque' (gilt: pearls, shell cartouches, scrolls) · 'walnut' (dark wood, a gilt
-  // liner, egg-and-dart round the outer edge) · 'fluted' (Arts & Crafts: ribbed sides, rosette blocks)
-  const WALNUT = S(0x5a3523, { roughness: 0.55 }), SILVERGILT = S(0xd8c48a, { roughness: 0.3, metalness: 0.8 });
+  // ── the empty frames: real museum frames, each with a moulding PROFILE swept round the
+  // rectangle (mitred corners: one strip per side, smooth across the profile, creased at the
+  // mitre), carved ornament on top, and behind the sight edge the bare stretcher, the dust
+  // board and ragged strips of the painted canvas the thief's knife left in the rebate.
+  // The gold is a gradient by part: pale burnished highlights on what's raised, the main gilt,
+  // a deep ochre in the cove, so it reads in the flat-painted main app (one colour per
+  // material) as well as in the lit classic game.
+  // style: 'baroque' (Louis XV gilt: rocaille shells, acanthus breaking past the edge, pearls,
+  // egg-and-dart) · 'walnut' (dark carved walnut, leaf-and-dart, a gilt slip) ·
+  // 'fluted' (Dutch: a wide fluted gilt band, ribbon-and-stick sight edge, corner rosettes)
+  // Origin at its centre, face to +Z. w, h: outer size.
+  const GOLD_HI = S(0xf8dc8c, { roughness: 0.22, metalness: 0.9 });      // burnished highlights
+  const GOLD_LO = S(0xa9741f, { roughness: 0.5, metalness: 0.6 });       // the cove, in shadow
+  const WALNUT = S(0x4a2a1a, { roughness: 0.5 }), WALNUT_HI = S(0x7a4a2c, { roughness: 0.45 });
+  const RAWWOOD = S(0xc9a46e, { roughness: 0.85 }), DUSTBOARD = S(0x3f2e22, { roughness: 1 });
+  // a repeatable little random (so every load tears the same rags)
+  const rnd = (() => { let s = 7; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
+  // the moulding: prof = [[inset, height], ...], a closed loop (front from the outer edge to
+  // the sight edge, then down and back under); a repeated point creases there
+  const sweep = (w, h, prof, mat, parent) => {
+    const pos = [], idx = [];
+    for (const [a, c] of [[[-1, -1], [1, -1]], [[1, -1], [1, 1]], [[1, 1], [-1, 1]], [[-1, 1], [-1, -1]]]) {
+      const base = pos.length / 3;
+      for (const [d, z] of prof) {
+        const hx = w / 2 - d, hy = h / 2 - d;
+        pos.push(a[0] * hx, a[1] * hy, z, c[0] * hx, c[1] * hy, z);
+      }
+      for (let i = 0; i < prof.length - 1; i++) { const p = base + i * 2; idx.push(p, p + 1, p + 2, p + 1, p + 3, p + 2); }
+    }
+    const g2 = new THREE.BufferGeometry();
+    g2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g2.setIndex(idx); g2.computeVertexNormals();
+    return add(g2, mat, 0, 0, 0, parent);
+  };
+  // a smooth run of profile points through control points
+  const profile = (ctrl, n = 18) => new THREE.SplineCurve(ctrl.map(([d, z]) => new THREE.Vector2(d, z))).getPoints(n).map(v => [v.x, v.y]);
+  // close a front profile into a loop: down the inside, across the back, up the outside
+  const closeLoop = (front, back = -0.03) => {
+    const f0 = front[0], f1 = front[front.length - 1];
+    return [[f0[0], back], f0, f0, ...front.slice(1, -1), f1, f1, [f1[0], back], [f1[0], back], [f0[0], back], [f0[0], back]];
+  };
+  // points spaced along the four sides at an inset, each with its side's direction
+  const alongSides = (w, h, d, step, skip = () => false) => {
+    const out = [], hx = w / 2 - d, hy = h / 2 - d;
+    for (const [x0, y0, x1, y1] of [[-hx, -hy, hx, -hy], [hx, -hy, hx, hy], [hx, hy, -hx, hy], [-hx, hy, -hx, -hy]]) {
+      const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / step)), ang = Math.atan2(y1 - y0, x1 - x0);
+      for (let k = 1; k < n; k++) { const x = x0 + (x1 - x0) * k / n, y = y0 + (y1 - y0) * k / n; if (!skip(x, y)) out.push([x, y, ang, k]); }
+    }
+    return out;
+  };
+  // ornament parts
+  const lobe = new THREE.SphereGeometry(1, 9, 6);
+  const leafGeo = (() => {                       // an acanthus leaf: lobed edges, bevelled, curled and cupped
+    const N = 16, half = (x) => 0.2 * Math.pow(Math.sin(Math.PI * Math.min(1, x * 1.08)), 0.7) * (0.72 + 0.28 * Math.abs(Math.cos(x * Math.PI * 3.5)));
+    const s = new THREE.Shape(); s.moveTo(0, 0);
+    for (let i = 1; i <= N; i++) { const x = i / N; s.lineTo(x, half(x)); }
+    for (let i = N - 1; i >= 1; i--) { const x = i / N; s.lineTo(x, -half(x)); }
+    s.closePath();
+    const g2 = new THREE.ExtrudeGeometry(s, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.035, bevelSegments: 1, curveSegments: 4 });
+    const p = g2.attributes.position;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i); p.setZ(i, p.getZ(i) + 0.1 * Math.sin(Math.PI * x) + 0.4 * Math.pow(x, 4) - 0.6 * y * y); }
+    return smooth(g2);
+  })();
+  const scrollGeo = new THREE.TorusGeometry(1, 0.22, 6, 14, Math.PI * 1.6);
+  const leaf = (P, x, y, z, ang, len, mat, tilt = 0.25) => { const m = add(leafGeo, mat, x, y, z, P); m.scale.set(len, len, len * 0.6); m.rotation.set(0, -tilt, ang); return m; };
+  const cscroll = (P, x, y, z, ang, r, mat, flip = false) => {
+    const m = add(scrollGeo, mat, x, y, z, P); m.scale.setScalar(r); m.rotation.set(flip ? Math.PI : 0, 0, ang);
+    add(lobe, mat, x + Math.cos(ang) * r, y + Math.sin(ang) * r * (flip ? -1 : 1), z, P).scale.setScalar(r * 0.32);   // the curl's knob
+    return m;
+  };
+  // a rocaille shell: ribs fanning out from a boss
+  const shell = (P, x, y, z, ang, R, ribs, matHi, matLo) => {
+    for (let k = 0; k < ribs; k++) {
+      const t = k / (ribs - 1) - 0.5, a = ang + t * 2.1, L = R * (0.75 + 0.25 * Math.cos(t * Math.PI));
+      const r = add(lobe, k % 2 ? matLo : matHi, x + Math.cos(a) * L * 0.5, y + Math.sin(a) * L * 0.5, z + (k % 2 ? -0.004 : 0.004), P);
+      r.scale.set(L * 0.52, R * 0.13, R * 0.16); r.rotation.z = a;
+    }
+    add(lobe, matHi, x, y, z + R * 0.12, P).scale.set(R * 0.3, R * 0.3, R * 0.22);
+  };
+  // the cut-out canvas: bare stretcher, dust board, ragged painted strips left in the rebate
+  const RAG = (() => {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#c9b996'; c.fillRect(0, 0, 256, 64);                                    // primed canvas, aged
+    for (let i = 0; i < 70; i++) {                                                            // the painting's edge: oil dabs
+      c.fillStyle = ['#2c4a5e', '#3f5f3c', '#55704a', '#2c4a5e', '#b08a3e', '#3a3348'][i % 6];
+      c.beginPath(); c.ellipse(rnd() * 256, 14 + rnd() * 50, 10 + rnd() * 18, 4 + rnd() * 6, rnd() * 0.6 - 0.3, 0, Math.PI * 2); c.fill();
+    }
+    c.fillStyle = '#b9a884'; c.fillRect(0, 0, 256, 10);                                     // the unpainted tacking margin
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping;
+    return S(0xffffff, { map: t, roughness: 0.95, side: THREE.DoubleSide });
+  })();
+  const emptied = (F, ow, oh, z0) => {
+    const T = 0.045, bw = 0.05, hx = ow / 2 + 0.02, hy = oh / 2 + 0.02;                       // stretcher bars, tucked under the sight edge
+    for (const [x, y, lw, lh] of [[0, -hy + bw / 2, ow + 0.04, bw], [0, hy - bw / 2, ow + 0.04, bw], [-hx + bw / 2, 0, bw, oh + 0.04], [hx - bw / 2, 0, bw, oh + 0.04]])
+      add(rbox(lw, lh, T, 0.008, 1), RAWWOOD, x, y, z0 - T / 2, F);
+    add(rbox(bw * 0.9, oh, T * 0.8, 0.008, 1), RAWWOOD, 0, 0, z0 - T * 0.6, F);             // the centre brace
+    if (ow > 0.8) add(rbox(ow, bw * 0.9, T * 0.8, 0.008, 1), RAWWOOD, 0, 0, z0 - T * 0.65, F);
+    add(new THREE.PlaneGeometry(ow + 0.04, oh + 0.04), DUSTBOARD, 0, 0, z0 - T - 0.004, F);  // the dust board behind
+    // the rags: a strip along each inner edge, its inside edge torn, two flaps curling forward
+    const ex = ow / 2, ey = oh / 2;
+    for (const [x0, y0, x1, y1, nx, ny] of [[-ex, -ey, ex, -ey, 0, 1], [ex, -ey, ex, ey, -1, 0], [ex, ey, -ex, ey, 0, -1], [-ex, ey, -ex, -ey, 1, 0]]) {
+      const L = Math.hypot(x1 - x0, y1 - y0), N = Math.max(8, Math.round(L / 0.03));
+      const s = new THREE.Shape(); s.moveTo(x0 - nx * 0.02, y0 - ny * 0.02);
+      for (let k = 0; k <= N; k++) {
+        const t = k / N, dep = 0.014 + rnd() * 0.012 + (rnd() < 0.08 ? 0.02 : 0);
+        s.lineTo(x0 + (x1 - x0) * t + nx * dep, y0 + (y1 - y0) * t + ny * dep);
+      }
+      s.lineTo(x1 - nx * 0.02, y1 - ny * 0.02); s.closePath();
+      const sg = new THREE.ShapeGeometry(s), uv = sg.attributes.uv, p = sg.attributes.position;
+      for (let i = 0; i < uv.count; i++) {                                                   // the painted edge runs along the strip
+        const along = ((p.getX(i) - x0) * (x1 - x0) + (p.getY(i) - y0) * (y1 - y0)) / L;
+        const across = (p.getX(i) - x0) * nx + (p.getY(i) - y0) * ny;
+        uv.setXY(i, along * 3, 0.15 + across * 12);
+      }
+      add(sg, RAG, 0, 0, z0 + 0.003, F);
+      for (const t of [0.3 + rnd() * 0.4]) {                                                   // a flap peeling forward
+        const fl = new THREE.Shape(); fl.moveTo(-0.025, 0); fl.lineTo(0.025, 0); fl.lineTo(0.008, 0.045 + rnd() * 0.02); fl.lineTo(-0.01, 0.035); fl.closePath();
+        const m = add(new THREE.ShapeGeometry(fl), RAG, x0 + (x1 - x0) * t + nx * 0.01, y0 + (y1 - y0) * t + ny * 0.01, z0 + 0.004, F);
+        m.rotation.set(0, 0, Math.atan2(ny, nx) - Math.PI / 2); m.rotateX(-0.5 - rnd() * 0.4);
+      }
+    }
+  };
   const ornateFrame = (w, h, parent, style = 'baroque') => {
     const F = new THREE.Group(); parent.add(F);
-    const b = Math.min(w, h) * 0.17;
-    const ring = (ow, oh, iw, ih) => {
-      const s = new THREE.Shape(); s.moveTo(-ow / 2, -oh / 2); s.lineTo(ow / 2, -oh / 2); s.lineTo(ow / 2, oh / 2); s.lineTo(-ow / 2, oh / 2); s.closePath();
-      const hh = new THREE.Path(); hh.moveTo(-iw / 2, -ih / 2); hh.lineTo(-iw / 2, ih / 2); hh.lineTo(iw / 2, ih / 2); hh.lineTo(iw / 2, -ih / 2); hh.closePath();
-      s.holes.push(hh); return s;
-    };
-    // points spaced along the four sides of a rectangle (half-sizes hx, hy), with each side's angle
-    const alongSides = (hx, hy, step) => {
-      const out = [];
-      for (const [x0, y0, x1, y1] of [[-hx, -hy, hx, -hy], [hx, -hy, hx, hy], [hx, hy, -hx, hy], [-hx, hy, -hx, -hy]]) {
-        const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / step)), ang = Math.atan2(y1 - y0, x1 - x0);
-        for (let k = 1; k < n; k++) out.push([x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, ang, k]);
-      }
-      return out;
-    };
+    const b = Math.min(w, h) * 0.18;                                   // the moulding's width
+    const ow = w - 2 * b, oh = h - 2 * b;                              // the sight opening
     if (style === 'walnut') {
-      add(extrude(ring(w, h, w - 2 * b, h - 2 * b), 0.06, 0.035), WALNUT, 0, 0, 0, F);                         // the wood moulding
-      add(extrude(ring(w - 2 * b + 0.07, h - 2 * b + 0.07, w - 2 * b, h - 2 * b), 0.1, 0.01), SILVERGILT, 0, 0, -0.01, F);   // a gilt liner
-      add(extrude(ring(w + 0.04, h + 0.04, w - 0.05, h - 0.05), 0.04, 0.012), WALNUT, 0, 0, -0.03, F);
-      const egg = new THREE.SphereGeometry(1, 10, 8), dart = new THREE.ConeGeometry(0.008, 0.04, 6);
-      for (const [x, y, ang, k] of alongSides(w / 2 - 0.035, h / 2 - 0.035, 0.05)) {                     // egg-and-dart round the edge
-        if (k % 2) { const e = add(egg, SILVERGILT, x, y, 0.085, F); e.scale.set(0.018, 0.012, 0.01); e.rotation.z = ang + Math.PI / 2; }
-        else { const d = add(dart, SILVERGILT, x, y, 0.085, F); d.rotation.set(Math.PI / 2, 0, ang + Math.PI / 2); }
+      // a bold reverse profile in walnut: outer roll, a deep scotia, a carved flat, then the gilt slip
+      const front = profile([[0, 0.02], [0.012, 0.075], [0.035, 0.09], [b * 0.38, 0.05], [b * 0.62, 0.065], [b * 0.8, 0.07], [b * 0.84, 0.045]]);
+      sweep(w, h, closeLoop(front), WALNUT, F);
+      sweep(w, h, closeLoop(profile([[b * 0.84, 0.045], [b * 0.9, 0.065], [b * 0.97, 0.055], [b, 0.02]], 8), 0.0), GOLD, F);   // the gilt slip
+      // leaf-and-dart carved round the outer roll
+      for (const [x, y, ang, k] of alongSides(w, h, 0.03, 0.045)) {
+        const m = add(lobe, WALNUT_HI, x, y, 0.086, F);                                       // a pointed leaf, then a dart
+        if (k % 2) { m.scale.set(0.007, 0.02, 0.008); m.rotation.z = ang; } else m.scale.setScalar(0.006);
       }
-      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                                             // a gilt leaf in each corner
-        const L = add(new THREE.SphereGeometry(1, 12, 8), SILVERGILT, sx * (w / 2 - b * 0.5), sy * (h / 2 - b * 0.5), 0.09, F);
-        L.scale.set(b * 0.32, b * 0.13, b * 0.08); L.rotation.z = Math.atan2(sy, sx);
+      // carved acanthus in each corner, a gilt rosette at its heart
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const cx = sx * (w / 2 - b * 0.45), cy = sy * (h / 2 - b * 0.45), out = Math.atan2(sy, sx);
+        for (const da of [-2.35, 2.35]) leaf(F, cx, cy, 0.07, out + da, b * 0.62, WALNUT_HI, 0.15);
+        leaf(F, cx, cy, 0.075, out, b * 0.45, WALNUT_HI, 0.3);
+        add(lobe, GOLD_HI, cx, cy, 0.09, F).scale.set(b * 0.13, b * 0.13, b * 0.09);
       }
+      emptied(F, ow, oh, 0.01);
       return F;
     }
     if (style === 'fluted') {
-      add(extrude(ring(w, h, w - 2 * b, h - 2 * b), 0.045, 0.02), GOLD, 0, 0, 0, F);                          // a flat gilt band
-      add(extrude(ring(w - 2 * b + 0.04, h - 2 * b + 0.04, w - 2 * b, h - 2 * b), 0.08, 0.006), GOLD, 0, 0, -0.005, F);
-      const rib = new THREE.CylinderGeometry(0.009, 0.009, 1, 6);
-      for (const [x, y, ang] of alongSides(w / 2 - b / 2, h / 2 - b / 2, 0.03)) {                       // flutes across the band
-        const r = add(rib, GOLD, x, y, 0.07, F); r.scale.y = b * 0.62; r.rotation.z = ang + Math.PI / 2;
+      // a wide gilt band carved into flutes (the grooves ARE the profile, so they mitre at the corners)
+      const pts = [[0, 0.03], [0.008, 0.068], [0.02, 0.075]], FL = 6, fw = (b * 0.8 - 0.02) / FL;
+      for (let k = 0; k < FL; k++) for (let j = 1; j <= 6; j++) { const t = j / 6; pts.push([0.02 + k * fw + t * fw, 0.075 - 0.018 * Math.sin(Math.PI * t)]); }
+      pts.push([b * 0.84, 0.07], [b * 0.86, 0.045]);
+      sweep(w, h, closeLoop(pts), GOLD, F);
+      sweep(w, h, closeLoop(profile([[b * 0.86, 0.045], [b * 0.92, 0.075], [b * 0.98, 0.06], [b, 0.02]], 8), 0.0), GOLD_HI, F);
+      // ribbon-and-stick on the sight bead: a twist of short ribbons, then a stick
+      for (const [x, y, ang, k] of alongSides(w, h, b * 0.92, 0.03)) {
+        const m = add(lobe, k % 3 ? GOLD_HI : GOLD_LO, x, y, 0.078, F);
+        if (k % 3) { m.scale.set(0.011, 0.006, 0.006); m.rotation.z = ang + (k % 3 === 1 ? 0.6 : -0.6); }
+        else m.scale.set(0.004, 0.004, 0.006);
       }
-      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                                             // a square block with a rosette
-        const cx = sx * (w / 2 - b / 2), cy = sy * (h / 2 - b / 2);
-        add(rbox(b * 1.05, b * 1.05, 0.05, 0.012), GOLD, cx, cy, 0.075, F);
-        for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; const p = add(new THREE.SphereGeometry(1, 8, 6), GOLD, cx + Math.cos(a) * b * 0.2, cy + Math.sin(a) * b * 0.2, 0.105, F); p.scale.set(b * 0.14, b * 0.07, 0.012); p.rotation.z = a; }
-        add(new THREE.SphereGeometry(b * 0.11, 10, 8), GOLD, cx, cy, 0.11, F);
+      // the corners: a square block with a carved rosette
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const cx = sx * (w / 2 - b * 0.43), cy = sy * (h / 2 - b * 0.43);
+        add(rbox(b * 0.86, b * 0.86, 0.03, 0.01, 1), GOLD, cx, cy, 0.075, F);
+        for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; const p = add(lobe, k % 2 ? GOLD_LO : GOLD_HI, cx + Math.cos(a) * b * 0.2, cy + Math.sin(a) * b * 0.2, 0.095, F); p.scale.set(b * 0.16, b * 0.07, 0.012); p.rotation.z = a; }
+        add(lobe, GOLD_HI, cx, cy, 0.1, F).scale.set(b * 0.12, b * 0.12, 0.02);
       }
+      emptied(F, ow, oh, 0.01);
       return F;
     }
-    add(extrude(ring(w, h, w - 2 * b, h - 2 * b), 0.05, 0.04), GOLD, 0, 0, 0, F);                       // the cushion
-    add(extrude(ring(w + 0.05, h + 0.05, w - 0.06, h - 0.06), 0.035, 0.015), GOLD, 0, 0, -0.03, F);     // raised outer lip
-    add(extrude(ring(w - 2 * b + 0.05, h - 2 * b + 0.05, w - 2 * b, h - 2 * b), 0.09, 0.008), GOLD, 0, 0, -0.01, F);   // sight-edge bead
-    const pearl = new THREE.SphereGeometry(0.016, 8, 6), mid = b * 0.5;
-    const iw = w / 2 - mid, ih = h / 2 - mid;
-    for (const [x0, y0, x1, y1] of [[-iw, -ih, iw, -ih], [iw, -ih, iw, ih], [iw, ih, -iw, ih], [-iw, ih, -iw, -ih]]) {
-      const n = Math.round(Math.hypot(x1 - x0, y1 - y0) / 0.055);
-      for (let k = 1; k < n; k++) add(pearl, GOLD, x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, 0.1, F);
+    // Louis XV gilt: outer bead, a swelling top ogee, a deep cove, a raised sight bead
+    const front = profile([[0, 0.025], [0.01, 0.06], [0.025, 0.07], [b * 0.32, 0.105], [b * 0.5, 0.085], [b * 0.66, 0.05], [b * 0.8, 0.055], [b * 0.88, 0.075], [b * 0.95, 0.06], [b, 0.025]], 26);
+    const iOg = front.findIndex(p => p[0] >= b * 0.5), iCove = front.findIndex(p => p[0] >= b * 0.8);
+    sweep(w, h, closeLoop(front.slice(0, iOg + 1)), GOLD, F);                                  // bead + ogee
+    sweep(w, h, closeLoop(front.slice(iOg, iCove + 1)), GOLD_LO, F);                           // the cove
+    sweep(w, h, closeLoop(front.slice(iCove)), GOLD_HI, F);                                    // the sight bead
+    const nearOrn = (x, y, r) => (Math.abs(Math.abs(x) - (w / 2 - b * 0.42)) < r && Math.abs(Math.abs(y) - (h / 2 - b * 0.42)) < r) || Math.abs(x) < r * 0.9 || Math.abs(y) < r * 0.9;
+    // egg-and-dart along the top of the ogee
+    for (const [x, y, ang, k] of alongSides(w, h, b * 0.32, 0.042, (x, y) => nearOrn(x, y, b * 0.75))) {
+      const e = add(lobe, k % 2 ? GOLD_HI : GOLD_LO, x, y, 0.104, F);
+      if (k % 2) e.scale.set(0.016, 0.011, 0.01); else e.scale.set(0.003, 0.012, 0.006);
+      e.rotation.z = ang;
     }
-    const lobe = new THREE.SphereGeometry(1, 10, 8);
-    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {                                       // corner cartouches
-      const C = new THREE.Group(); C.position.set(sx * (w / 2 - b * 0.42), sy * (h / 2 - b * 0.42), 0.09); F.add(C);
-      for (let k = 0; k < 5; k++) {
-        const a = Math.atan2(sy, sx) + (k - 2) * 0.42;
-        const m = add(lobe, GOLD, Math.cos(a) * b * 0.36, Math.sin(a) * b * 0.36, 0, C);
-        m.scale.set(b * 0.26, b * 0.1, b * 0.12); m.rotation.z = a;
+    // pearls on the sight bead
+    const pearl = new THREE.SphereGeometry(1, 6, 4);
+    for (const [x, y] of alongSides(w, h, b * 0.88, 0.028)) add(pearl, GOLD_HI, x, y, 0.078, F).scale.setScalar(0.0085);
+    // rocaille corners: a shell, acanthus sweeping along both sides and breaking past the outer
+    // edge, two C-scrolls: the swirl that makes a frame read as Louis XV
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      const cx = sx * (w / 2 - b * 0.42), cy = sy * (h / 2 - b * 0.42), out = Math.atan2(sy, sx);
+      shell(F, cx + Math.cos(out) * b * 0.06, cy + Math.sin(out) * b * 0.06, 0.11, out, b * 0.5, 7, GOLD_HI, GOLD);
+      for (const s2 of [-1, 1]) {
+        leaf(F, cx, cy, 0.1, out + s2 * 2.3, b * 0.8, GOLD, 0.18);
+        leaf(F, cx + Math.cos(out + s2 * 2.3) * b * 0.5, cy + Math.sin(out + s2 * 2.3) * b * 0.5, 0.098, out + s2 * 2.55, b * 0.45, GOLD_HI, 0.25);
+        cscroll(F, cx + Math.cos(out + s2 * 1.4) * b * 0.32, cy + Math.sin(out + s2 * 1.4) * b * 0.32, 0.11, out + s2 * 1.2, b * 0.13, GOLD_HI, s2 < 0);
       }
-      add(lobe, GOLD, 0, 0, 0.02, C).scale.set(b * 0.2, b * 0.2, b * 0.16);
     }
-    const curl = new THREE.TorusGeometry(b * 0.22, b * 0.06, 6, 14, Math.PI * 1.5);
-    for (const [x, y, r] of [[0, h / 2 - b * 0.45, 0], [0, -h / 2 + b * 0.45, Math.PI], [w / 2 - b * 0.45, 0, -Math.PI / 2], [-w / 2 + b * 0.45, 0, Math.PI / 2]]) {
-      for (const s2 of [-1, 1]) {                                                              // a pair of scrolls + a leaf
-        const m = add(curl, GOLD, x + Math.cos(r) * s2 * b * 0.3, y + Math.sin(r) * s2 * b * 0.3, 0.09, F);
-        m.rotation.set(0, s2 < 0 ? Math.PI : 0, r + 0.3 * s2);            // mirrored by a half-turn, never a negative scale
+    // a centre cartouche on each side: a smaller shell flanked by scrolls and leaves
+    for (const [x, y, out] of [[0, -h / 2 + b * 0.42, -Math.PI / 2], [0, h / 2 - b * 0.42, Math.PI / 2], [w / 2 - b * 0.42, 0, 0], [-w / 2 + b * 0.42, 0, Math.PI]]) {
+      shell(F, x, y, 0.11, out, b * 0.4, 5, GOLD_HI, GOLD);
+      for (const s2 of [-1, 1]) {
+        cscroll(F, x + Math.cos(out + s2 * 1.57) * b * 0.36, y + Math.sin(out + s2 * 1.57) * b * 0.36, 0.105, out + s2 * 0.4, b * 0.12, GOLD_HI, s2 < 0);
+        leaf(F, x + Math.cos(out + s2 * 1.57) * b * 0.15, y + Math.sin(out + s2 * 1.57) * b * 0.15, 0.1, out + s2 * 1.7, b * 0.6, GOLD, 0.2);
       }
-      add(lobe, GOLD, x, y, 0.1, F).scale.set(b * 0.12, b * 0.2, b * 0.1);
     }
+    emptied(F, ow, oh, 0.012);
     return F;
   };
 
@@ -655,16 +780,13 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     for (const s of [-1, 1]) { const l = add(new THREE.CylinderGeometry(0.04, 0.05, 2.0, 10), WOOD, s * 0.42, 0.95, 0, easel); l.rotation.z = s * 0.14; }
     const back = add(new THREE.CylinderGeometry(0.035, 0.045, 2.0, 10), WOOD, 0, 0.9, -0.38, easel); back.rotation.x = -0.36;
     add(rbox(1.1, 0.06, 0.16, 0.02), WOOD, 0, 0.62, 0.04, easel);
-    ornateFrame(1.3, 1.0, easel).position.set(0, 1.15, 0.06);
-    // backing board, bare — the canvas has been cut clean out
-    add(new THREE.PlaneGeometry(0.98, 0.7), S(0x5a4632, { roughness: 1 }), 0, 1.15, 0.05, easel);
+    ornateFrame(1.3, 1.0, easel).position.set(0, 1.15, 0.06);       // (the stretcher, dust board and torn canvas come with it)
     // the little wall-card: stood on the ledge, leaning back on the frame's foot
     add(rbox(0.36, 0.16, 0.02, 0.01), S(0xfff6e6), 0.3, 0.73, 0.1, easel).rotation.x = -0.18;
     // two more of the stolen paintings' frames, carried out and leaned behind it — all empty
     for (const [x, z, ry, fw, fh, style] of [[3.05, 0.0, -0.75, 1.0, 0.78, 'walnut'], [2.7, -0.62, -0.45, 0.72, 0.95, 'fluted']]) {
       const lean = new THREE.Group(); lean.position.set(x, PZ, z); lean.rotation.set(0, ry, 0); g.add(lean);
       const f = ornateFrame(fw, fh, lean, style); f.position.set(0, fh / 2 + 0.02, 0); f.rotation.x = -0.2; f.position.z = -Math.sin(0.2) * fh / 2;
-      add(new THREE.PlaneGeometry(fw * 0.66, fh * 0.6), S(0x5a4632, { roughness: 1 }), 0, 0, -0.005, f);
     }
   }
 
