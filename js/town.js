@@ -228,20 +228,49 @@ export function buildTown(scene) {
 
   // spurs: boulevard → each site / project, ending in front of it
   // CITY PLANNING: two spurs never leave the boulevard at the same spot (a fork of two T's a car's
-  // length apart, the kerbs between them a sliver): each leaves at least SPUR_GAP from the others
+  // length apart, the kerbs between them a sliver). Where the boulevard's nearest point is already
+  // taken, the new spur branches off the spur that took it (a T, square to it, well clear of the
+  // boulevard) — or, if that doesn't bring it nearer, leaves the boulevard SPUR_GAP further along
   const SPUR_GAP = 4.5;
   const spur = (target, stopShort, key, bulb = false) => {
-    let best = null;
+    let near = out.boulevard[0];
+    for (const p of out.boulevard) if (arc(p, target) < arc(near, target)) near = p;
+    let best = null, host = out.boulevard;
     for (const p of out.boulevard) {
       if (out.spurs.some(sp => arc(sp.pts[0], p) < SPUR_GAP)) continue;
       if (!best || arc(p, target) < arc(best, target)) best = p;
     }
+    const taken = out.spurs.find(sp => arc(sp.pts[0], near) < SPUR_GAP);
+    if (taken) {
+      const P = taken.pts, cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + arc(P[k - 1], P[k]));
+      let q = null;
+      // (well clear of the boulevard, and of the other spur's own destination: not across its forecourt)
+      // — and only where that spur passes nearest the new place (a true nearest point, so the new
+      // road leaves it square; at the edge of that stretch it would run off alongside it)
+      const L = cum[cum.length - 1], ok = (k) => k > 0 && k < P.length - 1 && cum[k] > 4.5 && L - cum[k] > 10;
+      P.forEach((p, k) => { if (ok(k) && arc(p, target) <= arc(P[k - 1], target) && arc(p, target) <= arc(P[k + 1], target) && ok(k - 1) && ok(k + 1)) q = p; });
+      if (q && (!best || arc(q, target) < arc(best, target) - 1)) { best = q; host = P; }   // (right by it: the place fronts that road, no spur)
+    }
     if (!best) return null;
     const total = arc(best, target);
-    if (total < stopShort + 1.5) return null;
-    const pts = [];
-    const n = Math.max(6, Math.round(total / 1.5));
-    for (let k = 0; k <= n; k++) pts.push(slerpDir(best, target, (k / n) * (1 - stopShort / total)));
+    // a place right beside the road it branches off gets just a short drive up to its forecourt
+    // (no room for a turning circle); one that close to the boulevard needs no road at all
+    const drive = host !== out.boulevard && total < stopShort + 4;
+    if (total < stopShort + (host !== out.boulevard ? 0.5 : 1.5)) return null;
+    if (drive) bulb = false;
+    // it leaves its road square: out along that road's normal (toward the place) for a car's
+    // length or two, then on to the place (from a point that isn't the road's nearest to the place,
+    // a straight line would leave at a slant, or run off along it)
+    const hi = host.indexOf(best), ht = host[Math.min(host.length - 1, hi + 1)].clone().sub(host[Math.max(0, hi - 1)]);
+    const nrm = new THREE.Vector3().crossVectors(best, ht).normalize();
+    if (nrm.dot(target.clone().sub(best)) < 0) nrm.negate();
+    const w = best.clone().multiplyScalar(R).addScaledVector(nrm, 2.4).normalize();
+    const pts = [best.clone()];
+    if (drive) for (let k = 1; k <= 3; k++) pts.push(slerpDir(best, target, (k / 3) * (1 - stopShort / total)));   // (best is its road's nearest point: already square)
+    else {
+      const rest = arc(w, target), n = Math.max(6, Math.round(rest / 1.5));
+      for (let k = 0; k <= n; k++) pts.push(slerpDir(w, target, (k / n) * (1 - stopShort / rest)));
+    }
     const mine = z => z.key === key || z.key === key.replace('lm:', 'lot:');     // its own shop and car park
     deflect(pts, { keep: i => i === 0 || i === pts.length - 1, except: mine, clear: 1.8 });
     // smoothing rounds corners back INTO reserved ground: push the smoothed line out again
@@ -258,6 +287,12 @@ export function buildTown(scene) {
   // laid later, a spur ran straight over the verge planting it crossed
   // (landscaping: each shop's spur stops short of its cobbled forecourt — see shopApproach)
   const spurEnds = {}, groundsKeep = [];       // groundsKeep: ground the landscaping has taken (not solid)
+  // (the sites' roads first — the cape's, round the planet, is the trunk road out that way: a shop
+  // out the same way branches off it, square, instead of forking off the boulevard beside it)
+  // (the harbour's road runs on onto the quay's paving: it stopped half a metre short, on the grass)
+  // (the station and the cape end in a turning circle; the overlook has its own, roadside.js)
+  for (const [k, s] of Object.entries(PLAN.sites))
+    if (k !== 'airport') spur(llv(s.at), k === 'harbour' ? s.r - 0.7 : s.stop ?? s.r + 0.6, 'site:' + k, k === 'station' || k === 'launchpad');
   for (const p of PLAN.projects) {
     if (ROW_KEYS.includes(p.key)) continue;               // the row's shops share one spur, below
     // a shop with no car park gets a turning circle at its door; the Library's drive runs onto its
@@ -267,10 +302,6 @@ export function buildTown(scene) {
   }
   { const RW = resolveRow(), pts = spur(RW.L(0, 6.0), 6.1, 'lm:row');   // ends just past the car park's aisle
     if (pts) spurEnds.row = pts[pts.length - 1].clone(); }
-  for (const [k, s] of Object.entries(PLAN.sites))
-    // (the harbour's road runs on onto the quay's paving: it stopped half a metre short, on the grass)
-    // (the station and the cape end in a turning circle; the overlook has its own, roadside.js)
-    if (k !== 'airport') spur(llv(s.at), k === 'harbour' ? s.r - 0.7 : s.stop ?? s.r + 0.6, 'site:' + k, k === 'station' || k === 'launchpad');   // Cape Far Side: the long road round the planet
 
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world

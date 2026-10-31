@@ -496,7 +496,7 @@ function meetSquare(pts, e, half, zonesOk) {
     if (q.dist < o.half + 0.6 && (!best || q.dist - o.half < best.q.dist - best.o.half)) best = { o, q };
   }
   if (!best) return pts;
-  const { o, q } = best;
+  const { o, q } = best, oi = ROADS.indexOf(o);
   if (!o.closed) {                                                     // on (or past) its end: a continuation
     const L = o.pts.length;
     if (arc(q.p, o.pts[0]) < 1.2 || arc(q.p, o.pts[L - 1]) < 1.2) return pts;
@@ -504,34 +504,56 @@ function meetSquare(pts, e, half, zonesOk) {
   const back = alongFrom(pts, e, 2.0); if (!back) return pts;
   const out = E.clone().sub(back.d).projectOnPlane(E).normalize();
   const ang = Math.acos(Math.min(1, Math.abs(out.dot(q.tan)))) * 180 / Math.PI;     // 90 = square
-  if (ang < 10) return pts;                                            // running on along it
-  const Q = q.p, nrm = new THREE.Vector3().crossVectors(Q, q.tan).normalize();
-  if (nrm.dot(back.d.clone().sub(Q)) < 0) nrm.negate();               // pointing back up the side road
+  if (ang < 8) return pts;                                             // running on along it
+  if (ang > 84 && q.dist < 0.25) { const p2 = pts.slice(); p2[e ? n - 1 : 0] = q.p.clone(); return p2; }
   const at = (base, v, s) => base.clone().multiplyScalar(R).addScaledVector(v, s).normalize();
-  if (ang > 84 && q.dist < 0.25) { const p2 = pts.slice(); p2[e ? n - 1 : 0] = Q.clone(); return p2; }
   const total = (() => { let s = 0; for (let k = 1; k < n; k++) s += arc(pts[k - 1], pts[k]); return s; })();
-  const straight = o.half + 1.2, A = at(Q, nrm, straight);
+  const straight = o.half + 1.2;
   const turn = (90 - ang) * Math.PI / 180 + 0.2;
-  // the longest easing that keeps out of reserved ground (a long one first: the gentlest curve)
-  for (const f of [1, 0.75, 0.55]) {
-    const Lb = Math.min(total * 0.6, straight + Math.max(2.4, RMIN * turn * 1.6) * f);
-    const B = alongFrom(pts, e, Lb); if (!B || Lb < straight + 1.0) return pts;
-    const Bn = alongFrom(pts, e, Lb + 0.6) || B;
-    const tB = B.d.clone().sub(Bn.d).projectOnPlane(B.d).normalize();   // heading toward the end
-    const P0 = B.d.clone().multiplyScalar(R), P3 = A.clone().multiplyScalar(R), L3 = P0.distanceTo(P3) / 3;
-    const P1 = P0.clone().addScaledVector(tB, L3), P2 = P3.clone().addScaledVector(nrm, L3);
-    const curve = [];
-    const m = Math.max(4, Math.round(P0.distanceTo(P3) / 0.3));
-    for (let k = 1; k <= m; k++) {
-      const t = k / m, u = 1 - t;
-      curve.push(P0.clone().multiplyScalar(u * u * u).addScaledVector(P1, 3 * u * u * t).addScaledVector(P2, 3 * u * t * t).addScaledVector(P3, t * t * t).normalize());
+  // the junction may slide along the other road the way this one is heading (a road that leaves at
+  // a shallow angle meets it square a little further on, its curve staying near where it ran)
+  const slideDir0 = out.dot(q.tan) < 0 ? 1 : -1;                       // along o's sample order
+  const along = (s0) => {                                              // a point s0 along o from q (−: the other way), with its tangent
+    const P = o.pts, N = P.length, slideDir = s0 < 0 ? -slideDir0 : slideDir0; let i = q.i, left = Math.abs(s0), cur = q.p;
+    while (left > 1e-6) {
+      const j = slideDir > 0 ? i + 1 : i;                              // the next sample that way
+      if (!o.closed && (j < 0 || j >= N)) return null;
+      const nxt = P[((j % N) + N) % N], l = arc(cur, nxt);
+      if (l >= left) { cur = slerpDir(cur, nxt, left / l); left = 0; break; }
+      left -= l; cur = nxt; i = slideDir > 0 ? j : j - 1;
     }
-    const ns = Math.max(2, Math.round(straight / 0.3));
-    for (let k = 1; k <= ns; k++) curve.push(slerpDir(A, Q, k / ns));
-    if (!zonesOk(curve)) continue;
-    const keep = e ? pts.slice(0, B.k) : pts.slice(B.k + 1).reverse();
-    const res = [...keep, ...curve];                                   // (built start → end)
-    return e ? res : res.reverse();
+    const c = closestOnRoad(cur, o); return { p: c.p, tan: c.tan };
+  };
+  for (const slide of [0, 1.5, 3, 4.5, 6, -1.5, -3]) {
+    const J = slide ? along(slide) : { p: q.p, tan: q.tan }; if (!J) break;
+    // (never slid up against another junction on that road: two T's a car's length apart)
+    if (slide && JUNCTIONS.some(K => (K.a === oi || K.b === oi) && arc(K.d, J.p) < 4)) continue;
+    const Q = J.p, nrm = new THREE.Vector3().crossVectors(Q, J.tan).normalize();
+    if (nrm.dot(back.d.clone().sub(Q)) < 0) nrm.negate();             // pointing back up the side road
+    const A = at(Q, nrm, straight);
+    // the longest easing that keeps out of reserved ground (a long one first: the gentlest curve)
+    for (const f of [1, 0.75, 0.55]) {
+      const Lb = Math.min(total * 0.6, straight + Math.max(2.4, RMIN * turn * 1.6) * f + Math.abs(slide) * 0.5);
+      const B = alongFrom(pts, e, Lb); if (!B || Lb < straight + 1.0) return pts;
+      const Bn = alongFrom(pts, e, Lb + 0.6) || B;
+      const tB = B.d.clone().sub(Bn.d).projectOnPlane(B.d).normalize();   // heading toward the end
+      const P0 = B.d.clone().multiplyScalar(R), P3 = A.clone().multiplyScalar(R), L3 = P0.distanceTo(P3) / 3;
+      const P1 = P0.clone().addScaledVector(tB, L3), P2 = P3.clone().addScaledVector(nrm, L3);
+      const curve = [];
+      const m = Math.max(4, Math.round(P0.distanceTo(P3) / 0.3));
+      for (let k = 1; k <= m; k++) {
+        const t = k / m, u = 1 - t;
+        curve.push(P0.clone().multiplyScalar(u * u * u).addScaledVector(P1, 3 * u * u * t).addScaledVector(P2, 3 * u * t * t).addScaledVector(P3, t * t * t).normalize());
+      }
+      const ns = Math.max(2, Math.round(straight / 0.3));
+      for (let k = 1; k <= ns; k++) curve.push(slerpDir(A, Q, k / ns));
+      if (!zonesOk(curve)) continue;
+      // (and never doubling back over the other road: the curve stays on this road's side of it)
+      if (curve.slice(0, -ns).some(d => closestOnRoad(d, o).dist < o.half + 0.4)) continue;
+      const keep = e ? pts.slice(0, B.k) : pts.slice(B.k + 1).reverse();
+      const res = [...keep, ...curve];                                 // (built start → end)
+      return e ? res : res.reverse();
+    }
   }
   return pts;
 }

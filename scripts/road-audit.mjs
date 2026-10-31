@@ -270,8 +270,14 @@ const res = await p.evaluate(async () => {
     maps[name] = cv.toDataURL('image/png');
   }
   const meshes = parts.length; let triCount = 0; for (const T of tris) triCount += T.count / 3;
+  // anything solid standing on a carriageway (its centre within the drawn road), and how many solids there are
+  const solids = (V.town.colliders || []).filter(c => !c.soft);
+  const onRoadSolids = solids.filter(c => W.onRoad(c.dir, -0.05)).map(c => ({ at: c.dir.toArray().map(v => +v.toFixed(4)), r: c.r }));
+  let plantsOnRoad = 0; V.scene.traverse(o => { if (o.userData.deco) { const w = new THREE.Vector3(); o.getWorldPosition(w); if (W.onRoad(w.normalize(), 0)) plantsOnRoad++; } });
+  let buildMs = null;
+  if (W.buildRoadSurface && W.SHEET) { const keep = W.SHEET.meshes; const t0 = performance.now(); const tmp = new THREE.Scene(); W.buildRoadSurface(tmp); buildMs = Math.round(performance.now() - t0); for (const m of tmp.children) m.geometry.dispose(); W.SHEET.meshes = keep; }
   return { counts: { roads: ROADS.length, ends: ends.length, dead: dead.length, offset: offset.length, skew: skew.length, pokingStubs: poke.length, kinks: kinks.length,
-    sharpCorners: sharp, slivers: sliver, kerbInsideAsphalt: kerbIn, overlapArea: +overlapArea.toFixed(1), roadMeshes: meshes, roadTris: triCount },
+    sharpCorners: sharp, slivers: sliver, kerbInsideAsphalt: kerbIn, overlapArea: +overlapArea.toFixed(1), roadMeshes: meshes, roadTris: triCount, solids: solids.length, solidsOnRoad: onRoadSolids.length, plantsOnRoad, surfaceBuildMs: buildMs }, onRoadSolids,
     ends, kinks, sites: siteRes.filter(s => s.sharp.length || s.sliver.length || s.kerbIn.length).map(s => ({ road: s.road, at: s.at.map(v => +v.toFixed(4)), sharp: s.sharp.length, sliver: s.sliver.length, kerbIn: s.kerbIn.length })), maps };
 });
 for (const [k, v] of Object.entries(res.maps)) writeFileSync(`${OUT}/${TAG}-map-${k}.png`, Buffer.from(v.split(',')[1], 'base64'));
