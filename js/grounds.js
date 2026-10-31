@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { PAL, paint } from './style.js';
 import { rbox, lathe } from './props.js';
 import { kit } from './buildings.js';
+import { pondWater, spillMat, sheet } from './pondwater.js';
 
 // a tiny seeded random, so the grounds come out the same every load
 const rng = (s) => () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
@@ -128,6 +129,11 @@ function mats() {
     c.fillStyle = '#6e4c38'; c.fillRect(0, 0, n, n);
     for (let i = 0; i < 220; i++) { c.fillStyle = ['#8a6248', '#5a3c2c', '#9a7356'][Math.floor(R() * 3)]; c.save(); c.translate(R() * n, R() * n); c.rotate(R() * 3); c.fillRect(-3, -1.2, 6 + R() * 4, 2.4); c.restore(); }
   });
+  // a pool's floor: pale plaster under the water, soft pebbles and a few darker stones
+  const bedTex = groundTex(128, (c, n, R) => {
+    c.fillStyle = '#c9d6c8'; c.fillRect(0, 0, n, n);
+    for (let i = 0; i < 90; i++) { c.fillStyle = ['rgba(120,140,128,0.35)', 'rgba(250,250,240,0.5)', 'rgba(160,150,120,0.4)'][Math.floor(R() * 3)]; c.beginPath(); c.ellipse(R() * n, R() * n, 1.5 + R() * 3, 1 + R() * 2.2, R() * 3, 0, 7); c.fill(); }
+  });
   // painted bay lines: chalky white, a little worn. (It has a texture so it bakes as its own mesh
   // and keeps its polygon offset: a plain flat-colour paint is merged into the vertex-colour
   // bucket by placeOnPlanet's bake, which dropped the offset and hid the old lines under the cobbles)
@@ -135,10 +141,15 @@ function mats() {
     c.fillStyle = '#f6f2e8'; c.fillRect(0, 0, n, n);
     for (let i = 0; i < 40; i++) { c.fillStyle = R() > 0.5 ? 'rgba(160,150,130,0.35)' : 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(R() * n, R() * n, 1 + R() * 2.5, 0, 7); c.fill(); }
   });
-  const flat = (o) => { const m = paint(0xffffff, { hatch: 0, side: THREE.DoubleSide, ...o }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -3; return m; };
+  // draped surfaces, layered so where two meet the upper one always wins cleanly: the edging
+  // (−2, lowest), then gravel, cobbles and a pool's floor (−3), flagstones over them (−5), painted
+  // lines (−5, never on flagstones). Each also rides a few mm higher than the one it covers. Where
+  // two pieces of the SAME surface overlap (a lane running into its forecourt, a path into its paved
+  // ring, a flagstone cross) their textures are laid in the same metres (planar), so the overlap is invisible
+  const flat = (o, tier = -3) => { const m = paint(0xffffff, { hatch: 0, side: THREE.DoubleSide, ...o }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = tier; return m; };
   _M = {
-    line: (() => { const m = flat({ map: lineTex }); m.polygonOffsetFactor = m.polygonOffsetUnits = -5; return m; })(),
-    gravel: flat({ map: gravelTex }), flag: flat({ map: flagTex }), cobble: flat({ map: cobbleTex }),
+    line: flat({ map: lineTex }, -5),
+    gravel: flat({ map: gravelTex }), flag: flat({ map: flagTex }, -5), cobble: flat({ map: cobbleTex }), bed: flat({ map: bedTex }),
     edge: (() => { const m = paint(0xb9ad95, { hatch: 0, side: THREE.DoubleSide }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -2; return m; })(),
     stone: paint(0xd6cbb4), stoneD: paint(0xb3a68c), soil: paint(0x8a6a52, { hatch: 0 }), mulch: paint(0x7a5640, { map: mulchTex }),
     hedge: paint(0x5f8a4e), hedgeD: paint(0x4f7a44), water: paint(PAL.water, { hatch: 0 }),
@@ -173,10 +184,10 @@ function strip(K, pts, half, mat, y, tile = 1, closed = false, planar = false) {
   return curve;
 }
 // a path: the walking surface and, a hair below and a touch wider, a stone edging line
-function path(K, pts, half, mat, y = 0.01, tile = 1) {
+function path(K, pts, half, mat, y = 0.01, tile = 1, worldUV = false) {
   const M = mats();
   strip(K, pts, half + 0.07, M.edge, y - 0.008, tile);
-  return strip(K, pts, half, mat, y, tile);
+  return strip(K, pts, half, mat, y, tile, false, worldUV);
 }
 // a flat shape lying in xz at height y, with uvs in metres (so a texture tiles like the paths')
 function lay(K, geo, mat, x, y, z, tile = 1) {
@@ -295,12 +306,15 @@ function bollard(K, x, z, h = 0.9) {
   K.put(lathe([[0.001, 0], [0.11, 0], [0.03, 0.07], [0.001, 0.1]], 12), M.dark, x, h + 0.2, z);
   K.foot(x, z, 0.1).userData.lampMark = 'low';
 }
+// a bench's footprint: three circles down its length (it's 1.2 long, 0.38 deep), for the
+// colliders and for the placement check — one round one stuck out 0.25 in front of the seat
+const benchFoot = (x, z, ry) => [-0.42, 0, 0.42].map(u => [x + u * Math.cos(ry), z - u * Math.sin(ry), 0.22]);
 function gardenBench(K, x, z, ry) {
   const M = mats(), s = K.sub(x, 0, z, ry);
   s.box(1.2, 0.07, 0.38, M.wood, 0, 0.42, 0, 0.025);
   s.box(1.2, 0.28, 0.06, M.wood, 0, 0.63, -0.17, 0.025, [-0.12, 0, 0]);
   for (const sx of [-0.52, 0.52]) s.box(0.06, 0.46, 0.36, M.dark, sx, 0.19, 0, 0.02);
-  K.foot(x, z, 0.45);
+  for (const [fx, fz, r] of benchFoot(x, z, ry)) K.foot(fx, fz, r);
 }
 // ── planting: plants are listed (plants.js grows them on the drawn ground after placement,
 // merged per colour, nodding in the breeze). A bed is filled in layers — tall at the back,
@@ -373,10 +387,59 @@ function trough(K, x, z, R, { w = 0.62, d = 0.62, h = 0.56, front = [0, 1] } = {
   plant(K, 'tulip', x - front[1] * 0.16, z + front[0] * 0.16, { y: h - 0.06, s: 0.85, c: pal.c[2] });
   K.foot(x, z, Math.max(w, d) / 2 + 0.05);
 }
-// a clipped hedge along a straight run (a rounded box, its top a touch darker)
+// a clipped hedge along a run of points [[x, z], …] (the line its middle follows, sampled off a
+// path's edge): a rounded profile — sides leaning in a touch to a soft top — swept along the
+// smoothed line, domed down at both ends, its foot sunk below the ground. It leaves colliders
+// down its length, so she walks beside it, never on it. Returns its footprint circles
+function hedgeRun(K, pts, h = 0.45, w = 0.34, { feet = true } = {}) {
+  const M = mats(), hw = w / 2, tw = hw * 0.9, rc = 0.12, FOOT = -0.13;
+  const curve = new THREE.CatmullRomCurve3(pts.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+  const L = curve.getLength(), n = Math.max(2, Math.ceil(L / 0.1));
+  const prof = [[hw, FOOT], [hw * 0.99, h * 0.35]];
+  for (let k = 0; k <= 5; k++) { const a = k / 5 * Math.PI / 2; prof.push([tw - rc + rc * Math.cos(a), h - rc + rc * Math.sin(a)]); }
+  for (let k = 0; k <= 5; k++) { const a = Math.PI / 2 + k / 5 * Math.PI / 2; prof.push([-tw + rc + rc * Math.cos(a), h - rc + rc * Math.sin(a)]); }
+  prof.push([-hw * 0.99, h * 0.35], [-hw, FOOT]);
+  const P = prof.length, pos = [], idx = [];
+  // rings: [point, tangent, width scale, height scale] — the start cap (tip first), the body, the end cap
+  const rings = [], CAP = 5, ring = (t, back, a) => {
+    const p = curve.getPointAt(t), tg = curve.getTangentAt(t);
+    rings.push([p.clone().addScaledVector(tg, back * hw * Math.sin(a)), tg, Math.cos(a), Math.sqrt(Math.cos(a))]);
+  };
+  for (let k = CAP; k >= 1; k--) ring(0, -1, k / CAP * Math.PI / 2 * 0.94);
+  for (let i = 0; i <= n; i++) ring(i / n, 0, 0);
+  for (let k = 1; k <= CAP; k++) ring(1, 1, k / CAP * Math.PI / 2 * 0.94);
+  for (const [p, tg, f, hs] of rings) {
+    const sx = -tg.z, sz = tg.x;
+    for (const [u, v] of prof) pos.push(p.x + sx * u * f, FOOT + (v - FOOT) * hs, p.z + sz * u * f);
+  }
+  for (let r = 0; r + 1 < rings.length; r++) for (let k = 0; k + 1 < P; k++) {
+    const a = r * P + k, b = a + P;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  // close each tip with a fan to its middle
+  for (const [r, fwd] of [[0, false], [rings.length - 1, true]]) {
+    const c = pos.length / 3, [p, , , hs] = rings[r];
+    pos.push(p.x, FOOT + (h * 0.5 - FOOT) * hs, p.z);
+    for (let k = 0; k + 1 < P; k++) fwd ? idx.push(r * P + k, c, r * P + k + 1) : idx.push(r * P + k, r * P + k + 1, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  K.put(g, M.hedge);
+  const foot = [];
+  for (let i = 0, m = Math.max(1, Math.round(L / 0.3)); i <= m; i++) { const p = curve.getPointAt(i / m); foot.push([p.x, p.z, hw + 0.03]); if (feet) K.foot(p.x, p.z, hw + 0.03); }
+  return foot;
+}
+// a straight clipped hedge from (x0, z0) to (x1, z1): the same swept, smooth profile (its caller
+// lays its own colliders)
 function hedge(K, x0, z0, x1, z1, h = 0.45, w = 0.34) {
-  const M = mats(), L = Math.hypot(x1 - x0, z1 - z0), a = Math.atan2(x1 - x0, z1 - z0);
-  K.put(rbox(w, h + 0.13, L, 0.13, 3), M.hedge, (x0 + x1) / 2, (h - 0.13) / 2, (z0 + z1) / 2, [0, a, 0]);   // bevel below ground
+  const n = Math.max(2, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.5));
+  return hedgeRun(K, Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n]), h, w, { feet: false });
+}
+// everything in the grounds but the paving is a prop she can't stand on (a hedge top, a bench
+// seat, a planter rim, a pool rim, a kerb stone): walkable() lists the paving
+function solidify(K, ...walkable) {
+  const walk = new Set([mats().gravel, mats().flag, mats().cobble, mats().edge, mats().line, ...walkable]);
+  K.g.traverse(o => { if (o.isMesh && !walk.has(o.material)) o.userData.noGround = true; });
 }
 // a tree: a mix of kinds (blossom, birch, autumn maple, cypress, a round shade tree)
 const TREES = ['blossom', 'maple', 'birch', 'shade', 'cypress', 'blossom', 'maple', 'birch'];
@@ -410,25 +473,96 @@ export function museumGrounds({ ok = () => true, pool: poolAt = null } = {}) {
   const onWalk = (x, z, r) => (Math.abs(Math.abs(x) - 8.6) < 0.6 + r && z < -2 && z > -12.6) || (Math.abs(z + 13.0) < 0.6 + r && Math.abs(x) < 8.6);
   const spot = (x, z, r) => !onWalk(x, z, r) && !(Math.abs(x) < 7.2 + r && z > -12.1 - r && z < -2.2 + r) && free(x, z, r);
   const pick = (cands, r) => { for (const [x, z] of cands) if (spot(x, z, r)) { placed.push([x, z, r]); return [x, z]; } return null; };
+  // the walk-side furniture and hedges keep out of each other: every footprint is a few circles
+  // ([x, z, r]), checked against all the others before it's built (a lamp stood in a bench once)
+  const fp = [];
+  const fits = (cs, gap = 0.08) => cs.every(([x, z, r]) => fp.every(([a, b, c]) => Math.hypot(a - x, b - z) >= r + c + gap));
+  const claim = (cs) => { fp.push(...cs); placed.push(...cs); };
   // gravel walks from the side pavements round both wings, meeting behind the building
   // either side of the service ramp (x ±0.8, z −11.4…−14.1)
-  path(K, [[-7.35, -1.3], [-7.9, -2.7], [-8.25, -4.6], [-8.25, -10.3], [-7.85, -12.4], [-5.6, -13.0], [-1.55, -13.0]], 0.42, M.gravel, 0.01, 1.2);
-  path(K, [[8.55, -2.25], [8.95, -4.3], [9.0, -10.4], [8.5, -12.45], [5.6, -13.0], [1.55, -13.0]], 0.42, M.gravel, 0.01, 1.2);
-  // box hedges along the walks' road side; a flower strip under the east wing's windows
-  if (ok(-8.95, -7.4, 0.2)) hedge(K, -8.95, -4.9, -8.95, -9.9);
-  hedge(K, 9.67, -4.5, 9.67, -10.3);
+  const walks = [
+    path(K, [[-7.35, -1.3], [-7.9, -2.7], [-8.25, -4.6], [-8.25, -10.3], [-7.85, -12.4], [-5.6, -13.0], [-1.55, -13.0]], 0.42, M.gravel, 0.01, 1.2),
+    path(K, [[8.55, -2.25], [8.95, -4.3], [9.0, -10.4], [8.5, -12.45], [5.6, -13.0], [1.55, -13.0]], 0.42, M.gravel, 0.01, 1.2),
+  ];
+  // a walk sampled every ~0.25: its middle, and the way out (away from the building's middle)
+  const along = (curve) => {
+    const L = curve.getLength(), n = Math.ceil(L / 0.25), out = [];
+    for (let i = 0; i <= n; i++) {
+      const p = curve.getPointAt(i / n), tg = curve.getTangentAt(i / n);
+      let nx = -tg.z, nz = tg.x;
+      if (Math.hypot(p.x + nx, p.z + 7 + nz) < Math.hypot(p.x - nx, p.z + 7 - nz)) { nx = -nx; nz = -nz; }
+      out.push({ s: i * L / n, x: p.x, z: p.z, nx, nz });
+    }
+    return out;
+  };
+  const W = walks.map(along);
+  const nearestOn = (S, z) => S.reduce((b, q) => (Math.abs(q.z - z) < Math.abs(b.z - z) ? q : b));
   // flower strips under the east wing's windows, planted tall at the wall, low at the walk
-  flowerBed(K, 8.05, -5.0, 0.7, 2.4, R, { front: [1, 0] });
-  flowerBed(K, 8.05, -9.4, 0.7, 2.0, R, { front: [1, 0] });
-  // low lamps along the walks, a bench on the east lawn
-  for (const [x, z] of [[-7.62, -5.0], [-7.62, -10.6], [10.15, -5.6], [10.15, -9.4], [-4.2, -12.3], [4.2, -12.3]]) if (ok(x, z, 0.1)) bollard(K, x, z);
-  if (ok(10.45, -8.6, 0.5)) { gardenBench(K, 10.45, -8.6, -Math.PI / 2); placed.push([10.45, -8.6, 0.5]); }
+  for (const [x, z, d] of [[8.05, -5.0, 2.4], [8.05, -9.4, 2.0]]) {
+    flowerBed(K, x, z, 0.7, d, R, { front: [1, 0] });
+    const cs = [-1, 0, 1].map(k => [x, z + k * (d / 2 - 0.4), 0.4]); claim(cs);
+    for (const [fx, fz, r] of cs) K.foot(fx, fz, r);
+  }
+  // low lamps on the walks' verges — the west's on the building side, the east's on the road side
+  // (where its hedge runs: a lamp breaks the hedge) — and a bench on the east verge facing the
+  // walk, set into its hedge; each slides along the walk until its footprint is clear
+  const verge = (S, z, side, off, r, use) => {
+    const q0 = nearestOn(S, z), i0 = S.indexOf(q0);
+    for (const di of [0, 2, -2, 4, -4, 6, -6]) {
+      const q = S[i0 + di]; if (!q) continue;
+      const x = q.x + q.nx * off * side, zz = q.z + q.nz * off * side;
+      if (!ok(x, zz, r) || !use(x, zz, q)) continue;
+      return true;
+    }
+    return false;
+  };
+  const lamp = (x, z) => { if (!fits([[x, z, 0.12]])) return false; bollard(K, x, z); claim([[x, z, 0.12]]); return true; };
+  for (const z of [-5.0, -10.6]) verge(W[0], z, -1, 0.66, 0.12, lamp);
+  for (const z of [-5.6, -9.9]) verge(W[1], z, 1, 0.66, 0.12, lamp);
+  for (const [x, z] of [[-4.2, -12.3], [4.2, -12.3]]) if (ok(x, z, 0.1)) lamp(x, z);
+  verge(W[1], -7.8, 1, 0.78, 0.6, (x, z, q) => {
+    const ry = Math.atan2(-q.nx, -q.nz), cs = benchFoot(x, z, ry);
+    if (!fits(cs)) return false;
+    gardenBench(K, x, z, ry); claim(cs); return true;
+  });
+  // box hedges down each side of the museum, between the walk and the road, curving with the
+  // walk: a steady 1.25 out from its middle (a strip of lawn in front, where the lamps and the bench
+  // stand backed by the hedge) round the walk's bends — and drawn in toward it wherever the road
+  // swings closer (found by stepping out from the walk till the road is near), never onto its
+  // verge. Smoothed, broken round anything in its way, rounded off at its ends
+  const HW = 0.17, S_MIN = 0.42 + 0.07 + 0.06 + HW, S_CAP = 1.25;
+  for (const S of W) {
+    const offs = S.map(q => {
+      if (q.s < 1.0 || q.z > -1.8 || q.z < -12.9) return null;    // the walk's mouth stays open; the sides only
+      let o = S_MIN; if (!ok(q.x + q.nx * o, q.z + q.nz * o, HW + 0.05)) return null;
+      while (o < S_CAP + 0.03 && ok(q.x + q.nx * (o + 0.05), q.z + q.nz * (o + 0.05), HW + 0.05)) o += 0.05;
+      return { road: o + 0.05, o: Math.min(o, S_CAP) };
+    });
+    // runs of samples, their offsets eased along (so the hedge bends with the road, not in steps)
+    const runs = []; let cur = [];
+    offs.forEach((v, i) => { if (v) cur.push(i); else { if (cur.length) runs.push(cur); cur = []; } });
+    if (cur.length) runs.push(cur);
+    for (const run of runs) {
+      const sm = run.map((i, k) => {
+        let a = 0, c = 0; for (let j = Math.max(0, k - 3); j <= Math.min(run.length - 1, k + 3); j++) { a += offs[run[j]].o; c++; }
+        return Math.max(S_MIN, Math.min(a / c, offs[i].road - 0.03));
+      });
+      let pts = [];
+      const flush = () => { if (pts.length >= 5) claim(hedgeRun(K, pts)); pts = []; };
+      run.forEach((i, k) => {
+        const q = S[i], x = q.x + q.nx * sm[k], z = q.z + q.nz * sm[k];
+        if (fits([[x, z, HW]], 0.05)) pts.push([x, z]); else flush();
+      });
+      flush();
+    }
+  }
   // a flagstone path from the back walk out to a garden (cx, cz), stopping r short of its centre
+  // (it starts inside the walk's gravel and runs over it: flagstones lie above gravel)
   const spurTo = (cx, cz, r) => {
     const sx = Math.abs(cx) < 1.8 ? Math.sign(cx || 1) * 1.8 : Math.max(-5.4, Math.min(5.4, cx)), sz = -13.0;
     const L = Math.hypot(cx - sx, cz - sz); if (L < r + 0.3) return Math.atan2(sx - cx, sz - cz);
     const ux = (cx - sx) / L, uz = (cz - sz) / L;
-    path(K, [[sx, sz - 0.2], [sx + ux * (L - r) * 0.5, sz + uz * (L - r) * 0.5], [cx - ux * (r - 0.15), cz - uz * (r - 0.15)]], 0.38, M.flag, 0.01, 1.4);
+    path(K, [[sx, sz - 0.2], [sx + ux * (L - r) * 0.5, sz + uz * (L - r) * 0.5], [cx - ux * (r - 0.15), cz - uz * (r - 0.15)]], 0.38, M.flag, 0.014, 1.4, true);
     return Math.atan2(-ux, -uz);                    // the garden's mouth: toward the walk
   };
 
@@ -439,31 +573,35 @@ export function museumGrounds({ ok = () => true, pool: poolAt = null } = {}) {
   if (pool) {
     const [PX, PZ] = pool;
     const mouth = spurTo(PX, PZ, PR + 1.3);
+    // a flagstone ring round it (the path from the walk runs into it: same flagstones, same metres)
     lay(K, new THREE.RingGeometry(PR + 0.55, PR + 1.3, 64, 1), M.edge, PX, 0.002, PZ, 1.4);
-    lay(K, new THREE.RingGeometry(PR + 0.62, PR + 1.23, 64, 1), M.flag, PX, 0.01, PZ, 1.4);
-    K.put(lathe([[PR - 0.04, 0], [PR + 0.24, 0], [PR + 0.26, 0.26], [PR + 0.14, 0.32], [PR - 0.05, 0.3], [PR - 0.06, 0.05]], 56), M.stone, PX, 0, PZ);
-    lay(K, new THREE.CircleGeometry(PR, 48), M.water, PX, 0.2, PZ);
-    K.put(lathe([[0.001, 0], [0.3, 0], [0.32, 0.31], [0.16, 0.41], [0.12, 0.77], [0.28, 0.85], [0.001, 0.89]], 18), M.stone, PX, 0, PZ);   // stands on the basin floor
-    for (let k = 0; k < 6; k++) {                                       // the jet's splash
-      const a = k / 6 * Math.PI * 2;
-      K.put(new THREE.SphereGeometry(0.07, 8, 6), paint(0xd8eef0, { hatch: 0 }), PX + Math.sin(a) * 0.2, 0.84 + (k % 2) * 0.07, PZ + Math.cos(a) * 0.2).userData.noInk = true;
+    lay(K, new THREE.RingGeometry(PR + 0.62, PR + 1.23, 64, 1), M.flag, PX, 0.014, PZ, 1.4);
+    // the basin: a rolled stone rim, and a pebbled floor 0.19 under the water — you see it through
+    // the water, and the two are far enough apart that they never fight
+    K.put(lathe([[PR - 0.05, 0], [PR + 0.24, 0], [PR + 0.25, 0.2], [PR + 0.235, 0.27], [PR + 0.18, 0.318], [PR + 0.07, 0.335], [PR - 0.02, 0.322], [PR - 0.065, 0.285], [PR - 0.075, 0.05], [PR - 0.06, 0]], 72), M.stone, PX, 0, PZ);
+    lay(K, new THREE.CircleGeometry(PR - 0.05, 56), M.bed, PX, 0.012, PZ, 0.8);
+    // the water (see-through, rippling; rings spread where the fountain's water falls in) …
+    const water = pondWater({ cx: PX, cz: PZ, r: PR - 0.06, land: [0.22, 0.4, 0.69] });
+    lay(K, new THREE.RingGeometry(0.12, PR - 0.06, 72, 6), water, PX, 0.2, PZ, 1);
+    fountain(K, PX, PZ, water);
+    for (let k = 0; k < 5; k++) {                                         // a few lily pads, off the fountain's splash
+      const a = k / 5 * Math.PI * 2 + R() * 0.8, r = 0.95 + R() * 0.3;
+      const g = new THREE.CircleGeometry(0.12 + R() * 0.05, 18, 0.3, Math.PI * 2 - 0.6); g.rotateZ(R() * 6);
+      lay(K, g, paint(0x6f9a5a, { hatch: 0 }), PX + Math.sin(a) * r, 0.207, PZ + Math.cos(a) * r);
     }
-    for (let k = 0; k < 6; k++) {                                        // lily pads
-      const a = R() * Math.PI * 2, r = 0.55 + R() * 0.7;
-      const g = new THREE.CircleGeometry(0.13 + R() * 0.05, 12, 0.3, Math.PI * 2 - 0.6); g.rotateZ(R() * 6);
-      lay(K, g, paint(0x6f9a5a, { hatch: 0 }), PX + Math.sin(a) * r, 0.21, PZ + Math.cos(a) * r);
-    }
+    // … and koi circling under it (pondwater.js addKoi swims them, once the grounds are placed)
+    K.g.userData.pond = { x: PX, z: PZ, depth: 0.1, fish: [[0.86, 0.0], [1.08, 0.33], [0.97, 0.58], [1.16, 0.8]] };
     K.foot(PX, PZ, PR + 0.3);
     // three sculptures on plinths round the far side of the ring, benches and topiary either side
     const plinth = (x, z) => { K.box(0.62, 0.66, 0.62, M.stone, x, 0.27, z, 0.05); K.box(0.74, 0.08, 0.74, M.stoneD, x, 0.64, z, 0.03); K.foot(x, z, 0.45); };
     const ring = PR + 1.85, at = (a) => [PX + Math.sin(a) * ring, PZ + Math.cos(a) * ring];
     { const [x, z] = at(mouth + 1.4); plinth(x, z);                          // three balanced pebbles
-      for (const [y, r] of [[0.84, 0.24], [1.14, 0.19], [1.38, 0.13]]) K.put(new THREE.SphereGeometry(r, 16, 12).scale(1.25, 0.72, 1), M.stoneD, x + (y - 1.1) * 0.12, y, z); }
+      for (const [y, r] of [[0.84, 0.24], [1.14, 0.19], [1.38, 0.13]]) K.put(new THREE.SphereGeometry(r, 24, 16).scale(1.25, 0.72, 1), M.stoneD, x + (y - 1.1) * 0.12, y, z); }
     { const [x, z] = at(mouth + Math.PI); plinth(x, z);                      // a bronze ring, on edge
-      K.put(new THREE.TorusGeometry(0.32, 0.085, 12, 32), M.bronze, x, 1.02, z, [0, mouth, 0]); }
+      K.put(new THREE.TorusGeometry(0.32, 0.085, 16, 48), M.bronze, x, 1.02, z, [0, mouth, 0]); }
     { const [x, z] = at(mouth - 1.4); plinth(x, z);                          // a patina head, gazing at the pool
-      K.put(lathe([[0.001, 0], [0.15, 0], [0.12, 0.12], [0.08, 0.2], [0.001, 0.22]], 16), M.patina, x, 0.68, z);
-      K.put(new THREE.SphereGeometry(0.22, 18, 14).scale(0.85, 1.1, 0.95), M.patina, x, 1.06, z); }
+      K.put(lathe([[0.001, 0], [0.15, 0], [0.12, 0.12], [0.08, 0.2], [0.001, 0.22]], 24), M.patina, x, 0.68, z);
+      K.put(new THREE.SphereGeometry(0.22, 24, 18).scale(0.85, 1.1, 0.95), M.patina, x, 1.06, z); }
     for (const da of [2.3, -2.3]) { const a = mouth + da, x = PX + Math.sin(a) * (PR + 1.75), z = PZ + Math.cos(a) * (PR + 1.75); gardenBench(K, x, z, a + Math.PI); }
     for (const da of [0.6, -0.6]) { const a = mouth + da; topiary(K, PX + Math.sin(a) * (PR + 1.7), PZ + Math.cos(a) * (PR + 1.7), 0.85, da > 0 ? 'spiral' : 'cone'); }
   }
@@ -475,8 +613,43 @@ export function museumGrounds({ ok = () => true, pool: poolAt = null } = {}) {
     if (n >= 6 || !spot(x, z, 0.8)) continue;
     specimen(K, x, z, s, R); placed.push([x, z, 0.8]); n++;
   }
+  solidify(K);
   K.g.userData.keep = placed;                       // what it took ([x, z, r]): the shops' planting keeps off it
   return K.g;
+}
+// a tiered fountain in a pool's middle (x, z; the basin floor at 0, the water at 0.2): a smooth
+// turned stone stem and two bowls, each brimming and spilling a thin sheet of water over its lip
+// into the one below, a jet rising from the finial and falling back in an umbrella
+const softProfile = (pts, k = 4) => {           // a Catmull-Rom pass over a lathe profile: round, not faceted
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    for (let j = 0; j < k; j++) {
+      const t = j / k, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1].map(c => 0.5 * (2 * p1[c] + (-p0[c] + p2[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t3)));
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out.map(([r, y]) => [Math.max(0.001, r), y]);
+};
+function fountain(K, x, z, water) {
+  const M = mats(), spill = spillMat();
+  K.put(lathe(softProfile([
+    [0.001, 0], [0.36, 0], [0.37, 0.05], [0.31, 0.1], [0.19, 0.17], [0.13, 0.28], [0.11, 0.4],    // foot and stem
+    [0.15, 0.45], [0.36, 0.5], [0.55, 0.57], [0.61, 0.62], [0.6, 0.65], [0.55, 0.65],            // the lower bowl, its lip
+    [0.45, 0.6], [0.25, 0.575], [0.1, 0.58], [0.075, 0.66], [0.07, 0.8],                         // its hollow, the upper stem
+    [0.12, 0.85], [0.25, 0.885], [0.335, 0.94], [0.35, 0.97], [0.31, 0.975], [0.2, 0.94], [0.07, 0.94],   // the upper bowl
+    [0.05, 0.99], [0.05, 1.03], [0.075, 1.07], [0.045, 1.11], [0.001, 1.125],                    // the finial
+  ]), 48), M.stone, x, 0, z);
+  // the bowls brim with the pool's water
+  lay(K, new THREE.CircleGeometry(0.56, 48), water, x, 0.632, z, 1);
+  lay(K, new THREE.CircleGeometry(0.315, 40), water, x, 0.958, z, 1);
+  // the falling water: over each lip and down, and the jet (noInk: water has no outline)
+  for (const pts of [
+    [[0.607, 0.648], [0.64, 0.61], [0.66, 0.5], [0.677, 0.36], [0.69, 0.2]],                     // lower bowl → pool
+    [[0.352, 0.972], [0.375, 0.93], [0.388, 0.82], [0.396, 0.71], [0.4, 0.632]],                 // upper bowl → lower bowl
+    [[0.012, 1.11], [0.016, 1.19], [0.028, 1.25], [0.06, 1.275], [0.11, 1.25], [0.16, 1.17], [0.2, 1.06], [0.22, 0.958]],    // the jet
+  ]) K.put(sheet(softProfile(pts, 3), 48), spill, x, 0, z).userData.noInk = true;
 }
 
 // ── where a spur road meets a paved edge (a project shop's forecourt, Makers' Row's court).
@@ -585,7 +758,7 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
   for (const s of [-1, 1]) for (const [x, z] of [[s * 3.05, 2.85], [s * 2.95, 4.35]]) if (clear(x, z, 0.4, { onPlaza: true })) { planter(x, z); break; }
   const laneSide = lane ? Math.sign(lane.ax || 1) : mouth ? -1 : 1;     // (a mouth: the lamp and bench keep the sides they stood on)
   for (const [x, z] of [[laneSide * -2.3, 4.75], [laneSide * 2.3, 4.75], [laneSide * -1.8, 4.75]]) if (clear(x, z, 0.12, { onPlaza: true })) { bollard(K, x, z, 1.15); take(x, z, 0.12); break; }
-  for (const [x, z] of [[laneSide * 1.75, 4.5], [laneSide * -1.75, 4.5]]) if (clear(x, z, 0.5, { onPlaza: true })) { gardenBench(K, x, z, Math.PI); take(x, z, 0.5); break; }
+  for (const [x, z] of [[laneSide * 1.75, 4.5], [laneSide * -1.75, 4.5]]) if (clear(x, z, 0.62, { onPlaza: true })) { gardenBench(K, x, z, Math.PI); take(x, z, 0.62); break; }   // (0.62: its whole length)
   // planting round the shop: trees at the sides and back, bushes and a bed or two
   let trees = 0;
   for (const [x, z, s] of [[-4.5, -1.2, 0.85], [4.5, -1.4, 0.8], [-3.6, -3.6, 0.95], [3.8, -3.5, 0.85], [0.4, -4.3, 1.0], [-4.9, 1.5, 0.75], [4.9, 1.3, 0.8], [-1.9, -4.4, 0.8]]) {
@@ -600,6 +773,7 @@ export function shopApproach({ ex = null, ez = null, ok = () => true, shop = [],
     if (!clear(x, z, 0.75)) continue;
     flowerBed(K, x, z, w, d, R, { front: [-Math.sign(x), 0] }); K.foot(x, z, 0.65); take(x, z, 0.75);
   }
+  solidify(K);
   return K.g;
 }
 
@@ -730,6 +904,7 @@ export function makersRow({ ex = null, ez = null, ok = () => true, seed = 3, bs 
     if (take(x, z, 0.8)) specimen(K, x, z, s, R);
   for (const [x, z] of [[-8.7, 9.4], [8.7, 9.4], [-6.0, 8.6], [6.0, 8.6], [-9.0, 6.2], [9.0, 6.2], [-4.6, 12.3], [4.6, 12.3]]) if (take(x, z, 0.4)) shrub(K, x, z, R);
   K.g.userData.row = { bays, half: H, z0: Z0, z1: Z1, aisle: A };
+  solidify(K);
   return K.g;
 }
 // (dev: the grounding check reads which materials are draped surfaces / water)

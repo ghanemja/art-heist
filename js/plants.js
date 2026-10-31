@@ -30,9 +30,10 @@ export const BREEZE = /* glsl */`
     return wind * sway * w * gust + cross(up, wind) * sway * 0.35 * sin(uTime * 2.2 + ph * 1.7);
   }`;
 const _mats = new Map();
-function mat(color) {
-  if (_mats.has(color)) return _mats.get(color);
-  const m = paint(color, { unique: true, soft: true });
+function mat(color, vc = false) {
+  const k = vc ? 'vc' : color;
+  if (_mats.has(k)) return _mats.get(k);
+  const m = paint(color, { unique: true, soft: true, vertexColors: vc });
   const base = m.onBeforeCompile;
   m.onBeforeCompile = (sh, r) => {
     base(sh, r);
@@ -40,7 +41,7 @@ function mat(color) {
     sh.vertexShader = BREEZE + '\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += breeze(position);');
   };
   m.customProgramCacheKey = () => 'paper-sway' + (m.userData.hatch > 0 ? 'h' : '');
-  _mats.set(color, m);
+  _mats.set(k, m);
   return m;
 }
 // the outline sways with its plant (the town's ink, plus the same nod)
@@ -246,7 +247,9 @@ export const TREE_KINDS = ['blossom', 'birch', 'maple', 'cypress', 'shade'];
 
 // ── grow a placed group's planting ──
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _UP = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3();
-export function growPlants(scene, group, { seed = 1 } = {}) {
+// (merge: the whole planting as ONE mesh, its colours painted on its vertices, and one outline —
+// two draws however many colours, instead of two per colour)
+export function growPlants(scene, group, { seed = 1, merge = false } = {}) {
   const list = group.userData.plants; if (!list?.length) return null;
   group.updateMatrixWorld(true);
   const buckets = new Map(), R = rng(seed * 7919 + list.length);
@@ -266,7 +269,8 @@ export function growPlants(scene, group, { seed = 1 } = {}) {
       for (let i = 0; i < pos.count; i++) { const t = Math.max(0, pos.getY(i)) / (H * s); sw[i] = top * Math.min(1.4, t * t * 1.2 + t * 0.2); }
       g.setAttribute('sway', new THREE.BufferAttribute(sw, 1));
       g.applyMatrix4(_m);
-      const key = col, b = buckets.get(key);
+      if (merge) { const c = new THREE.Color(col), a = new Float32Array(pos.count * 3); for (let i = 0; i < pos.count; i++) c.toArray(a, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); }
+      const key = merge ? 'all' : col, b = buckets.get(key);
       const gi = g.index ? g.toNonIndexed() : g;
       if (b) b.push(gi); else buckets.set(key, [gi]);
     }, s, p);
@@ -275,7 +279,7 @@ export function growPlants(scene, group, { seed = 1 } = {}) {
   for (const [col, geos] of buckets) {
     const geo = mergeGeometries(geos, false); if (!geo) continue;
     geo.computeBoundingSphere();
-    const m = new THREE.Mesh(geo, mat(col));
+    const m = new THREE.Mesh(geo, merge ? mat(0xffffff, true) : mat(col));
     m.userData.noInk = true;
     const line = new THREE.Mesh(geo, swayInk()); line.userData.isInk = true; line.renderOrder = -1; line.raycast = () => {};
     m.add(line);
