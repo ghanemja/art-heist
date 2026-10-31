@@ -356,3 +356,4 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 - ⏳ **A police officer at the museum's front door, waving her in, so the player knows the museum can be entered** (2026-10-31). In progress on `wip-doorcop`.
 - ⏳ **YarnFlow's front: a proper cobbled forecourt instead of grass, the car park asphalt flush (not a raised slab) with smooth kerbs where it meets the spur** (2026-10-31). In progress on `wip-roads`.
 - 🟡 **Riverbend Bridge: a lamp on all four corner posts (two were bare)** (2026-10-31).
+- 🟡 **Bean There Café: the chalkboard sign stood in a bistro table** (2026-10-31). The two tables moved left along the pavement; the board stands clear. Verified headless.
