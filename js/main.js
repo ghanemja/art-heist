@@ -14,6 +14,7 @@ import { createRooms, ROOM_STYLES } from './rooms.js';
 import { createCarParks } from './carparks.js';
 import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
+import { createMeadow } from './meadow.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -63,6 +64,8 @@ const plaza = createPlaza({ scene, town, game, player });                  // Ma
 const park = createPark({ scene, town, game, player });                    // Lantern Park: strollers, a reader, a coffee
 const northLife = createNorthLife({ scene, town, game, player });          // the club's players, the swimmer, the golfer, the Close's neighbours
 createCarParks({ scene, town });                                         // the project shops' car parks: a parked car each
+// the wildflower meadow across the road from Lantern Park: run through it, the flowers squash and spring back
+const meadow = createMeadow({ scene, town, player, camera });
 const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper && !ROOM_STYLES.has(l.style)));   // the project shops' living rooms
 // YarnFlow, Borrowed Eyes and QR Compass open into whole rooms (rooms.js): walk in at the door.
 // The museum's front door is an E prompt on the forecourt: inside is the crime scene.
@@ -92,6 +95,7 @@ gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera);
 window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, LAMPS };
+window.__v2.meadow = meadow;
 
 const clock = new THREE.Clock();
 function loop() {
@@ -122,6 +126,7 @@ function loop() {
     northLife.update(dt);
     shopInside.update(dt, t, player);
   }
+  if (!rooms.inside) meadow.update(dt);          // the meadow's stomp trail + "stomp!" words
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
