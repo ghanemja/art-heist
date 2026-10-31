@@ -1,7 +1,7 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
 import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, registerGround, standAt, paintRoadMarkings } from './world.js';
-import { styleTick, gpuOnly } from './style.js';
+import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
 import { createGame } from './game.js';
@@ -29,6 +29,9 @@ const sky = buildSky(scene);
 const lights = buildLights(scene);
 const clouds = buildClouds(scene);
 const town = buildTown(scene);
+// the town's loose props (trees, lamps, benches, planters…), each baked down in place to a fill
+// and a hull — before anything reads the ground, so the walk rays index the baked meshes
+bakeScenery(scene, new Set(scene.children));
 
 // ── atmosphere: day ↔ night, eased (the cold open is set at night) ──
 const DAY = { top: 0xbcd3dc, mid: 0xf2e6cf, low: 0xf6d9bf, hemi: 0xfff6e8, hemiI: 1.35, sunI: 1.6 };
