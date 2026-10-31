@@ -355,3 +355,4 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 - ⏳ **A mini map in the corner showing where you are; click a place on it to travel there instead of walking** (2026-10-31). In progress on `wip-minimap`.
 - ⏳ **A police officer at the museum's front door, waving her in, so the player knows the museum can be entered** (2026-10-31). In progress on `wip-doorcop`.
 - ⏳ **YarnFlow's front: a proper cobbled forecourt instead of grass, the car park asphalt flush (not a raised slab) with smooth kerbs where it meets the spur** (2026-10-31). In progress on `wip-roads`.
+- 🟡 **Riverbend Bridge: a lamp on all four corner posts (two were bare)** (2026-10-31).
