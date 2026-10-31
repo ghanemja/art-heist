@@ -616,15 +616,15 @@ export function buildNorth(scene, { add, solid, boulevard }) {
   addFloor(G, (x, z) => Math.abs(z) <= Lh + 0.05 && Math.abs(x) <= Wd / 2 ? deckY(z) + (Math.abs(x) > 0.9 ? 0.05 : 0) + (x * x + z * z) / (2 * R) : null);
   // the deck is road too (no ribbon of its own: the car's keep-to-the-road assist follows it)
   { const pts = []; for (let z = -Lh; z <= Lh + 1e-6; z += 0.6) pts.push(at(0, z));
-    ROADS.push({ pts, half: 0.85, closed: false, dashed: false, group: G }); }
+    ROADS.push({ pts, half: 0.85, closed: false, dashed: false, deck: true, group: G }); }
   out.bridge = { root: G, dir: C, at };
 
   // ── roads ──
-  const road = (pts, { half = 0.85, keep = () => false, except = null, dashed = false } = {}) => {
+  const road = (pts, { half = 0.85, keep = () => false, except = null, dashed = false, bulb = null } = {}) => {
     deflect(pts, { keep, except, clear: 1.6 });
     const sm = smooth(pts, 2);
     deflect(sm, { keep: (i) => i === 0 || i === sm.length - 1 || keep(i), except, clear: 1.6 });
-    return buildRoad(scene, sm, { half, dashed });
+    return buildRoad(scene, sm, { half, dashed, bulb, except });
   };
   const line = (a, b, step = 1.4) => { const n = Math.max(2, Math.round(arc(a, b) / step)), o = []; for (let k = 0; k <= n; k++) o.push(slerpDir(a, b, k / n)); return o; };
   // a gentle curve from a (leaving along `ctrl`'s direction) to b: a quadratic bezier on the sphere
@@ -638,20 +638,24 @@ export function buildNorth(scene, { add, solid, boulevard }) {
     const c = curve(b0, at(0, -Lh - 2 - Math.min(9, arc(b0, sEnd) * 0.6)), sEnd);
     const pts = [...c, at(0, -Lh - 0.8), at(0, -Lh + 0.3)];
     road(pts, { half: 0.95, keep: (i) => i === 0 || i >= pts.length - 4, dashed: true }); }
-  // from the north end on to the junction
-  { const nEnd = at(0, Lh + 2), c = curve(nEnd, at(0, Lh + 2 + Math.min(9, arc(nEnd, J) * 0.6)), J);
-    const pts = [at(0, Lh - 0.3), at(0, Lh + 0.8), ...c];
-    road(pts, { half: 0.95, keep: (i) => i < 4 || i === pts.length - 1, dashed: true }); }
-  // the club, the range and the Close each get a road from the junction to their gate
-  const gate = (k, back = 0.6) => { const s = NORTH[k], d = L2(s.at); return slerpDir(d, J, (s.r + back) / arc(d, J)); };
-  road(line(J, gate('club', 0.2)), { keep: (i, n) => i === 0, except: (z) => z.key === 'north:club' });
-  road(line(J, gate('range', 0.2)), { keep: (i) => i === 0, except: (z) => z.key === 'north:range' });
-  // Riverbend Close: a loop road round a green, the houses outside it
+  // CITY PLANNING: one road runs from the bridge past the club and the range and on to the
+  // Close (a T into its loop); the club's drive leaves it square, a T into its car park. (They
+  // used to fan out of one point together with the bridge road: four roads meeting at odd angles
+  // in one patch, the club's a square-ended stub.)
   const CL = NORTH.close, cd = L2(CL.at), fC = frame(cd, J);
+  const entry = fC(0, CL.loop);                                                   // the loop's south side (toward the junction)
   { const ring = []; for (let i = 0; i < 64; i++) { const a = i / 64 * Math.PI * 2; ring.push(fC(Math.sin(a) * CL.loop, Math.cos(a) * CL.loop)); }
-    buildRoad(scene, ring, { half: 0.62, closed: true, dashed: false });
-    const entry = fC(0, CL.loop);                                                 // the loop's south side (toward the junction)
-    road(line(J, entry), { half: 0.75, keep: (i, n) => i === 0, except: (z) => z.key === 'north:close' }); }
+    buildRoad(scene, ring, { half: 0.62, closed: true, dashed: false }); }
+  let main;
+  { const nEnd = at(0, Lh + 2), c = curve(nEnd, at(0, Lh + 2 + Math.min(9, arc(nEnd, J) * 0.6)), J);
+    const pts = [at(0, Lh - 0.3), at(0, Lh + 0.8), ...c, ...line(J, entry).slice(1)];
+    main = road(pts, { half: 0.95, keep: (i) => i < 4 || i === pts.length - 1, dashed: true, except: (z) => z.key === 'north:close' }); }
+  // a road off the main one, leaving it square at the point nearest its gate
+  const gate = (k, back = 0.6) => { const s = NORTH[k], d = L2(s.at); return slerpDir(d, J, (s.r + back) / arc(d, J)); };
+  const branch = (to, opts) => { let q = main[0]; for (const p of main) if (arc(p, to) < arc(q, to)) q = p; return road(line(q, to, 0.7), { keep: (i) => i === 0, ...opts }); };
+  branch(gate('club', 0.2), { except: (z) => z.key === 'north:club' });           // into the club's car park
+  // (the range's gate is right at the main road's verge, ~1.5 off: a car pulls up at the kerb. Its
+  // own road was a 2-unit stub ending on the grass, with no room for a turning circle)
 
   // ── the club and the range ──
   for (const k of ['club', 'range']) {

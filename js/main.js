@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, registerGround, standAt, paintRoadMarkings } from './world.js';
+import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, paintRoadMarkings, buildRoadSurface } from './world.js';
 import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
@@ -29,6 +29,7 @@ const sky = buildSky(scene);
 const lights = buildLights(scene);
 const clouds = buildClouds(scene);
 const town = buildTown(scene);
+buildRoadSurface(scene);          // every road is laid: draw the network as one sheet (kerb returns at every junction)
 // the town's loose props (trees, lamps, benches, planters…), each baked down in place to a fill
 // and a hull — before anything reads the ground, so the walk rays index the baked meshes
 bakeScenery(scene, new Set(scene.children));
@@ -51,7 +52,7 @@ const atmosphere = {
 };
 
 registerGround([scene]);          // everything static drawn so far is walkable ground (people come after)
-paintRoadMarkings();             // centre lines last: they need every road (and the drawn ground)
+paintRoadMarkings(scene);        // centre lines last: they need every road (and the drawn ground)
 const mf = town.museum.frame;
 const player = createPlayer(scene, camera, town.colliders, mf(0.8, 3.4), mf(0, -6));
 const game = createGame({ scene, camera, town, player, atmosphere, renderer });
@@ -88,7 +89,7 @@ try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera);
-window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES };
+window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS };
 
 const clock = new THREE.Clock();
 function loop() {

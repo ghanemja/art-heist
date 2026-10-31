@@ -227,9 +227,16 @@ export function buildTown(scene) {
   for (const L of lines) buildRoad(scene, L.pts, { half: L.half, dashed: L.half > 0.9 });
 
   // spurs: boulevard → each site / project, ending in front of it
-  const spur = (target, stopShort, key) => {
-    let best = out.boulevard[0];
-    for (const p of out.boulevard) if (arc(p, target) < arc(best, target)) best = p;
+  // CITY PLANNING: two spurs never leave the boulevard at the same spot (a fork of two T's a car's
+  // length apart, the kerbs between them a sliver): each leaves at least SPUR_GAP from the others
+  const SPUR_GAP = 4.5;
+  const spur = (target, stopShort, key, bulb = false) => {
+    let best = null;
+    for (const p of out.boulevard) {
+      if (out.spurs.some(sp => arc(sp.pts[0], p) < SPUR_GAP)) continue;
+      if (!best || arc(p, target) < arc(best, target)) best = p;
+    }
+    if (!best) return null;
     const total = arc(best, target);
     if (total < stopShort + 1.5) return null;
     const pts = [];
@@ -240,7 +247,8 @@ export function buildTown(scene) {
     // smoothing rounds corners back INTO reserved ground: push the smoothed line out again
     const sm = smooth(pts, 2);
     deflect(sm, { keep: i => i === 0 || i === sm.length - 1, except: mine, clear: 1.8 });
-    const built = buildRoad(scene, sm, { half: 0.85, dashed: false });
+    const mineZ = (z) => mine(z);
+    const built = buildRoad(scene, sm, { half: 0.85, dashed: false, bulb: bulb ? 'end' : null, except: mineZ });
     out.spurs.push({ key, pts: built });
     return built;
   };
@@ -252,14 +260,17 @@ export function buildTown(scene) {
   const spurEnds = {}, groundsKeep = [];       // groundsKeep: ground the landscaping has taken (not solid)
   for (const p of PLAN.projects) {
     if (ROW_KEYS.includes(p.key)) continue;               // the row's shops share one spur, below
-    const pts = spur(PDIR[p.key], p.style === 'library' ? 4.6 : isProjectShop(p.style) ? APPROACH_STOP : 3.7, 'lm:' + p.key);
+    // a shop with no car park gets a turning circle at its door; the Library's drive runs onto its
+    // round plaza (it stopped 1.5 short of it, on the grass)
+    const pts = spur(PDIR[p.key], p.style === 'library' ? 3.0 : isProjectShop(p.style) ? APPROACH_STOP : 3.7, 'lm:' + p.key, !p.lot && p.style !== 'library');
     if (pts) spurEnds[p.key] = pts[pts.length - 1].clone();
   }
   { const RW = resolveRow(), pts = spur(RW.L(0, 6.0), 6.1, 'lm:row');   // ends just past the car park's aisle
     if (pts) spurEnds.row = pts[pts.length - 1].clone(); }
   for (const [k, s] of Object.entries(PLAN.sites))
     // (the harbour's road runs on onto the quay's paving: it stopped half a metre short, on the grass)
-    if (k !== 'airport') spur(llv(s.at), k === 'harbour' ? s.r - 0.7 : s.stop ?? s.r + 0.6, 'site:' + k);   // Cape Far Side: the long road round the planet
+    // (the station and the cape end in a turning circle; the overlook has its own, roadside.js)
+    if (k !== 'airport') spur(llv(s.at), k === 'harbour' ? s.r - 0.7 : s.stop ?? s.r + 0.6, 'site:' + k, k === 'station' || k === 'launchpad');   // Cape Far Side: the long road round the planet
 
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
