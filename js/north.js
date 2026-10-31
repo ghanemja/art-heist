@@ -24,6 +24,8 @@ import { tree, pine, bush, lamp, bench, rbox } from './props.js';
 import { buildCar, fitToGround } from './player.js';
 import { person } from './human.js';
 import { poseFolk, STANCES } from './folk.js';
+import { audio } from './audio.js';
+import { buildRiverWater, createRiverLife } from './riverlife.js';
 
 const L2 = (a) => ll(a[0], a[1]);
 export const NORTH = {
@@ -40,8 +42,9 @@ export const NORTH = {
 };
 
 // ── 1. PLAN (inside planTown): the water, and the ground the club, range and Close need ──
+let RIVER_P = null;                                          // the river's dense centre line (addRiver)
 export function planNorth() {
-  addRiver(NORTH.river.map(L2), NORTH.half, NORTH.depth);
+  RIVER_P = addRiver(NORTH.river.map(L2), NORTH.half, NORTH.depth);
   for (const [la, lo, r] of NORTH.lakes) addLake(ll(la, lo), r, 1.0);
   for (const k of ['club', 'range', 'close']) {
     const s = NORTH[k], d = L2(s.at);
@@ -692,6 +695,9 @@ export function buildNorth(scene, { add, solid, boulevard }) {
     out.close = { dir: cd, frame: fC, loop: CL.loop };
   }
 
+  // ── the river's and lakes' water: transparent and flowing (riverlife.js) ──
+  out.water = buildRiverWater(scene, RIVER_P, NORTH.lakes.map(([la, lo, r]) => ({ c: ll(la, lo), r })), NORTH.half, C);
+
   // ── reeds and stones along both banks of the river and round the lakes ──
   { const root = new THREE.Group(), R0 = rng(4242), reed = paint(0x7f9a5a), reed2 = paint(0xa5b36a), tail = paint(0x7a5236), rock = paint(0xb3a99a);
     const stemGeo = lathe([[0.001, 0], [0.018, 0], [0.008, 0.55], [0.001, 0.56]], 5), tailGeo = new THREE.CapsuleGeometry(0.03, 0.09, 3, 6);
@@ -829,9 +835,11 @@ export function createNorthLife({ scene, town, game, player }) {
     for (const z of [-0.6, 0.6]) town.colliders.push({ dir: frameO.localToWorld(new THREE.Vector3(0, 0, z)).normalize(), r: 0.75 });
   }
 
+  const river = createRiverLife({ scene, water: N.water, player, game, audio });
   return {
     list: people,
     update(dt) {
+      river.update(dt);
       const cold = game.G.state === 'cold', here = player.st.dir;
       for (const p of people) {
         const busy = game.bumps.busy?.(p.obj), far = arc(here, p.dir) > NEAR;
