@@ -11,11 +11,13 @@
 // Walk back out over the mat (or press E on it) and you're on the street at the door.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { pose } from './human.js';
 import { makeFolk, poseFolk, ikArm, gripHand } from './folk.js';
 import { frameKit } from '../museum.js?v=13';
 import { audio } from './audio.js';
+import { SUSPECTS } from './story.js';
 
 // the rooms: keyed by the shop's style (and 'museum')
 const PLACES = {
@@ -526,111 +528,339 @@ const SETS = {
 // ─── THE MUSEUM'S POLICE BOARD, AND THE TWO OFFICERS WORKING IT ─────────────────
 // One layout, drawn twice: on the board in the room, and in the close-up you get by
 // pressing E at it. Metres from the board's centre (x to the right as you face it, y up);
-// r: a card's tilt. The officers re-pin the photos as they work, so both views follow r.
+// r: a card's tilt. The officers re-pin the `live` photos as they work, so both views
+// follow r. Everything else (the cork, the clippings, the suspects, the photos nobody
+// touches) is painted once into the cork's own canvas: the room pays for one texture,
+// the live photos, the string and a few merged pins. The board is flavour, not a clue:
+// only what anyone standing in the room could see — no suspect singled out.
 const _Y = new THREE.Vector3(0, 1, 0);
-const BOARD_W = 1.42, BOARD_H = 0.87, BOARD_AT = { x: 3.72, y: 1.0, z: -2.5 };   // (the board's face, room coords)
-const PH_W = 0.24, PH_H = 0.25, PIC_W = 0.21, PIC_H = 0.16;                       // a photo card, and the photo on it
+const BOARD_W = 2.0, BOARD_H = 1.12, BOARD_AT = { x: 3.72, y: 1.08, z: -2.8 };   // (the board's face, room coords)
+const PH_W = 0.2, PH_H = 0.215, PIC_W = 0.178, PIC_H = 0.14;                      // a photo card, and the window for its photo
+const NEWS = '"Times New Roman", Georgia, serif';
+// the catalogue: four columns of polaroids down the left of the board
+const CX = [-0.87, -0.645, -0.42, -0.195], CY = [0.39, 0.155, -0.08];
+const ph = (img, col, row, r, cap, live = false, dx = 0, dy = 0) => ({ img, x: CX[col] + dx, y: CY[row] + dy, r, cap, live });
 const BOARD = {
-  photos: [            // the catalogue's photos: the same paintings that hung here
-    { img: 'art_cows_in_storm', x: -0.5, y: 0.2, r: -0.04, cap: 'Cows in Storm' },
-    { img: 'art_IMG_7121', x: -0.2, y: 0.22, r: 0.05, cap: '#2' },
-    { img: 'art_IMG_9240', x: 0.1, y: 0.19, r: -0.03, cap: '#3' },
-    { img: 'art_IMG_5265', x: -0.52, y: -0.19, r: 0.06, cap: '#4' },
-    { img: 'art_IMG_8538', x: -0.21, y: -0.18, r: -0.05, cap: '#5' },
-    { img: 'art_IMG_9606', x: 0.09, y: -0.2, r: 0.03, cap: '#6' },
+  photos: [            // the catalogue's photos: the same paintings that hung here (Janelle's)
+    ph('art_cows_in_storm', 0, 0, -0.04, 'Cows in Storm'),
+    ph('art_sunset_swell', 1, 0, 0.05, '#2', false, 0.004, -0.006),
+    ph('art_IMG_5264', 2, 0, -0.03, '#3', false, 0, 0.004),
+    ph('art_IMG_5263', 3, 0, 0.04, '#4', false, -0.004, -0.004),
+    ph('art_banana_treats_astronaut', 0, 1, 0.05, '#5', false, 0.003, 0.003),
+    ph('art_IMG_5271', 1, 1, -0.04, '#6'),
+    ph('art_IMG_0658', 2, 1, 0.03, '#7', false, 0.003, -0.004),
+    ph('art_IMG_5261', 3, 1, -0.05, '#8', false, -0.003, 0.003),
+    ph('art_space_heist_mice', 0, 2, -0.03, '#9', false, 0.002, -0.003),
+    ph('art_IMG_5265', 1, 2, 0.06, '#10', true),
+    ph('art_IMG_9506', 2, 2, -0.05, '#11', true, 0.003, 0.004),
+    ph('art_IMG_5262', 3, 2, 0.03, '#12', true, -0.002, -0.003),
   ],
-  notes: [             // only what anyone in the room can see for themselves
-    { kind: 'card', x: 0.47, y: 0.2, w: 0.3, h: 0.2, r: 0.03, pin: 0x3f6a8a, pinAt: [-0.13, 0.082], lines: ['OPENING NIGHT', 'all 45 gone by 3 a.m.', 'dome: one pane out'] },
-    { kind: 'sticky', x: 0.36, y: -0.01, w: 0.15, h: 0.13, r: -0.08, pin: 0xe4b84f, lines: ['frames', 'left on', 'the walls'] },
-    { kind: 'miss', id: 'miss', x: 0.47, y: -0.24, w: 0.3, h: 0.2, r: -0.02, pin: 0xc8402f, lines: ['45 MISSING', 'nothing to be moved'] },
+  notes: [             // under: drawn beneath the photos; pin: a drawing pin's colour (null: taped)
+    { kind: 'opening', x: -0.72, y: -0.395, w: 0.44, h: 0.27, r: 0.025, under: true, pin: null },
+    { kind: 'map', x: -0.265, y: -0.39, w: 0.35, h: 0.28, r: -0.045, under: true, pin: 0x3f6a8a, pinAt: [0.15, 0.115] },
+    { kind: 'chron', id: 'chron', x: 0.2, y: -0.33, w: 0.44, h: 0.4, r: -0.02, under: true, pin: 0xc8402f, pinAt: [-0.19, 0.178] },
+    { kind: 'baffled', x: 0.71, y: -0.31, w: 0.34, h: 0.25, r: 0.04, under: true, pin: null },
+    { kind: 'mug', id: 'otto', x: 0.11, y: 0.365, w: 0.2, h: 0.27, r: 0.03, pin: 0xc8402f, pinAt: [0.078, -0.118] },
+    { kind: 'mug', id: 'pia', x: 0.37, y: 0.37, w: 0.2, h: 0.27, r: -0.02, pin: 0xc8402f, pinAt: [0.078, -0.118] },
+    { kind: 'mug', id: 'rex', x: 0.63, y: 0.36, w: 0.2, h: 0.27, r: 0.025, pin: 0xc8402f, pinAt: [0.078, -0.118] },
+    { kind: 'sticky', x: 0.885, y: 0.4, w: 0.15, h: 0.14, r: 0.07, pin: 0xe4b84f, lines: ['who had', 'keys?'] },
+    { kind: 'card', x: 0.865, y: 0.1, w: 0.2, h: 0.15, r: -0.03, pin: 0x3f6a8a, pinAt: [-0.083, 0.058], lines: ['THE DOME', 'one pane out', 'a rope still hangs'] },
+    { kind: 'miss', id: 'miss', x: 0.37, y: 0.025, w: 0.3, h: 0.17, r: -0.02, pin: 0xc8402f, lines: ['45 MISSING', 'frames left on the walls'] },
+    { kind: 'sticky', x: 0.645, y: 0.055, w: 0.14, h: 0.12, r: -0.07, pin: 0xe4b84f, lines: ['3:07', 'a.m.'], big: true },
   ],
-  string: [0, 4, 2, 5, 1, 3, 'miss'],     // the red string, pin to pin
+  rings: [[0.9, -0.47, 0.045], [-0.13, -0.47, 0.04]],    // coffee rings on the cork (x, y, radius)
+  string: [['otto', 'miss'], ['pia', 'miss'], ['rex', 'miss'], ['miss', 7], [7, 10], ['miss', 'chron']],   // the red string, pin to pin
+  run: 3,              // the stretch of string the officer runs a hand along
 };
+const LIVE_PH = BOARD.photos.flatMap((p, i) => (p.live ? [i] : []));
+const itemOf = (k) => (typeof k === 'number' ? BOARD.photos[k] : BOARD.notes.find(n => n.id === k));
 const pinOf = (it) => { const [ax, ay] = it.pinAt || [0, (it.h ?? PH_H) / 2 - 0.018], c = Math.cos(it.r), s = Math.sin(it.r); return [it.x + ax * c - ay * s, it.y + ax * s + ay * c]; };
-const stringPts = () => BOARD.string.map(k => pinOf(typeof k === 'number' ? BOARD.photos[k] : BOARD.notes.find(n => n.id === k)));
+const strSegs = () => BOARD.string.map(([a, b]) => [pinOf(itemOf(a)), pinOf(itemOf(b))]);
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 
-// the cork and the paper notes pinned to it, onto a canvas cw × ch that IS the board
-function drawCork(c, cw, ch) {
+// ── the pictures the board needs: the paintings, and the suspects' painted faces (game.FACE,
+// the notebook's own portraits). Each one that arrives redraws whatever shows the board.
+let _FACE = null;
+const _imgs = {}, _imgSubs = new Set();
+let _imgVer = 0;
+const _imgDone = () => { _imgVer++; _imgSubs.forEach(f => f()); };
+function boardImg(key, src) {
+  let im = _imgs[key];
+  if (!im) {
+    if (!src) return null;
+    im = _imgs[key] = new Image(); im.onload = _imgDone; im.src = src;
+  }
+  return im.complete && im.naturalWidth ? im : null;
+}
+const artImg = (n) => boardImg(n, 'artworks/' + n + '.jpg');
+const faceImg = (id) => { try { return boardImg('face:' + id, _FACE?.[id]); } catch { return null; } };
+document.fonts?.ready.then(_imgDone);
+
+// ── drawing it: S pixels to the metre; each piece drawn about its own centre ──
+// a sheet of paper with torn edges (sides: top, right, bottom, left — which are torn)
+function paperPath(c, w, h, R, amp, sides = [1, 1, 1, 1]) {
+  const P = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+  c.beginPath();
+  for (let s = 0; s < 4; s++) {
+    const [x0, y0] = P[s], [x1, y1] = P[(s + 1) % 4], n = sides[s] ? 22 : 1;
+    const L = Math.hypot(x1 - x0, y1 - y0), nx = -(y1 - y0) / L, ny = (x1 - x0) / L;
+    for (let i = 0; i < n; i++) {
+      const t = i / n, k = i && sides[s] ? (R() - 0.5) * amp : 0;
+      const x = x0 + (x1 - x0) * t + nx * k, y = y0 + (y1 - y0) * t + ny * k;
+      s || i ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+  }
+  c.closePath();
+}
+function paper(c, wm, hm, S, R, col, amp = 0.006, sides) {
+  const w = wm * S, h = hm * S;
+  c.save(); c.translate(S * 0.005, S * 0.007); paperPath(c, w, h, rng(7), amp * S, sides); c.fillStyle = 'rgba(60,35,20,0.28)'; c.fill(); c.restore();
+  paperPath(c, w, h, R, amp * S, sides); c.fillStyle = col; c.fill();
+  c.strokeStyle = 'rgba(42,34,48,0.3)'; c.lineWidth = S * 0.0015; c.stroke();
+}
+// newsprint too small to read: grey lines of ragged length
+function smallPrint(c, x, y, w, rows, lh, S, R) {
+  c.fillStyle = 'rgba(60,55,60,0.45)';
+  for (let k = 0; k < rows; k++) { const l = k === rows - 1 ? w * (0.3 + R() * 0.4) : w * (0.86 + R() * 0.14); c.fillRect(x, y + k * lh, l, Math.max(1, S * 0.0035)); }
+}
+const tape = (c, x, y, w, h, a) => { c.save(); c.translate(x, y); c.rotate(a); c.fillStyle = 'rgba(236,226,190,0.78)'; c.fillRect(-w / 2, -h / 2, w, h); c.strokeStyle = 'rgba(150,130,90,0.35)'; c.lineWidth = 1; c.strokeRect(-w / 2, -h / 2, w, h); c.restore(); };
+function centred(c, text, x, y, size, font, maxW, weight = 700, col = INKC) {
+  c.fillStyle = col; c.textAlign = 'center'; c.textBaseline = 'middle';
+  let s = size; do { c.font = `${weight} ${s}px ${font}`; s -= 1; } while (c.measureText(text).width > maxW && s > 6);
+  c.fillText(text, x, y);
+}
+function coffeeRing(c, x, y, r, S) {
+  c.save();
+  c.fillStyle = 'rgba(120,70,30,0.07)'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
+  for (const [a0, a1, wd, al] of [[0.3, 5.9, 0.006, 0.32], [2.2, 4.4, 0.003, 0.25], [5.0, 7.0, 0.0025, 0.3]]) {
+    c.strokeStyle = `rgba(110,62,28,${al})`; c.lineWidth = S * wd; c.beginPath(); c.arc(x, y, r * (1 - wd * 2), a0, a1); c.stroke();
+  }
+  c.restore();
+}
+
+// a polaroid of one painting: the picture fitted to its window (a near-match fills it; a
+// square or a wide one sits inside it, mounted, rather than being chopped), the caption below
+function drawPhoto(c, p, S, X, Y, rot, shadow = true) {
+  c.save(); c.translate(X, Y); c.rotate(-rot);
+  const w = PH_W * S, h = PH_H * S;
+  if (shadow) { c.fillStyle = 'rgba(60,35,20,0.32)'; c.fillRect(-w / 2 + S * 0.006, -h / 2 + S * 0.008, w, h); }
+  c.fillStyle = '#fbf8ee'; c.fillRect(-w / 2, -h / 2, w, h);
+  c.strokeStyle = 'rgba(42,34,48,0.45)'; c.lineWidth = S * 0.002; c.strokeRect(-w / 2, -h / 2, w, h);
+  const bw = PIC_W * S, bh = PIC_H * S, bx = -bw / 2, by = -h / 2 + 0.011 * S;
+  const img = artImg(p.img);
+  if (img) {
+    const ia = img.naturalWidth / img.naturalHeight, wa = bw / bh, q = ia / wa;
+    if (q > 0.84 && q < 1.2) {                      // near enough: fill the window
+      const [sx, sy, sw, sh] = ia > wa ? [(img.naturalWidth - img.naturalHeight * wa) / 2, 0, img.naturalHeight * wa, img.naturalHeight] : [0, (img.naturalHeight - img.naturalWidth / wa) / 2, img.naturalWidth, img.naturalWidth / wa];
+      c.drawImage(img, sx, sy, sw, sh, bx, by, bw, bh);
+      c.strokeStyle = 'rgba(42,34,48,0.35)'; c.strokeRect(bx, by, bw, bh);
+    } else {                                        // mounted inside it
+      const dw = q > 1 ? bw : bh * ia, dh = q > 1 ? bw / ia : bh;
+      c.fillStyle = '#e6dfcf'; c.fillRect(bx, by, bw, bh);
+      c.drawImage(img, -dw / 2, by + (bh - dh) / 2, dw, dh);
+      c.strokeStyle = 'rgba(42,34,48,0.4)'; c.strokeRect(-dw / 2, by + (bh - dh) / 2, dw, dh);
+    }
+  } else { c.fillStyle = '#b9ad98'; c.fillRect(bx, by, bw, bh); }
+  centred(c, p.cap, 0, (by + bh + h / 2) / 2 + S * 0.002, S * 0.034, SCRIPT, w * 0.9);
+  c.restore();
+}
+
+// a suspect's card, mugshot-style: the height chart, their face, a name slate, the stamp
+function drawMug(c, n, S, R) {
+  const s = SUSPECTS[n.id], w = n.w * S, h = n.h * S;
+  paper(c, n.w, n.h, S, R, '#f3efe4', 0, [0, 0, 0, 0]);
+  const m = 0.011 * S, cw = w - 2 * m, chh = h * 0.6, x0 = -w / 2 + m, y0 = -h / 2 + m;
+  c.fillStyle = '#cfd4d3'; c.fillRect(x0, y0, cw, chh);
+  c.strokeStyle = 'rgba(42,34,48,0.4)'; c.lineWidth = S * 0.0013;
+  for (let k = 1; k < 10; k++) {
+    const yy = y0 + chh * k / 10, l = cw * (k % 2 ? 0.1 : 0.2);
+    c.beginPath(); c.moveTo(x0, yy); c.lineTo(x0 + l, yy); c.moveTo(x0 + cw, yy); c.lineTo(x0 + cw - l, yy); c.stroke();
+  }
+  c.save(); c.beginPath(); c.rect(x0, y0, cw, chh); c.clip();
+  const im = faceImg(n.id), fs = chh * 1.02;
+  if (im) c.drawImage(im, -fs / 2, y0 + chh - fs * 0.97, fs, fs);
+  else {                                            // (no portrait yet: a pencil outline of a head)
+    c.strokeStyle = 'rgba(42,34,48,0.7)'; c.lineWidth = S * 0.0025; c.fillStyle = 'rgba(42,34,48,0.12)';
+    c.beginPath(); c.ellipse(0, y0 + chh * 0.45, chh * 0.2, chh * 0.25, 0, 0, 7); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(-chh * 0.42, y0 + chh); c.quadraticCurveTo(0, y0 + chh * 0.6, chh * 0.42, y0 + chh); c.fill(); c.stroke();
+  }
+  c.restore();
+  c.strokeStyle = 'rgba(42,34,48,0.5)'; c.lineWidth = S * 0.0015; c.strokeRect(x0, y0, cw, chh);
+  // the slate
+  const sy = y0 + chh + 0.007 * S, sh = h * 0.15;
+  c.fillStyle = '#2a2230'; c.fillRect(-cw * 0.46, sy, cw * 0.92, sh);
+  centred(c, s.name.toUpperCase(), 0, sy + sh * 0.52, S * 0.021, NEWS, cw * 0.86, 700, '#f3efe4');
+  centred(c, s.role, -0.014 * S, sy + sh + (h / 2 - sy - sh) / 2, S * 0.024, HAND, cw * 0.74, 400);
+  // the stamp: every one of them alike
+  c.save(); c.translate(cw * 0.05, y0 + chh * 0.84); c.rotate(-0.2); c.globalAlpha = 0.9;
+  const tw = cw * 0.84, th = S * 0.04;
+  c.fillStyle = 'rgba(243,239,228,0.55)'; c.fillRect(-tw / 2, -th / 2, tw, th);
+  c.strokeStyle = '#c8402f'; c.lineWidth = S * 0.0035; c.strokeRect(-tw / 2, -th / 2, tw, th);
+  centred(c, 'SUSPECT ?', 0, th * 0.06, S * 0.03, NEWS, tw * 0.9, 900, '#c8402f');
+  c.restore();
+}
+
+// a little halftone press photo of the museum's front, lit up, a crowd on the steps
+function pressPhoto(c, x, y, w, h, S) {
+  c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
+  c.fillStyle = '#6e6a70'; c.fillRect(x, y, w, h);
+  c.fillStyle = '#9d99a0'; c.fillRect(x, y + h * 0.78, w, h * 0.22);                      // the forecourt
+  c.fillStyle = '#d8d4d6';
+  c.beginPath(); c.moveTo(x + w * 0.12, y + h * 0.36); c.lineTo(x + w * 0.5, y + h * 0.12); c.lineTo(x + w * 0.88, y + h * 0.36); c.closePath(); c.fill();   // the pediment
+  c.fillRect(x + w * 0.14, y + h * 0.36, w * 0.72, h * 0.06);
+  for (let k = 0; k < 6; k++) c.fillRect(x + w * (0.17 + k * 0.125), y + h * 0.42, w * 0.05, h * 0.3);               // columns
+  c.fillRect(x + w * 0.1, y + h * 0.72, w * 0.8, h * 0.06);                                // the steps
+  c.fillStyle = '#f2e7b0'; for (let k = 0; k < 5; k++) c.fillRect(x + w * (0.23 + k * 0.125), y + h * 0.48, w * 0.06, h * 0.18);   // lit doors
+  c.fillStyle = '#2e2a30';
+  for (let k = 0; k < 14; k++) { const px = x + w * (0.08 + k * 0.064), py = y + h * (0.8 + (k % 3) * 0.035); c.beginPath(); c.arc(px, py, w * 0.018, 0, 7); c.fill(); c.fillRect(px - w * 0.02, py, w * 0.04, h * 0.12); }
+  c.fillStyle = 'rgba(255,255,255,0.12)';                                                  // halftone dots
+  for (let yy = y; yy < y + h; yy += S * 0.006) for (let xx = x + ((yy / (S * 0.006)) % 2) * S * 0.003; xx < x + w; xx += S * 0.006) c.fillRect(xx, yy, S * 0.0018, S * 0.0018);
+  c.restore();
+  c.strokeStyle = 'rgba(42,34,48,0.6)'; c.lineWidth = S * 0.0015; c.strokeRect(x, y, w, h);
+}
+
+function drawNote(c, nt, S, R) {
+  const w = nt.w * S, h = nt.h * S, L = -w / 2, T = -h / 2;
+  if (nt.kind === 'chron') {                       // THE CHRONICLE's front page, torn out
+    paper(c, nt.w, nt.h, S, R, '#ebe5d2', 0.007);
+    centred(c, 'THE CHRONICLE', 0, T + S * 0.034, S * 0.046, NEWS, w * 0.86, 900);
+    c.fillStyle = INKC; c.fillRect(L + w * 0.06, T + S * 0.062, w * 0.88, S * 0.003); c.fillRect(L + w * 0.06, T + S * 0.068, w * 0.88, S * 0.0012);
+    centred(c, 'LATE EDITION', 0, T + S * 0.078, S * 0.011, NEWS, w * 0.5, 400);
+    centred(c, '45 PAINTINGS', 0, T + S * 0.118, S * 0.054, NEWS, w * 0.9, 900);
+    centred(c, 'VANISH', 0, T + S * 0.17, S * 0.054, NEWS, w * 0.9, 900);
+    centred(c, 'Every canvas gone from the Downtown Museum', 0, T + S * 0.207, S * 0.0175, NEWS, w * 0.88, 'italic 400');
+    centred(c, 'by morning, on its opening night', 0, T + S * 0.228, S * 0.0175, NEWS, w * 0.88, 'italic 400');
+    c.fillRect(L + w * 0.06, T + S * 0.245, w * 0.88, S * 0.0012);
+    const colW = w * 0.27;
+    for (let k = 0; k < 3; k++) smallPrint(c, L + w * 0.06 + k * (colW + w * 0.035), T + S * 0.258, colW, k === 2 ? 9 : 10, S * 0.012, S, R);
+  } else if (nt.kind === 'opening') {               // the society page, from before
+    paper(c, nt.w, nt.h, S, R, '#ede7d6', 0.006);
+    tape(c, L + w * 0.08, T + S * 0.004, S * 0.07, S * 0.022, -0.5); tape(c, -L - w * 0.08, T + S * 0.004, S * 0.07, S * 0.022, 0.45);
+    centred(c, 'OPENING NIGHT AT', 0, T + S * 0.03, S * 0.03, NEWS, w * 0.86, 900);
+    centred(c, 'THE DOWNTOWN MUSEUM', 0, T + S * 0.06, S * 0.03, NEWS, w * 0.86, 900);
+    const px = L + w * 0.06, py = T + S * 0.083, pw = w * 0.46, phh = S * 0.13;
+    pressPhoto(c, px, py, pw, phh, S);
+    c.font = `italic 400 ${S * 0.0125}px ${NEWS}`; c.fillStyle = INKC; c.textAlign = 'left'; c.textBaseline = 'top';
+    c.fillText('Guests on the steps at the doors', px, py + phh + S * 0.006);
+    centred(c, 'Forty-five new works', L + w * 0.76, py + S * 0.012, S * 0.016, NEWS, w * 0.42, 700);
+    centred(c, 'go on show tonight', L + w * 0.76, py + S * 0.031, S * 0.016, NEWS, w * 0.42, 700);
+    smallPrint(c, L + w * 0.55, py + S * 0.05, w * 0.4, 7, S * 0.012, S, R);
+  } else if (nt.kind === 'baffled') {
+    paper(c, nt.w, nt.h, S, R, '#e8e1cc', 0.006);
+    tape(c, 0, T + S * 0.002, S * 0.08, S * 0.022, 0.06);
+    centred(c, 'POLICE', 0, T + S * 0.045, S * 0.05, NEWS, w * 0.86, 900);
+    centred(c, 'BAFFLED', 0, T + S * 0.093, S * 0.05, NEWS, w * 0.86, 900);
+    centred(c, 'No arrests yet in museum theft', 0, T + S * 0.127, S * 0.0175, NEWS, w * 0.88, 400);
+    for (let k = 0; k < 2; k++) smallPrint(c, L + w * 0.07 + k * w * 0.45, T + S * 0.145, w * 0.4, 7, S * 0.012, S, R);
+  } else if (nt.kind === 'map') {                  // a scrap of the town plan, the museum ringed
+    paper(c, nt.w, nt.h, S, R, '#efe7cc', 0.005, [0, 1, 1, 0]);
+    c.save(); paperPath(c, w, h, rng(3), 0); c.clip();
+    c.fillStyle = 'rgba(120,170,200,0.55)'; c.beginPath(); c.moveTo(L, -T); c.quadraticCurveTo(L + w * 0.35, T + h * 0.72, -L, T + h * 0.86); c.lineTo(-L, -T); c.closePath(); c.fill();   // the river
+    c.fillStyle = 'rgba(170,150,120,0.35)';
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) { const bx = L + w * (0.05 + i * 0.19), by = T + h * (0.08 + j * 0.2); if (by + h * 0.15 > T + h * (0.72 - i * 0.03)) continue; c.fillRect(bx, by, w * 0.15, h * 0.15); }
+    c.strokeStyle = 'rgba(200,120,90,0.6)'; c.lineWidth = S * 0.006; c.beginPath(); c.moveTo(L, T + h * 0.27); c.lineTo(-L, T + h * 0.22); c.stroke();     // Main Street
+    c.restore();
+    c.fillStyle = INKC; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.font = `700 ${S * 0.017}px ${NEWS}`; c.fillText('DOWNTOWN', L + w * 0.06, T + S * 0.016);
+    c.save(); c.translate(L + w * 0.62, T + h * 0.235); c.rotate(-0.05); c.font = `italic 400 ${S * 0.014}px ${NEWS}`; c.fillText('Main St', 0, 0); c.restore();
+    // the museum's block, ringed twice in red marker
+    const mx = L + w * 0.43, my = T + h * 0.5;
+    c.fillStyle = 'rgba(140,110,150,0.55)'; c.fillRect(mx - w * 0.075, my - h * 0.075, w * 0.15, h * 0.15);
+    c.strokeStyle = '#c8402f'; c.lineWidth = S * 0.004;
+    for (const [k, a0] of [[1, 0.2], [1.12, 2.4]]) { c.beginPath(); c.ellipse(mx, my, w * 0.14 * k, h * 0.17 * k, -0.15, a0, a0 + 6.0); c.stroke(); }
+    c.font = `700 ${S * 0.03}px ${SCRIPT}`; c.fillStyle = '#c8402f'; c.textAlign = 'left'; c.fillText('MUSEUM', mx + w * 0.17, my + h * 0.2);
+    coffeeRing(c, -L - w * 0.12, -T - h * 0.18, S * 0.05, S);
+  } else if (nt.kind === 'mug') {
+    drawMug(c, nt, S, R);
+  } else {
+    c.fillStyle = 'rgba(60,35,20,0.3)'; c.fillRect(L + S * 0.006, T + S * 0.008, w, h);
+    c.fillStyle = nt.kind === 'sticky' ? '#f4d968' : '#fbf6ea'; c.fillRect(L, T, w, h);
+    c.strokeStyle = 'rgba(42,34,48,0.55)'; c.lineWidth = S * 0.0025; c.strokeRect(L, T, w, h);
+    if (nt.kind === 'card') {                                  // a ruled index card
+      c.strokeStyle = 'rgba(200,64,47,0.55)'; c.lineWidth = S * 0.002;
+      c.beginPath(); c.moveTo(L, T + S * 0.045); c.lineTo(-L, T + S * 0.045); c.stroke();
+      c.strokeStyle = 'rgba(90,120,170,0.35)';
+      for (let k = 1; k < 4; k++) { const yy = T + S * (0.045 + k * 0.033); c.beginPath(); c.moveTo(L, yy); c.lineTo(-L, yy); c.stroke(); }
+      centred(c, nt.lines[0], 0, T + S * 0.027, S * 0.032, SCRIPT, w * 0.9);
+      nt.lines.slice(1).forEach((l, k) => centred(c, l, 0, T + S * (0.064 + k * 0.033), S * 0.025, HAND, w * 0.92, 400));
+    } else if (nt.kind === 'sticky') {
+      const fs = nt.big ? 0.042 : 0.032;
+      nt.lines.forEach((l, k) => centred(c, l, 0, T + h * (nt.big ? 0.56 : 0.5) + (k - (nt.lines.length - 1) / 2) * S * fs * 1.05 + S * 0.008, S * fs, SCRIPT, w * 0.9));
+    } else {
+      centred(c, nt.lines[0], 0, -S * 0.016, S * 0.052, SCRIPT, w * 0.9, 700, '#c8402f');
+      centred(c, nt.lines[1], 0, S * 0.042, S * 0.024, HAND, w * 0.9, 400, '#5a4e5e');
+    }
+  }
+}
+
+// the board, all but its live photos, its string and its pins, onto a canvas cw × ch that IS the board
+function drawBoardLayer(c, cw, ch) {
   const S = cw / BOARD_W, cx = cw / 2, cy = ch / 2;
+  c.lineJoin = c.lineCap = 'round';
   c.fillStyle = '#c99a62'; c.fillRect(0, 0, cw, ch);
   const R = rng(4), n = Math.round(3200 * (cw / 1024) ** 2);
   for (let i = 0; i < n; i++) { c.fillStyle = `rgba(${R() < 0.5 ? '90,60,30' : '235,200,150'},${R() * 0.28})`; const s = S * (0.0015 + R() * 0.002); c.fillRect(R() * cw, R() * ch, s, s); }
   const v = c.createRadialGradient(cx, cy, ch * 0.35, cx, cy, cw * 0.62);
   v.addColorStop(0, 'rgba(70,40,20,0)'); v.addColorStop(1, 'rgba(70,40,20,0.22)');
   c.fillStyle = v; c.fillRect(0, 0, cw, ch);
-  for (const nt of BOARD.notes) {
-    c.save(); c.translate(cx + nt.x * S, cy - nt.y * S); c.rotate(-nt.r);
-    const w = nt.w * S, h = nt.h * S;
-    c.fillStyle = 'rgba(60,35,20,0.3)'; c.fillRect(-w / 2 + S * 0.006, -h / 2 + S * 0.008, w, h);
-    c.fillStyle = nt.kind === 'sticky' ? '#f4d968' : '#fbf6ea'; c.fillRect(-w / 2, -h / 2, w, h);
-    c.strokeStyle = 'rgba(42,34,48,0.55)'; c.lineWidth = S * 0.0025; c.strokeRect(-w / 2, -h / 2, w, h);
-    c.textAlign = 'center'; c.textBaseline = 'middle';
-    if (nt.kind === 'card') {                                  // a ruled index card
-      c.strokeStyle = 'rgba(200,64,47,0.55)'; c.lineWidth = S * 0.002;
-      c.beginPath(); c.moveTo(-w / 2, -h / 2 + S * 0.052); c.lineTo(w / 2, -h / 2 + S * 0.052); c.stroke();
-      c.strokeStyle = 'rgba(90,120,170,0.35)';
-      for (let k = 1; k < 4; k++) { const yy = -h / 2 + S * (0.052 + k * 0.038); c.beginPath(); c.moveTo(-w / 2, yy); c.lineTo(w / 2, yy); c.stroke(); }
-      c.fillStyle = INKC; c.font = `700 ${S * 0.036}px ${SCRIPT}`; c.fillText(nt.lines[0], 0, -h / 2 + S * 0.03);
-      c.font = `400 ${S * 0.027}px ${HAND}`;
-      nt.lines.slice(1).forEach((l, k) => c.fillText(l, 0, -h / 2 + S * (0.072 + k * 0.038)));
-    } else if (nt.kind === 'sticky') {
-      c.fillStyle = INKC; c.font = `700 ${S * 0.03}px ${SCRIPT}`;
-      nt.lines.forEach((l, k) => c.fillText(l, 0, -h / 2 + S * (0.047 + k * 0.03)));
-    } else {
-      c.fillStyle = '#c8402f'; c.font = `700 ${S * 0.056}px ${SCRIPT}`; c.fillText(nt.lines[0], 0, -S * 0.02);
-      c.fillStyle = '#5a4e5e'; c.font = `400 ${S * 0.025}px ${HAND}`; c.fillText(nt.lines[1], 0, S * 0.05);
-    }
-    c.restore();
-  }
-}
-// the photo's crop on its card: as the room's (shotMat): centred across, the top kept when tall
-function cropOf(iw, ih) {
-  const a = PIC_W / PIC_H, ia = iw / ih;
-  return ia > a ? [(iw - ih * a) / 2, 0, ih * a, ih] : [0, 0, iw, iw / a];
-}
-function captionTex(cap) {
-  return canvasTex(120, 125, (c, w, h) => {
-    c.fillStyle = '#fbf8ee'; c.fillRect(0, 0, w, h);
-    c.fillStyle = INKC; c.textAlign = 'center'; c.textBaseline = 'middle';
-    fitLine(c, cap, 22, SCRIPT, w - 12); c.fillText(cap, w / 2, h - 13);
-  });
+  for (const [x, y, r] of BOARD.rings) coffeeRing(c, cx + x * S, cy - y * S, r * S, S);
+  const note = (nt, i) => { c.save(); c.translate(cx + nt.x * S, cy - nt.y * S); c.rotate(-nt.r); drawNote(c, nt, S, rng(31 + i * 7)); c.restore(); };
+  BOARD.notes.forEach((nt, i) => nt.under && note(nt, i));
+  for (const p of BOARD.photos) if (!p.live) drawPhoto(c, p, S, cx + p.x * S, cy - p.y * S, p.r);
+  BOARD.notes.forEach((nt, i) => !nt.under && note(nt, i));
 }
 
-// the board in the room: on a wheeled-free police stand in front of the east wall
+// the board in the room: on a free-standing police stand in front of the east wall
 function policeBoard(K) {
   const HPI = Math.PI / 2, { x: BX, y: BY, z: BZ } = BOARD_AT;
   const g = new THREE.Group(); g.position.set(BX, BY, BZ); g.rotation.y = -HPI; K.g.add(g);
   const P = kit(g), wood = paint(0x8a6448), steel = paint(0x6f7d92);
   P.box(BOARD_W + 0.08, BOARD_H + 0.08, 0.04, wood, 0, 0, -0.022, 0.012);
-  const cork = P.flat(BOARD_W, BOARD_H, paint(0xffffff, { map: canvasTex(1024, Math.round(1024 * BOARD_H / BOARD_W), drawCork), hatch: 0, unique: true }), 0, 0, 0.001);
-  cork.renderOrder = 1;
+  // the cork and everything that stays put on it: one canvas, redrawn as its pictures arrive
+  const cv = document.createElement('canvas'); cv.width = 1536; cv.height = Math.round(1536 * BOARD_H / BOARD_W);
+  const corkTex = new THREE.CanvasTexture(cv); corkTex.colorSpace = THREE.SRGBColorSpace; corkTex.anisotropy = 4;
+  const live = LIVE_PH.map((i) => {
+    const pc = document.createElement('canvas'); pc.width = 240; pc.height = Math.round(240 * PH_H / PH_W);
+    const t = new THREE.CanvasTexture(pc); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    return { p: BOARD.photos[i], pc, t };
+  });
+  const redraw = () => {
+    drawBoardLayer(cv.getContext('2d'), cv.width, cv.height); corkTex.needsUpdate = true;
+    for (const L of live) { const c = L.pc.getContext('2d'); drawPhoto(c, { ...L.p, r: 0 }, L.pc.width / PH_W, L.pc.width / 2, L.pc.height / 2, 0, false); L.t.needsUpdate = true; }
+  };
+  redraw();
+  let pend = 0;
+  _imgSubs.add(() => { if (!pend) pend = setTimeout(() => { pend = 0; redraw(); }, 150); });
+  P.flat(BOARD_W, BOARD_H, paint(0xffffff, { map: corkTex, hatch: 0, unique: true }), 0, 0, 0.001).renderOrder = 1;
   // the stand: two uprights on feet, standing on the floor
-  const UX = BOARD_W / 2 + 0.07, top = 0.58;
+  const UX = BOARD_W / 2 + 0.07, top = BOARD_H / 2 + 0.145;
   for (const s of [-1, 1]) {
     P.box(0.05, BY + top, 0.05, steel, s * UX, (top - BY) / 2, -0.02, 0.015);
     P.box(0.07, 0.04, 0.44, steel, s * UX, -BY + 0.02, -0.02, 0.015);
     P.put(new THREE.SphereGeometry(0.035, 10, 8), steel, s * UX, top + 0.01, -0.02);
     P.box(0.07, 0.03, 0.06, steel, s * UX - s * 0.05, 0, -0.022, 0.01);     // the clamp holding the board
   }
-  const pinGeo = new THREE.SphereGeometry(0.016, 10, 8);
-  const photos = BOARD.photos.map((p) => {
+  // the pins that never move: merged, one mesh per colour
+  const pinGeo = new THREE.SphereGeometry(0.016, 10, 8), byCol = new Map();
+  const still = [...BOARD.photos.filter(p => !p.live).map(p => [p, 0xc8402f]), ...BOARD.notes.filter(n => n.pin != null).map(n => [n, n.pin])];
+  for (const [it, col] of still) { const [px, py] = pinOf(it); if (!byCol.has(col)) byCol.set(col, []); byCol.get(col).push(pinGeo.clone().translate(px, py, 0.012)); }
+  for (const [col, geos] of byCol) P.put(mergeGeometries(geos), paint(col));
+  // the photos the officer keeps re-pinning: a card each, its pin on it
+  const photos = live.map(({ p, t }) => {
     const pg = new THREE.Group(); pg.position.set(p.x, p.y, 0.006); g.add(pg);
     const Q = kit(pg);
-    Q.flat(PH_W, PH_H, paint(0xffffff, { map: captionTex(p.cap), hatch: 0, unique: true }), 0, 0, 0).renderOrder = 2;
-    Q.flat(PIC_W, PIC_H, shotMat('artworks/' + p.img + '.jpg', null, PIC_W / PIC_H), 0, PH_H / 2 - 0.015 - PIC_H / 2, 0.002).renderOrder = 2;
+    Q.flat(PH_W, PH_H, paint(0xffffff, { map: t, hatch: 0, unique: true }), 0, 0, 0).renderOrder = 2;
     Q.put(pinGeo, paint(0xc8402f), 0, PH_H / 2 - 0.018, 0.01);
     return pg;
   });
-  for (const nt of BOARD.notes) { const [px, py] = pinOf(nt); P.put(pinGeo, paint(nt.pin), px, py, 0.012); }
   const strM = paint(0xb8302a, { hatch: 0 }), seg = new THREE.CylinderGeometry(0.0045, 0.0045, 1, 5);
-  const strs = BOARD.string.slice(1).map(() => { const m = P.put(seg, strM); m.userData.noInk = true; return m; });
+  const strs = BOARD.string.map(() => { const m = P.put(seg, strM); m.userData.noInk = true; return m; });
   const _a = new THREE.Vector3(), _b = new THREE.Vector3();
   const update = () => {
-    BOARD.photos.forEach((p, i) => { photos[i].rotation.z = p.r; });
-    const pts = stringPts();
-    strs.forEach((m, i) => {
-      _a.set(pts[i][0], pts[i][1], 0.016); _b.set(pts[i + 1][0], pts[i + 1][1], 0.016);
+    live.forEach(({ p }, i) => { photos[i].rotation.z = p.r; });
+    strSegs().forEach(([a, b], i) => {
+      const m = strs[i];
+      _a.set(a[0], a[1], 0.016); _b.set(b[0], b[1], 0.016);
       m.position.copy(_a).add(_b).multiplyScalar(0.5); m.scale.y = _a.distanceTo(_b);
       m.quaternion.setFromUnitVectors(_Y, _b.sub(_a).normalize());
     });
@@ -669,7 +899,7 @@ function officers(K, brd) {
   K.cols.push({ x0: 3.33, x1: 3.57, z0: -1.62, z1: -1.38 });
   const colA = { x0: 0, x1: 0, z0: 0, z1: 0 }; K.cols.push(colA);
   // ── the pinner: a loop of jobs, picked at random (never the same twice running) ──
-  const R = rng(23), LOW = [3, 4, 5], HIGH = [0, 1, 2];
+  const R = rng(23), LOW = LIVE_PH, HIGH = [5, 6, 7];
   const pick = (a) => a[Math.floor(R() * a.length)];
   const FRONT = 3.42, BACK = 3.08;
   let job = null, last = '', prevT = null;
@@ -678,9 +908,9 @@ function officers(K, brd) {
     const kind = pick(kinds); last = kind;
     const i = kind === 'pin' ? pick(LOW) : kind === 'point' ? pick(HIGH) : 3;
     const p = BOARD.photos[i];
-    const back = R() < 0.5, sp = stringPts()[back ? 6 : 5];
+    const back = R() < 0.5, sp = strSegs()[BOARD.run][back ? 1 : 0];
     const z = kind === 'string' ? BOARD_AT.z + sp[0] - 0.05 : kind === 'back' ? BOARD_AT.z - 0.2 + R() * 0.3 : BOARD_AT.z + p.x + (kind === 'point' ? 0.2 : 0.02);
-    job = { kind, i, side: R() < 0.5 ? 'L' : 'R', z: THREE.MathUtils.clamp(z, -3.0, -2.1), x: kind === 'back' ? BACK : FRONT,
+    job = { kind, i, side: R() < 0.5 ? 'L' : 'R', z: THREE.MathUtils.clamp(z, -3.45, -2.1), x: kind === 'back' ? BACK : FRONT,
       t: 0, dur: { pin: 4.2, string: 4.6, point: 3.4, back: 3.6 }[kind], rT: (R() - 0.5) * 0.14, back };
   };
   next();
@@ -726,9 +956,9 @@ function officers(K, brd) {
       job.t += dt;
       env = ss(job.t, 0, 0.7) * (1 - ss(job.t, D - 0.7, D));
       if (job.kind === 'string') {                               // walking along with the hand
-        const pts = stringPts(), a = pts[5], b = pts[6], s = ss(job.t, 0.6, D - 0.6), f = job.back ? 1 - s : s;
+        const [a, b] = strSegs()[BOARD.run], s = ss(job.t, 0.6, D - 0.6), f = job.back ? 1 - s : s;
         hx = lerp(a[0], b[0], f); hy = lerp(a[1], b[1], f);
-        const z1 = THREE.MathUtils.clamp(BOARD_AT.z + hx - 0.05, -3.0, -2.1);
+        const z1 = THREE.MathUtils.clamp(BOARD_AT.z + hx - 0.05, -3.45, -2.1);
         k = dt > 0 ? Math.min(0.45, Math.abs(z1 - r.z) / dt * 0.9) : 0;
         r.z = z1;
       }
@@ -778,7 +1008,6 @@ function officers(K, brd) {
 
 // ── the close-up: press E at the board and it fills the screen, drawn from the same layout ──
 let _bv = null;
-const _imgs = {};
 function boardView() {
   if (_bv) return _bv;
   const css = document.createElement('style');
@@ -786,14 +1015,14 @@ function boardView() {
     #boardView { inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; box-sizing: border-box;
       padding: max(12px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
       background: rgba(42,34,48,.55); }
-    #boardView .pn { position: relative; box-sizing: border-box; width: min(1080px, 100%, calc((100vh - 130px) * 1.63 + 40px)); width: min(1080px, 100%, calc((100dvh - 130px) * 1.63 + 40px));
+    #boardView .pn { position: relative; box-sizing: border-box; width: min(1320px, 100%, calc((100vh - 130px) * 1.79 + 40px)); width: min(1320px, 100%, calc((100dvh - 130px) * 1.79 + 40px));
       padding: 12px 18px 12px; transform: rotate(-0.5deg); }
     #boardView h3 { font-family: 'Caveat', cursive; font-size: clamp(26px, 4vw, 36px); line-height: 1; margin: 0 0 8px; padding-right: 110px; }
     #boardView .cw { overflow: auto; border: 2.5px solid var(--ink); border-radius: 6px; overscroll-behavior: contain; }
     #boardView canvas { display: block; width: 100%; height: auto; background: #c99a62; touch-action: pan-x pan-y; }
     #boardView .ft .w { display: none; }
     /* a tall phone: the board drawn bigger, swiped along */
-    @media (max-aspect-ratio: 4/5) { #boardView .pn { width: 100%; padding: 10px 12px; } #boardView canvas { width: 190%; } #boardView .ft .w { display: inline; } }
+    @media (max-aspect-ratio: 4/5) { #boardView .pn { width: 100%; padding: 10px 12px; } #boardView canvas { width: 240%; } #boardView .ft .w { display: inline; } }
     #boardView .x { position: absolute; right: 14px; top: 10px; font-size: 18px; padding: 4px 14px; min-height: 40px; }
     #boardView .ft { font-size: 15px; color: var(--ink2); margin-top: 6px; text-align: center; }
     body.touch #boardView .ft .k { display: none; } body:not(.touch) #boardView .ft .t { display: none; }`;
@@ -802,34 +1031,26 @@ function boardView() {
   el.id = 'boardView'; el.className = 'ui fade hide';
   el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'the police board, close up');
   el.innerHTML = `<div class="pn sk"><h3>The police board</h3><button class="sk x" aria-label="close">close ✕</button>
-    <div class="cw"><canvas width="1704" height="1044"></canvas></div>
+    <div class="cw"><canvas width="2240" height="1254"></canvas></div>
     <div class="ft"><span class="w">swipe along the board · </span><span class="k">E or Esc to close</span><span class="t">tap outside the board to close</span></div></div>`;
   document.body.append(el);
   const cv = el.querySelector('canvas'), c = cv.getContext('2d');
   c.lineJoin = c.lineCap = 'round';
+  // the still part of the board is painted once into its own canvas (again when a picture
+  // arrives); every redraw lays that down, then the live photos, the string and the pins
+  const still = document.createElement('canvas'); still.width = cv.width; still.height = cv.height;
+  let stillVer = -1;
   const draw = () => {
     const cw = cv.width, ch = cv.height, S = cw / BOARD_W, cx = cw / 2, cy = ch / 2;
-    drawCork(c, cw, ch);
-    for (const p of BOARD.photos) {
-      c.save(); c.translate(cx + p.x * S, cy - p.y * S); c.rotate(-p.r);
-      const w = PH_W * S, h = PH_H * S;
-      c.fillStyle = 'rgba(60,35,20,0.32)'; c.fillRect(-w / 2 + S * 0.007, -h / 2 + S * 0.009, w, h);
-      c.fillStyle = '#fbf8ee'; c.fillRect(-w / 2, -h / 2, w, h);
-      c.strokeStyle = 'rgba(42,34,48,0.45)'; c.lineWidth = S * 0.002; c.strokeRect(-w / 2, -h / 2, w, h);
-      const px = -PIC_W / 2 * S, py = -h / 2 + 0.015 * S, pw = PIC_W * S, ph = PIC_H * S;
-      const img = _imgs[p.img];
-      if (img?.complete && img.naturalWidth) { const [sx, sy, sw, sh] = cropOf(img.naturalWidth, img.naturalHeight); c.drawImage(img, sx, sy, sw, sh, px, py, pw, ph); }
-      else { c.fillStyle = '#b9ad98'; c.fillRect(px, py, pw, ph); }
-      c.strokeStyle = 'rgba(42,34,48,0.35)'; c.strokeRect(px, py, pw, ph);
-      c.fillStyle = INKC; c.textAlign = 'center'; c.textBaseline = 'middle';
-      fitLine(c, p.cap, S * 0.036, SCRIPT, w * 0.9); c.fillText(p.cap, 0, h / 2 - S * 0.027);
-      c.restore();
-    }
+    if (stillVer !== _imgVer) { stillVer = _imgVer; drawBoardLayer(still.getContext('2d'), cw, ch); }
+    c.drawImage(still, 0, 0);
+    for (const i of LIVE_PH) { const p = BOARD.photos[i]; drawPhoto(c, p, S, cx + p.x * S, cy - p.y * S, p.r); }
     // the red string, pin to pin (a shadow on the cork under it), then the pins on top
-    const pts = stringPts().map(([x, y]) => [cx + x * S, cy - y * S]);
+    const segs = strSegs();
     for (const [col, off, wd] of [['rgba(60,30,20,0.3)', S * 0.006, S * 0.006], ['#b8302a', 0, S * 0.005]]) {
       c.strokeStyle = col; c.lineWidth = wd; c.beginPath();
-      pts.forEach(([x, y], i) => (i ? c.lineTo(x + off, y + off) : c.moveTo(x + off, y + off))); c.stroke();
+      for (const [[ax, ay], [bx, by]] of segs) { c.moveTo(cx + ax * S + off, cy - ay * S + off); c.lineTo(cx + bx * S + off, cy - by * S + off); }
+      c.stroke();
     }
     const pin = (x, y, col) => {
       const r = S * 0.016;
@@ -839,9 +1060,11 @@ function boardView() {
       c.fillStyle = 'rgba(255,255,255,0.55)'; c.beginPath(); c.arc(x - r * 0.35, y - r * 0.35, r * 0.32, 0, 7); c.fill();
     };
     for (const p of BOARD.photos) { const [x, y] = pinOf(p); pin(cx + x * S, cy - y * S, '#c8402f'); }
-    for (const n of BOARD.notes) { const [x, y] = pinOf(n); pin(cx + x * S, cy - y * S, hex(n.pin)); }
+    for (const n of BOARD.notes) if (n.pin != null) { const [x, y] = pinOf(n); pin(cx + x * S, cy - y * S, hex(n.pin)); }
   };
-  for (const p of BOARD.photos) if (!_imgs[p.img]) { const im = new Image(); im.onload = () => { if (_bv?.open) draw(); }; im.src = 'artworks/' + p.img + '.jpg'; _imgs[p.img] = im; }
+  for (const p of BOARD.photos) artImg(p.img);
+  for (const id of Object.keys(SUSPECTS)) faceImg(id);
+  _imgSubs.add(() => { if (_bv?.open) draw(); });
   let M = null, tick = 0;
   const close = () => {
     if (!_bv.open) return;
@@ -1784,7 +2007,7 @@ const MINI = {
     mini(K, 0, -4.35, 'look at the empty frame', (m) => { i = (i + 1) % FRAME.length; m.say(FRAME[i]); });
     mini(K, 1.25, -1.5, 'look up', (m) => m.say('One pane of the dome is missing. A climbing rope still hangs from the gap, over the broken glass.'), 0.7);
     // the police board: a close-up of it fills the screen (boardView)
-    mini(K, 3.0, -2.5, 'look at the board', (m) => boardView().show(m), 0.85);
+    mini(K, 3.0, -2.8, 'look at the board', (m) => boardView().show(m), 0.85);
     let j = -1;
     const COPS = [
       'Evening. We\'re only putting the board in order. Please stay behind the tape.',
@@ -1834,6 +2057,7 @@ function buildRoom(key, i) {
 // ── the controller: in through a door, round the room, out again ──
 // doors: [{ key, lm?, inside(dir) → bool (walk-in), near?: { dir, r } (an E prompt), out: () → { dir, heading } }]
 export function createRooms({ scene, camera, player, game }) {
+  _FACE = game?.FACE ?? null;                   // (the suspects' portraits, for the museum's police board)
   const st = player.st, G = game.G;
   const built = {}, keys = Object.keys(PLACES);
   let cur = null, armed = true, busy = false;
