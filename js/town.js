@@ -8,7 +8,7 @@ import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildR
   settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked } from './world.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
-import { buildMuseum } from '../museum.js?v=16';
+import { buildMuseum } from '../museum.js?v=17';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
@@ -643,6 +643,9 @@ export function buildTown(scene) {
   {
     const d = llv(PLAN.park.at), g = add(placeOnPlanet(parkGarden(), d, yawToFace(d, TOWN_C), { weight: 'fine' }));
     feet(g);
+    // its flower beds' planting (plants.js), in the shared breeze — none on a road or rail
+    g.userData.plants = g.userData.plants.filter(p => !decoBlocked(g.localToWorld(new THREE.Vector3(p.x, 0, p.z)).normalize(), 0.1));
+    g.userData.plantMesh = growPlants(scene, g, { seed: 77, merge: true });
     out.park = { dir: d, root: g, ...g.userData.park };
   }
   for (const [k, s] of Object.entries(PLAN.sites)) {

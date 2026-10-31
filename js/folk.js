@@ -215,6 +215,10 @@ export const STANCES = {
     L: { fwd: -0.12, out: 0.56, twist: 1.6, bend: 1.35, wrist: 0.2, grip: 0.3 },
     R: { fwd: 0.3, out: -0.14, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 0.62, hold: ['cup', [-0.033, -0.046, 0.004], [2.2, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { const sip = Math.max(0, Math.sin(t * 0.55)) ** 10; p.bend += 0.5 * sip; p.fwd += 0.25 * sip; } } },
+  door: { free: 'R',           // the constable at the museum's open door: thumb hooked in his belt, the free hand waves you in (doorcop.js)
+    L: { fwd: -0.25, out: 0.42, twist: 0.75, bend: 1.45, wrist: -1.2, grip: 0.3 },
+    R: { fwd: 0.04, out: 0.02, twist: 0.15, bend: 0.3, wrist: 0, grip: 0.35 },
+    anim: (side, t, p) => { if (side === 'R') { p.fwd += 0.05 * Math.sin(t * 0.5); p.bend += 0.08 * Math.sin(t * 0.7 + 1); } } },
   reading: { free: null, ik: true, read: true, seated: true },   // on a bench, a newspaper open in both hands (readPose)
   crossed: { free: 'R',        // the framer: arms crossed, defensive
     L: { fwd: 0.62, out: -0.2, twist: 1.35, bend: 2.0, wrist: 0, grip: 0.6 },

@@ -16,7 +16,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { settle, radiusAt, drawnGroundAt, pruneDeco } from './world.js';
-import { windowWall, pick, rnd, tree, bush, bench as parkBench, lamp } from './props.js';
+import { windowWall, pick, rnd, tree, lamp } from './props.js';
+import { cobbleSlab } from './grounds.js';
 
 // ── geometry kit ─────────────────────────────────────────────────────────────
 // bevel resolution follows size; a glazing bar or rail is too thin for a bevel to read
@@ -1806,34 +1807,71 @@ export function batchPlaced(groups, weight = 'mid') {
 }
 
 // ── Lantern Park: a round town park (where a dome and a spur road used to be) ─────────
-// A lawn with a pond in the middle (a stone rim, lily pads, a little spout), a gravel ring
-// path round it and four paths out to the edge, flower beds between them, trees, benches
-// facing the water and two lamps. Local frame: y up; it all lies within r 4.7. The people
-// (a reader on a bench, strollers on the ring) are park.js. userData.ring / benches tell
-// park.js where to walk and sit; foots stop the walker at the pond, trees and benches.
-export const PARK = { R: 4.7, POND: 1.25, RING: 2.85, PATH: 0.62 };
+// A lawn with a pond in the middle (a stone rim, a basin floor with coins tossed in, lily pads
+// and a spout; its see-through water is park.js), a cobbled ring path round it and four paths
+// out to the edge (one cobbled surface, grounds.js's cobbles), flower beds between them planted
+// from plants.js, trees, benches facing the water and two lamps. Local frame: y up; it all lies
+// within r 4.7. The people (a reader on a bench, strollers on the ring) are park.js.
+// userData.ring / benches / pond tell park.js where to walk, sit and pour the water; foots stop
+// the walker at the pond, trees and benches.
+// Heights (placed with sink 0.04, so the ground is at y 0.04): the lawn 0.012 above it, the
+// cobbles 0.012 above the lawn — far enough apart that neither fights the other, close enough
+// that nothing reads as floating. (The bake merges flat paints into one vertex-coloured mesh and
+// drops any polygon offset, so these gaps are what keep the layers apart)
+export const PARK = { R: 4.7, POND: 1.25, RING: 2.85, PATH: 0.62, LAWN_Y: 0.052, PATH_Y: 0.064, FLOOR_Y: 0.075, WATER_Y: 0.2, BED_Y: 0.13, SEAT_Y: 0.26 };
+// is park-local (x, z) on the cobbles (pad: a margin round them)?
+export function onParkPath(x, z, pad = 0) {
+  const { R: PR, RING, PATH } = PARK, r = Math.hypot(x, z), w = PATH / 2 + pad;
+  if (Math.abs(r - RING) < w) return true;
+  if (r < RING || r > PR + pad) return false;
+  return Math.min(Math.abs(x), Math.abs(z)) < w;               // the four paths out lie on the axes
+}
 export function parkGarden() {
   const K = kit(), R = rng(9127), { R: PR, POND, RING, PATH } = PARK;
-  const lawn = paint(PAL.meadow), gravel = paint(0xe2d3b0, { hatch: 0 }), stone = paint(0xcfc4ae), soil = paint(0x8a6a52, { hatch: 0 });
-  const water = paint(PAL.water, { hatch: 0 }), pad = paint(0x6f9a5a, { hatch: 0 });
-  // (lawn and gravel ride well above the terrain: laid on at their vertices, the coarse ground
-  // between them bulged through)
-  for (const m of [lawn, gravel]) { m.polygonOffset = true; m.polygonOffsetFactor = m === gravel ? -4 : -2; m.polygonOffsetUnits = m.polygonOffsetFactor; }
+  const lawn = paint(PAL.meadow), stone = paint(0xcfc4ae), mulch = paint(0x6e4c38), kerb = paint(0xc9bda4);
+  const basin = paint(0x9fb3a6), pad = paint(0x6f9a5a, { hatch: 0 });
   const flat = (geo, mat, y) => { geo.rotateX(-Math.PI / 2); const m = K.put(geo, mat, 0, y, 0); m.userData.noInk = true; return m; };
-  flat(new THREE.CircleGeometry(PR, 64, 0, Math.PI * 2), lawn, 0.07);
-  // the gravel: the ring round the pond, and four paths out to the edge (N, S, E, W)
-  flat(new THREE.RingGeometry(RING - PATH / 2, RING + PATH / 2, 72, 2), gravel, 0.1);
-  for (let k = 0; k < 4; k++) {
-    const a = k * Math.PI / 2, len = PR - RING, cx = Math.sin(a) * (RING + len / 2), cz = Math.cos(a) * (RING + len / 2);
-    const g = new THREE.PlaneGeometry(PATH, len + 0.2, 1, 4); g.rotateX(-Math.PI / 2); g.rotateY(a);
-    const m = K.put(g, gravel, cx, 0.1, cz); m.userData.noInk = true;
+  flat(new THREE.CircleGeometry(PR + 0.1, 72, 0, Math.PI * 2), lawn, PARK.LAWN_Y);   // (a touch wider than the paths: their ends lie on it)
+  // the cobbles: the ring round the pond and four paths out to the edge (N, E, S, W) traced as
+  // ONE outline (the ring's inside a hole), so where they meet there's a single surface — no two
+  // layers fighting at the joins
+  {
+    const w = PATH / 2, Ro = RING + w, Ri = RING - w, dO = Math.asin(w / Ro), dP = Math.asin(w / PR);
+    const P = (r, t) => new THREE.Vector2(Math.sin(t) * r, -Math.cos(t) * r);   // (shapes are drawn in (x, −z): see lay())
+    const pts = [];
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2;
+      for (let i = 0; i <= 4; i++) pts.push(P(PR, a - dP + 2 * dP * i / 4));
+      for (let i = 0; i <= 18; i++) pts.push(P(Ro, a + dO + (Math.PI / 2 - 2 * dO) * i / 18));
+    }
+    const sh = new THREE.Shape(pts), hole = new THREE.Path(Array.from({ length: 72 }, (_, i) => P(Ri, -i / 72 * Math.PI * 2)));
+    sh.holes.push(hole);
+    cobbleSlab(K, sh, 12, { border: 0 }).position.y = PARK.PATH_Y;   // (no border course: it traces the outer outline only, and this one has a hole)
   }
-  // the pond: a raised stone rim, the water a touch below it, lily pads, a spout in the middle
+  // the pond: a raised stone rim round a basin with a pale floor (coins on it); the water itself
+  // (see-through, gently moving) is laid in by park.js at WATER_Y, under the rim's lip
   K.put(lathe([[POND - 0.02, 0], [POND + 0.2, 0], [POND + 0.22, 0.2], [POND + 0.12, 0.26], [POND - 0.04, 0.24], [POND - 0.05, 0.05]], 48), stone, 0, 0, 0);
-  flat(new THREE.CircleGeometry(POND, 48), water, 0.17);
-  for (let k = 0; k < 6; k++) {
+  flat(new THREE.CircleGeometry(POND - 0.035, 48), basin, PARK.FLOOR_Y);
+  {
+    // coins tossed in for luck: gold, copper and silver discs over the floor, a few up on edge
+    // leaning, a few in little overlapping heaps
+    const coin = (r) => lathe([[0.001, 0], [r * 0.85, 0], [r, 0.0015], [r, 0.0055], [r * 0.82, 0.0075], [0.001, 0.007]], 12);
+    const metal = [paint(0xe7b84a), paint(0xc0703c), paint(0xd7dbdc), paint(0xe7b84a)];
+    for (let k = 0; k < 46; k++) {
+      const a = R() * Math.PI * 2, rr = 0.32 + Math.sqrt(R()) * (POND - 0.44), x = Math.sin(a) * rr, z = Math.cos(a) * rr;
+      const cr = 0.03 + R() * 0.012, m = K.put(coin(cr), metal[k % 4], x, PARK.FLOOR_Y, z);
+      m.rotation.set((R() - 0.5) * 0.04, R() * 6, (R() - 0.5) * 0.04);
+      m.userData.noInk = true;
+      if (k % 9 === 4) { m.rotation.x = 1.15; m.position.y += Math.sin(1.15) * cr * 0.9; }         // up on edge, leaning over
+      else if (k % 7 === 2) {                                                                          // a little heap: one more on top, askew
+        const t = K.put(coin(cr * 0.95), metal[(k + 1) % 4], x + 0.018, PARK.FLOOR_Y + 0.0072, z - 0.01);
+        t.rotation.set(0.1, R() * 6, -0.07); t.userData.noInk = true;
+      }
+    }
+  }
+  for (let k = 0; k < 6; k++) {                                         // lily pads, floating on the water
     const a = R() * Math.PI * 2, r = 0.45 + R() * 0.6, g = new THREE.CircleGeometry(0.12 + R() * 0.06, 12, 0.3, Math.PI * 2 - 0.6);
-    g.rotateZ(R() * 6); flat(g, pad, 0.18).position.set(Math.sin(a) * r, 0.18, Math.cos(a) * r);
+    g.rotateZ(R() * 6); flat(g, pad, 0).position.set(Math.sin(a) * r, PARK.WATER_Y + 0.012, Math.cos(a) * r);
   }
   K.put(lathe([[0.001, 0], [0.22, 0], [0.24, 0.12], [0.12, 0.2], [0.09, 0.5], [0.2, 0.56], [0.001, 0.6]], 18), stone, 0, 0.12, 0);
   for (let k = 0; k < 5; k++) {                                         // the spout's water: a little splash of drops
@@ -1841,18 +1879,33 @@ export function parkGarden() {
     K.put(new THREE.SphereGeometry(0.06, 8, 6), paint(0xd8eef0, { hatch: 0 }), Math.sin(a) * 0.16, 0.66 + (k % 2) * 0.06, Math.cos(a) * 0.16).userData.noInk = true;
   }
   K.foot(0, 0, POND + 0.3);
-  // flower beds between the paths: a stone kerb, soil, and dots of colour
-  const COLS = [0xe8604c, 0xe1b95c, 0xf6eedb, 0xdc9e9a, 0x8f7ae8];
+  // flower beds between the paths: a low stone kerb round a bed of mulch, planted (plants.js:
+  // grown on once the park is placed, town.js) in rings, tall in the middle to low at the edge —
+  // a flowering shrub, then cosmos, lavender and a grass, then tulips, then daisies, then a
+  // clipped box edging inside the kerb. (A few shared colours: each one is a draw)
+  const BED = 0.66, BED_Y = PARK.BED_Y, plants = (K.g.userData.plants ||= []);
+  const BEDS = [
+    { mid: 'bloom', midC: 0xf2a0b4, tall: [['cosmos', 0xd8508a], ['spikes', 0x9c8ad8], ['grass']], tulip: [0xe8604c, 0xf2c14e], daisy: 0xf6eedb },
+    { mid: 'mound', tall: [['spikes', 0x9c8ad8], ['cosmos', 0xf6eedb], ['grass']], tulip: [0xf2a0b4, 0xf6eedb], daisy: 0xf6eedb },
+    { mid: 'bloom', midC: 0xf6eedb, tall: [['cosmos', 0xf2a0b4], ['spikes', 0x9c8ad8], ['grass']], tulip: [0xf2c14e, 0xe8604c], daisy: 0xf2a0b4 },
+    { mid: 'mound', tall: [['cosmos', 0xd8508a], ['spikes', 0x9c8ad8], ['grass']], tulip: [0xe8604c, 0xf2a0b4], daisy: 0xf6eedb },
+  ];
   for (let k = 0; k < 4; k++) {
-    const a = k * Math.PI / 2 + Math.PI / 4, r = RING + 1.0, bx = Math.sin(a) * r, bz = Math.cos(a) * r;
-    K.put(lathe([[0.62, 0], [0.7, 0], [0.7, 0.14], [0.62, 0.14]], 28), stone, bx, 0, bz);
-    K.put(lathe([[0.001, 0.1], [0.62, 0.1], [0.6, 0.14], [0.001, 0.15]], 28), soil, bx, 0, bz);
-    for (let f = 0; f < 14; f++) {
-      const fa = R() * Math.PI * 2, fr = Math.sqrt(R()) * 0.5;
-      K.put(new THREE.SphereGeometry(0.06, 8, 6), paint(COLS[(f + k) % COLS.length], { hatch: 0 }), bx + Math.sin(fa) * fr, 0.2 + R() * 0.05, bz + Math.cos(fa) * fr);
-    }
-    const b = bush(0.32); b.position.set(bx, 0.12, bz); K.g.add(b);
-    K.foot(bx, bz, 0.72);
+    const a = k * Math.PI / 2 + Math.PI / 4, r = RING + 1.05, bx = Math.sin(a) * r, bz = Math.cos(a) * r, B = BEDS[k];
+    K.put(lathe([[BED - 0.01, 0], [BED + 0.06, 0], [BED + 0.075, 0.1], [BED + 0.06, 0.155], [BED - 0.005, 0.155], [BED - 0.01, 0.12]], 40), kerb, bx, 0, bz);
+    K.put(lathe([[0.001, 0.02], [BED - 0.005, 0.02], [BED - 0.005, BED_Y], [0.001, BED_Y]], 40), mulch, bx, 0, bz).userData.noInk = true;
+    const add = (kind, rr, fa, o = {}) => {
+      const x = bx + Math.sin(fa) * rr, z = bz + Math.cos(fa) * rr;
+      if (onParkPath(x, z, 0.12)) return;                                    // (never on the cobbles)
+      plants.push({ k: kind, x, z, y: BED_Y - 0.04, ...o });                 // (y: standing in the mulch, above the ground)
+    };
+    const ring = (n, rr, f) => { for (let i = 0; i < n; i++) f(a + (i + (rr * 7 % 1)) / n * Math.PI * 2 + (R() - 0.5) * 0.25, i); };
+    add(B.mid, 0, 0, { s: 0.75, c: B.midC });
+    ring(7, 0.21, (fa, i) => { const [kind, c] = B.tall[i % 3]; add(kind, 0.2 + R() * 0.03, fa, { s: kind === 'grass' ? 0.75 : 0.95 + R() * 0.15, c }); });
+    ring(10, 0.35, (fa, i) => add('tulip', 0.34 + R() * 0.03, fa, { s: 0.9 + R() * 0.15, c: B.tulip[i % 2] }));
+    ring(12, 0.46, (fa) => add('daisy', 0.46 + R() * 0.02, fa, { s: 1.0 + R() * 0.2, c: B.daisy }));
+    ring(20, 0.56, (fa) => add('boxBall', BED - 0.095, fa, { s: 0.62 + R() * 0.08 }));
+    K.foot(bx, bz, BED + 0.08);
   }
   // trees round the edge, between the beds and the paths
   for (let k = 0; k < 8; k++) {
@@ -1864,7 +1917,7 @@ export function parkGarden() {
   const benches = [];
   for (let k = 0; k < 4; k++) {
     const a = k * Math.PI / 2 + Math.PI / 4, r = RING - PATH / 2 - 0.42;
-    const b = parkBench(); b.position.set(Math.sin(a) * r, 0.0, Math.cos(a) * r); b.rotation.y = a + Math.PI; K.g.add(b);
+    parkSeat(K, Math.sin(a) * r, Math.cos(a) * r, a + Math.PI);
     K.foot(Math.sin(a) * r, Math.cos(a) * r, 0.42);
     benches.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, a });
   }
@@ -1872,8 +1925,24 @@ export function parkGarden() {
     const r = RING + PATH / 2 + 0.2, l = lamp(); l.position.set(Math.sin(a) * r, 0, Math.cos(a) * r); K.g.add(l);
     K.foot(Math.sin(a) * r, Math.cos(a) * r, 0.15);
   }
-  K.g.userData.park = { ring: RING, benches };
+  K.g.userData.park = { ring: RING, benches, pond: { r: POND - 0.035, y: PARK.WATER_Y, floor: PARK.FLOOR_Y }, seatY: PARK.SEAT_Y, lawnY: PARK.LAWN_Y };
   return K.g;
+}
+// a park bench sized for the town's people (the seat at their knee height, so someone sitting has
+// their thighs on the slats and their feet flat on the ground): three seat slats and two back
+// slats of timber on curved cast-iron ends with armrests. Its frame: the sitter faces +z
+function parkSeat(K, x, z, ry) {
+  const s = K.sub(x, 0, z, ry), wood = paint(PAL.bark), iron = paint(PAL.ink, { hatch: 0 }), Y = PARK.SEAT_Y;
+  for (const zz of [0.1, 0, -0.1]) s.put(rb(1.12, 0.035, 0.09, 0.014, 2), wood, 0, Y - 0.0175, zz);
+  for (const [yy, zz] of [[Y + 0.15, -0.175], [Y + 0.27, -0.19]]) s.put(rb(1.12, 0.09, 0.03, 0.012, 2), wood, 0, yy, zz, [-0.14, 0, 0]);
+  for (const sx of [-0.5, 0.5]) {
+    const tube = (pts, r = 0.02) => s.put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([py, pz]) => new THREE.Vector3(sx, py, pz))), 14, r, 8, false), iron);
+    tube([[0, 0.13], [Y * 0.5, 0.125], [Y - 0.035, 0.12]]);                                  // front leg
+    tube([[0, -0.15], [Y * 0.6, -0.15], [Y + 0.1, -0.165], [Y + 0.34, -0.215]]);              // back leg, curving up behind the back slats
+    tube([[Y - 0.04, 0.14], [Y - 0.045, -0.16]]);                                              // the rail under the seat
+    tube([[Y - 0.03, 0.12], [Y + 0.12, 0.14], [Y + 0.165, 0.08], [Y + 0.16, -0.17]], 0.018); // the armrest, curling back
+    for (const [py, pz] of [[Y + 0.34, -0.215], [0, 0.13], [0, -0.15]]) s.put(new THREE.SphereGeometry(0.026, 10, 8), iron, sx, py, pz);   // (capped ends: feet and a knob)
+  }
 }
 
 // ── The Library (Janelle's bookshelf project): the building IS a bookcase. A brick
@@ -2069,6 +2138,11 @@ function shopShell(B, U, { wall, trim, floor, stone = paint(0xd8cab0), glass = u
     U.box(0.12, DOORH - LOW, T + 0.08, trim, s * (DOOR / 2 + 0.02), LOW + (DOORH - LOW) / 2, fz, 0.03);
   }
   U.box(DOOR + 0.28, 0.12, T + 0.1, trim, 0, DOORH + 0.06, fz, 0.03);
+  // the front door, shut: E on the stoop takes you in (shopinterior.js / rooms.js). It's part of
+  // the upper, so it goes with the shopfront while you're inside (no new materials: no new draws)
+  U.box(DOOR - 0.08, DOORH - FY - 0.02, 0.07, trim, 0, FY + (DOORH - FY) / 2, fz + 0.03, 0.02);
+  U.flat(DOOR - 0.5, 0.8, glass, 0, 1.6, fz + 0.075);
+  U.put(new THREE.SphereGeometry(0.045, 10, 8), wall, DOOR / 2 - 0.2, 1.12, fz + 0.1);
   if (sideWin) for (const s of [-1, 1]) {
     B.box(0.08, 0.9, 1.3, trim, s * (W / 2 + 0.01), 1.85, -0.4, 0.03);
     B.flat(1.15, 0.76, glass, s * (W / 2 + 0.055), 1.85, -0.4, [0, s * Math.PI / 2, 0]);

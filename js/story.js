@@ -319,9 +319,10 @@ function ticket() {
   return ink(g, 'fine');
 }
 function cafe() {
-  // two bistro tables on the pavement under the café's awning
+  // two bistro tables on the pavement under the café's awning (left of the shop's A-board,
+  // which stands at +0.72: the right-hand table used to stand in it)
   const g = new THREE.Group();
-  for (const x of [-0.5, 0.5]) {
+  for (const x of [-0.6, 0.15]) {
     const t = new THREE.Group();
     t.add(new THREE.Mesh(lathe([[0.001, 0], [0.18, 0], [0.04, 0.06], [0.03, 0.62], [0.26, 0.64], [0.26, 0.69], [0.001, 0.69]], 16), paint(PAL.cream)));
     t.position.set(x, 0.07, 0); g.add(t);
