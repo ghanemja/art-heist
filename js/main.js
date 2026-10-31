@@ -10,6 +10,7 @@ import { createCuller } from './cull.js';
 import { createPlaza } from './plaza.js';
 import { createPark } from './park.js';
 import { createShopInteriors } from './shopinterior.js';
+import { createNorthLife } from './north.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -53,6 +54,7 @@ registerGround([scene]);          // again, now the case's props (café deck, bo
 const citizens = createCitizens({ scene, town, game, player, camera });   // bystanders, streamed in after the title is up
 const plaza = createPlaza({ scene, town, game, player });                  // Maple Plaza: parked cars, shoppers in and out
 const park = createPark({ scene, town, game, player });                    // Lantern Park: strollers, a reader, a coffee
+const northLife = createNorthLife({ scene, town, game, player });          // the club's players, the swimmer, the golfer, the Close's neighbours
 const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper));   // the project shops' living rooms
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
@@ -84,6 +86,7 @@ function loop() {
   citizens.update(dt);
   plaza.update(dt);
   park.update(dt);
+  northLife.update(dt);
   shopInside.update(dt, t, player);
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);

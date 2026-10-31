@@ -13,6 +13,7 @@ import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
+import { planNorth, buildNorth } from './north.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -51,6 +52,7 @@ export function restyle(root) {
 const mDir = llv(PLAN.museum.at);
 const mF = frame(mDir, TOWN_C);                            // +y local = toward town
 export function planTown() {
+  planNorth();                                            // the river and the north's ground (north.js)
   reserve(mF(0, -0.3), 4.4, 'museum-plaza');
   reserve(mF(0, -7.0), 8.4, 'museum');
   flatten(mF(0, -6), 12, 0.45, { plane: mDir });          // the museum stands on a true plane
@@ -348,6 +350,8 @@ export function buildTown(scene) {
     if (g) { settle(g, d, s.r * 0.8, 0.06, yawToFace(d, TOWN_C)); add(g);
       if (g.userData.floor) addFloor(g, g.userData.floor); for (const c of g.userData.solids || []) solid(out.sites[k].frame(...c[0]), c[1]); }
   }
+  // the north: the river and its bridge, the country club, the driving range, Riverbend Close
+  out.north = buildNorth(scene, { add, solid, boulevard: out.boulevard });
   // helpers the story uses to place things
   out.townAt = ([x, y]) => fC(x, y);
   out.toTown = toTown;
