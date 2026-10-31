@@ -12,6 +12,7 @@ import { buildMuseum } from '../museum.js?v=11';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden } from './buildings.js';
 import { parkedTrain } from './train.js';
+import { museumGrounds } from './grounds.js';
 import { railLoop, buildRailway, onRail } from './rail.js';
 
 export const TOWN_C = llv(PLAN.town.center);
@@ -141,6 +142,14 @@ export function buildTown(scene) {
     addFloor(mus.group, (x, z) => Math.hypot(x, z + 0.3) < 3.38 ? 0.45 : null);
     out.museum = { ...mus, dir: mDir, frame: mF };
     for (let z = -3.4; z >= -11; z -= 2.2) for (let x = -5.6; x <= 5.6; x += 2.8) solid(mF(x, z), 1.55);
+  }
+  // ── landscaping (grounds.js): the museum's grounds — gravel walks round both wings to the
+  // back, hedges, a flower strip, low lamps, trees and benches, a sculpture garden round a pool
+  // behind the east wing, a rose garden behind the west. Built in the museum's own frame ──
+  {
+    const g = add(placeOnPlanet(museumGrounds(), mDir, yawToFace(mDir, TOWN_C), { weight: 'fine', sink: 0 }));
+    feet(g);
+    out.grounds = [g];
   }
   // ── Main Street: two terraces of shops facing each other across y = 0 ──
   // Units are laid by true arc length along each frontage, so neighbours meet
