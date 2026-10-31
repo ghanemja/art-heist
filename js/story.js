@@ -238,13 +238,21 @@ function crates() {
   c.fillText('CATERING', 128, 52); c.font = '600 20px "Patrick Hand", cursive'; c.fillText('— CAPE FAR SIDE —', 128, 86);
   const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace;
   const lab = paint(0xffffff, { map: tx, hatch: 0 });
+  // a neat stack of four flat painting crates (two up, two across), square to one another and
+  // sat on a pair of timber skids — they used to be twisted and stacked crooked
+  const batten = paint(0xa87f4e), CW = 1.5, CH = 1.0, CD = 0.32;
+  for (const sx of [-1, 1]) g.add(new THREE.Mesh(rbox(0.12, 0.1, CD + 0.1, 0.02), batten).translateX(sx * 1.25).translateY(0.05));
+  for (const sz of [-1, 1]) g.add(new THREE.Mesh(rbox(3.3, 0.1, 0.1, 0.02), batten).translateY(0.05).translateZ(sz * 0.12));
   for (let i = 0; i < 4; i++) {
-    const cr = new THREE.Mesh(rbox(1.5, 1.0, 0.25, 0.04), wood);
-    cr.position.set((i % 2) * 1.6 - 0.8, 0.5 + Math.floor(i / 2) * 1.02, (i % 2) * 0.1); cr.rotation.y = (i - 1.5) * 0.06; g.add(cr);
-    const l = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.6), lab); l.position.set(cr.position.x, cr.position.y, cr.position.z + 0.13); l.rotation.y = cr.rotation.y; l.userData.noInk = true; g.add(l);
+    const x = (i % 2 ? 1 : -1) * (CW / 2 + 0.02), y = 0.1 + CH / 2 + Math.floor(i / 2) * (CH + 0.02);
+    const cr = new THREE.Group(); cr.position.set(x + (i === 3 ? 0.03 : 0), y, 0); g.add(cr);
+    cr.add(new THREE.Mesh(rbox(CW, CH, CD, 0.03), wood));
+    for (const bx of [-1, 1]) cr.add(new THREE.Mesh(rbox(0.1, CH + 0.02, 0.04, 0.012), batten).translateX(bx * (CW / 2 - 0.05)).translateZ(CD / 2 + 0.01));   // corner battens
+    for (const by of [-1, 1]) cr.add(new THREE.Mesh(rbox(CW - 0.2, 0.08, 0.04, 0.012), batten).translateY(by * (CH / 2 - 0.04)).translateZ(CD / 2 + 0.01));
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.52), lab); l.position.z = CD / 2 + 0.035; l.userData.noInk = true; cr.add(l);
   }
-  // the splintered corner shows gilt
-  g.add(new THREE.Mesh(rbox(0.2, 0.2, 0.08, 0.02), paint(PAL.gold)).translateX(0.05).translateY(1.0).translateZ(0.15));
+  // the splintered top corner of the top-right crate shows gilt underneath
+  g.add(new THREE.Mesh(rbox(0.22, 0.16, 0.1, 0.02), paint(PAL.gold)).translateX(1.48).translateY(0.1 + 2 * CH + 0.02 - 0.1).translateZ(CD / 2 - 0.02));
   g.add(blobShadow(1.8, 0.6));
   return ink(g, 'fine');
 }
@@ -365,7 +373,7 @@ export function buildCase(scene, W) {
     items.push({ kind: 'clue', id: 'bike', dir: bd, obj: b }); }
   // the harbour crates and the station ticket
   // the crates stand on the quay's west end, clear of the boathouse and the walk to the pier, label to the road
-  { const d = W.siteAt('harbour', HARBOUR.crates), f = W.siteAt('harbour', HARBOUR.cratesFace); const c = crates(); place(c, d, yawToFace(d, f));
+  { const d = W.siteAt('harbour', HARBOUR.crates), f = W.siteAt('harbour', HARBOUR.cratesFace); const c = crates(); place(c, d, yawToFace(d, f)); c.position.setLength(standAt(d));   /* on the quay's top, not the terrain under it */
     c.updateWorldMatrix(true, true);
     items.push({ kind: 'clue', id: 'crates', dir: d, obj: c, glintAt: c.localToWorld(new THREE.Vector3(0, 2.5, 0.2)) });   // the sparkle over the stack, not inside it
     for (const x of [-0.85, 0.85]) W.solid(c.localToWorld(new THREE.Vector3(x, 0, 0)).normalize(), 0.75); }

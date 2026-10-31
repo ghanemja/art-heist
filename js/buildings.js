@@ -888,15 +888,16 @@ export function townBlock(o = {}) {
   K.box(w + 0.1, 0.14, d + 0.1, trim, 0, 1.42, 0, 0.05);
   for (let y = 1.4 + 1.7; y < h - 0.5; y += 1.7) K.box(bw + 0.05, 0.06, bd + 0.05, trim, 0, y, 0, 0.02);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) K.box(0.16, h - 1.5, 0.16, trim, sx * bw / 2, 1.45 + (h - 1.5) / 2, sz * bd / 2, 0.03);
-  // cornice and brackets on all four faces, then the parapet
+  // the parapet, then the cornice and brackets on all four faces capping it: the cornice is
+  // the roofline (it used to sit under a band of bare parapet, so the trim read as too low)
   for (let k = 0; k < 4; k++) {
-    const along = k % 2 ? bd : bw, F = K.sub(Math.sin(k * Math.PI / 2) * bw / 2, h - 0.24, Math.cos(k * Math.PI / 2) * bd / 2, k * Math.PI / 2);
+    const along = k % 2 ? bd : bw, F = K.sub(Math.sin(k * Math.PI / 2) * bw / 2, h + 0.04, Math.cos(k * Math.PI / 2) * bd / 2, k * Math.PI / 2);
     F.put(prism(CORNICE, along + 0.4), trim, 0, 0, 0);
     const nb = Math.max(2, Math.round(along / 0.55));
     for (let b = 0; b < nb; b++) F.put(prism(BRACKET, 0.07), trim, -along / 2 + 0.2 + b * (along - 0.4) / (nb - 1), -0.17, 0);
   }
   K.box(bw, 0.26, bd, wall, 0, h + 0.13, 0, 0.03);
-  K.box(bw + 0.06, 0.05, bd + 0.06, trim, 0, h + 0.28, 0, 0.02);
+  K.box(bw - 0.02, 0.04, bd - 0.02, paint(shade(col, 0.82)), 0, h + 0.27, 0, 0.01);   // the flat roof, inside the cornice
   if (h > 4.5) {
     const cw = w * 0.56, cd = d * 0.56;
     K.box(cw, 0.85, cd, wall, 0, h + 0.68, 0, 0.06);
