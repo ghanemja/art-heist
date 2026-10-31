@@ -1,9 +1,10 @@
 [build]
   publish = "."
-  # Gate builds on the main character: a missing/invalid critic.glb fails the
-  # build so it can't ship empty. (Runs on git-connected builds and on
+  # Netlify deploys every push to main. Gate it: a missing/invalid critic.glb or real-model
+  # asset fails the build so it can't ship empty, and every js/ module must be in
+  # index.html's import map with main.js's cache token (scripts/check-modules.mjs). (Runs on git-connected builds and on
   # `netlify deploy --build`; the manual path is guarded by ./deploy.sh.)
-  command = "node scripts/validate-critic.mjs"
+  command = "node scripts/validate-critic.mjs && node scripts/validate-assets.mjs && node scripts/check-modules.mjs"
 
 # the game used to live at /v2/ — it's the main app at / now
 [[redirects]]

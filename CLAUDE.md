@@ -1,6 +1,6 @@
 # art-heist — a tiny planet (live at https://art-heist.netlify.app)
 
-A browser 3D scene (three.js r160, plain ES modules, no build step). Deploy is manual Netlify.
+A browser 3D scene (three.js r160, plain ES modules, no build step). **Netlify deploys every push to `main` automatically** — anything pushed there is live, so test before pushing.
 
 **The main app** — "The Vanishing Gallery": `index.html` at the site root loads
 `js/main.js`; its code is in `js/`, its fonts in `fonts/` (it used to live under `v2/`;
@@ -96,9 +96,9 @@ terrain under it — the curve, and any levelled plane or slope — then inks). 
 - **Log every feature request** the user makes for this project in
   [`FEATURE_LOG.md`](FEATURE_LOG.md) — append each one as it arrives, with a
   status marker. Keep it current across chats.
-- **Redeploy to Netlify after every finished feature request.** Run `./deploy.sh`
-  (validates the main character, then `netlify deploy --prod`). A feature isn't
-  done until it's live.
+- **`main` is live.** Netlify builds and publishes every push to `main` (the build runs
+  `validate-critic`, `validate-assets` and `check-modules`; see netlify.toml). A feature is
+  done once it's merged to `main` and the build passes. `./deploy.sh` is the manual fallback.
 - **Bump the cache token** on every edit, or the browser ships stale JS: `js/main.js?cb=NN` (index.html's import map gives every `js/` module the same token; `deploy.sh` syncs them to main.js's)
   in `index.html` (the main app), `planet.js?cb=pNN` in `classic.html` (the classic game).
-- Deploy is manual — `git push` does NOT publish.
+- Work in progress goes on its own branch; only tested, finished work is merged to `main`.

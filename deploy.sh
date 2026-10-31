@@ -11,15 +11,8 @@ node scripts/validate-critic.mjs
 echo "→ validating real-model assets…"
 node scripts/validate-assets.mjs
 
-echo "→ syncing every module's cache token to main.js's…"
-# index.html's import map gives each js/ module main.js's ?cb token, so a deploy never mixes
-# fresh and stale files in someone's browser cache
-CB=$(grep -o 'main.js?cb=[0-9]*' index.html | head -1 | cut -d= -f2)
-sed -i.bak -E "s#(\"\./js/[a-z]+\.js\": \"\./js/[a-z]+\.js\?cb=)[0-9]+#\1${CB}#g" index.html && rm -f index.html.bak
-
-for f in js/*.js; do [ "$f" = js/main.js ] && continue
-  grep -q "\"./$f\": \"./$f?cb=" index.html || { echo "✗ $f has no entry in index.html's import map (add \"./$f\": \"./$f?cb=$CB\")"; exit 1; }
-done
+echo "→ checking the import map…"
+node scripts/check-modules.mjs
 
 echo "→ deploying to art-heist.netlify.app…"
 netlify deploy --prod --dir . --site c1677cd8-337d-4500-879c-3aed0433fe67
