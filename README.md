@@ -49,3 +49,9 @@ it picks light mode there. `perf-measure.mjs` pins the full drawing unless you p
 `"&quality=low"`; run `smoke.mjs` with `QUERY='&quality=high'` as well as without.
 
 Working rules for this repo are in `CLAUDE.md` and `AGENTS.md`; deployment is in `DEPLOY.md`.
+
+## License
+
+Copyright (c) 2026 Janelle Ghanem. **All rights reserved.** The code, story, characters and
+paintings may not be copied, modified or redistributed without written permission. Third-party
+components (three.js, the fonts, the 3D models) keep their own licences. See [LICENSE](LICENSE).
