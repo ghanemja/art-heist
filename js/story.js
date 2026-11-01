@@ -82,7 +82,7 @@ export const PEOPLE = [
 // each rut a thin strip draped over the ground point by point once it's placed (dropRuts):
 // laid flat as one long box it sank into the slope behind the museum and only stubs showed
 function ruts() { const g = new THREE.Group(); g.userData.rutXs = [-0.9, -0.62, 0.62, 0.9]; return g; }
-const RUT_MAT = paint(0x8a6a52, { hatch: 0 });
+const RUT_MAT = paint(0x8a6a52, { hatch: 0, unique: true });   // (its own: the offset below must not reach other soil)
 RUT_MAT.side = THREE.DoubleSide; RUT_MAT.polygonOffset = true; RUT_MAT.polygonOffsetFactor = -6; RUT_MAT.polygonOffsetUnits = -6;
 function dropRuts(g, L = 3.4, W = 0.22, N = 48) {
   g.updateWorldMatrix(true, true);
