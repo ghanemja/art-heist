@@ -1,5 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
+import './raygrid.js';             // (raycasts against big meshes walk a grid of their triangles, not every one)
 import { R, buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, groundAt, isWater, nearestRoad, paintRoadMarkings, buildRoadSurface, LAMPS, collectLamps } from './world.js';
 import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
