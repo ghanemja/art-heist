@@ -124,12 +124,21 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
   // ════════════════════════ THE POOL ════════════════════════
   const cr = club.root, P = club.pool, water = club.water, U = water?.material.uniforms;
   // pool-local (x, z: from the pool's centre, in the club's frame) ↔ directions on the planet
-  const toPool = (dir) => { cr.worldToLocal(_v.copy(dir).multiplyScalar(R)); return [_v.x - P.x, _v.z - P.z]; };
+  // (toPool: where the ray from the planet's centre along `dir` crosses the club's level plane,
+  // so it undoes fromPool exactly. It used to take the point at radius R, but the club sits on
+  // ground a little off R, which scaled every position ~1% out from the pool's middle each
+  // frame: a drift toward the wall that, at the pool's far end, outran her stroke and pinned her)
+  const _c0 = new THREE.Vector3();
+  const toPool = (dir) => {
+    cr.worldToLocal(_c0.set(0, 0, 0)); cr.worldToLocal(_v.copy(dir).multiplyScalar(R));
+    const t = -_c0.y / (_v.y - _c0.y);
+    return [_c0.x + (_v.x - _c0.x) * t - P.x, _c0.z + (_v.z - _c0.z) * t - P.z];
+  };
   const fromPool = (x, z, out = new THREE.Vector3()) => cr.localToWorld(out.set(P.x + x, 0, P.z + z)).normalize();
   const thOf = poolTh;                             // the angle round the kidney that poolEdge takes
   const surfR = (dir) => radiusAt(dir) + 0.03;     // the water lies 0.03 over the ground there (north.js)
   const IN = -0.2;                                 // she keeps this far inside the coping
-  const swim = { k: 0, c: 0, v: 0, tr: 0, dirn: 0, from: new THREE.Vector3(), to: new THREE.Vector3(), splashT: 0 };
+  const swim = { k: 0, c: 0, v: 0, tr: 0, dirn: 0, side: 1, wallT: 0, from: new THREE.Vector3(), to: new THREE.Vector3(), splashT: 0 };
   const doorDir = new THREE.Vector3();
   game.doors.push({
     get dir() {                                    // the nearest point of the pool's edge to her
@@ -174,37 +183,65 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
   function updateSwim(dt, t) {
     const inst = critic(); if (!inst?.bones?.head) return;
     const up = st.dir;
-    // steering: like walking — relative to the camera's facing, which trails her heading
-    let ix = (keyDown('KeyD', 'ArrowRight') ? 1 : 0) - (keyDown('KeyA', 'ArrowLeft') ? 1 : 0);
-    let iy = (keyDown('KeyW', 'ArrowUp') ? 1 : 0) - (keyDown('KeyS', 'ArrowDown') ? 1 : 0);
+    // steering: W / ↑ swims forward the way she faces, A / D turn her, S lets her tread water.
+    // (Camera-relative steering, as on foot, kept pulling her back toward wherever the camera
+    // pointed — into the wall she'd just reached.) On touch the stick's y swims, its x turns.
+    let turnIn = (keyDown('KeyD', 'ArrowRight') ? 1 : 0) - (keyDown('KeyA', 'ArrowLeft') ? 1 : 0);
+    let fwdIn = keyDown('KeyW', 'ArrowUp') ? 1 : 0;
     const sm = Math.hypot(st.stick.x, st.stick.y);
-    if (!ix && !iy && sm > 0.2) { ix = st.stick.x; iy = st.stick.y; }
-    st.camFwd.projectOnPlane(up).normalize();
-    const f = st.camFwd, r = _w.crossVectors(f, up).normalize();
+    if (!turnIn && !fwdIn && !keyDown('KeyS', 'ArrowDown') && sm > 0.2) { turnIn = st.stick.x; fwdIn = Math.max(0, -st.stick.y) > 0.25 ? Math.min(1, -st.stick.y / 0.8) : 0; }
     let want = 0;
-    if (swim.dirn === 0 && (ix || iy)) {
-      _v.copy(f).multiplyScalar(iy).addScaledVector(r, ix).normalize();
-      const da = Math.atan2(_a.crossVectors(st.heading, _v).dot(up), st.heading.dot(_v));
-      st.heading.applyAxisAngle(up, da * (1 - Math.exp(-3.2 * dt))).normalize();
-      want = 0.95 * (sm > 0.2 ? Math.min(1, sm / 0.8) : 1);
+    if (swim.dirn === 0) {
+      if (turnIn) st.heading.applyAxisAngle(up, -turnIn * (fwdIn ? 1.6 : 2.0) * dt).normalize();   // (D turns her right)
+      if (fwdIn) want = 0.95 * fwdIn;
     }
     swim.k += ((want ? 1 : 0) - swim.k) * (1 - Math.exp(-2.5 * dt));
     swim.c = (swim.c + dt * (0.32 + 0.38 * swim.k)) % 1;
     // the stroke pushes her on: fastest just after the kick, gliding after
     const surge = swim.k > 0.05 ? 0.45 + 1.1 * Math.max(0, Math.sin((swim.c - 0.55) * Math.PI * 2)) : 0;
     swim.v += (want * surge - swim.v) * (1 - Math.exp(-3 * dt));
+    swim.wallT -= dt;
     if (swim.dirn === 0 && swim.v > 1e-3) {
-      const nd = _a.copy(st.dir).multiplyScalar(R).addScaledVector(st.heading, swim.v * dt).normalize();
-      let [x, z] = toPool(nd);
-      if (!poolIn(x, z, IN)) { const [ex, ez] = poolEdge(thOf(x, z), IN); x = ex; z = ez; swim.v *= 0.5; }
+      const [x0, z0] = toPool(st.dir);
+      const [x1, z1] = toPool(_a.copy(st.dir).multiplyScalar(R).addScaledVector(st.heading, swim.v * dt).normalize());
+      let mx = x1 - x0, mz = z1 - z0, x = x1, z = z1;
+      if (!poolIn(x, z, IN)) {
+        // at the wall: the stroke loses only the part going into it, and she turns away from it.
+        // (Before, she was clamped to the edge, her speed halved every frame and her heading left
+        // pointing at the wall: on the kidney's tight ends she stuck there, jittering)
+        const th = thOf(x0, z0), [ax, az] = poolEdge(th - 0.02, IN), [bx, bz] = poolEdge(th + 0.02, IN), [ex, ez] = poolEdge(th, IN);
+        let tx = bx - ax, tz = bz - az; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+        let nx = tz, nz = -tx; if (nx * ex + nz * ez < 0) { nx = -nx; nz = -nz; }   // (outward)
+        const sp = Math.hypot(mx, mz) || 1e-6;
+        const out = (mx * nx + mz * nz) / sp;
+        if (swim.wallT <= 0) swim.side = Math.sign((mx * tx + mz * tz) / sp + 1e-3);   // (which way along the wall: picked on touching it, then kept)
+        swim.wallT = 0.6;
+        // she turns off the wall: along it and back out toward open water, so she curves away and
+        // swims on (rather than nosing along it into the kidney's tight ends)
+        let hx = tx * swim.side * 0.7 - nx * 0.7, hz = tz * swim.side * 0.7 - nz * 0.7;
+        const hl = Math.hypot(hx, hz); hx /= hl; hz /= hl;
+        // this stroke: whatever doesn't go into the wall
+        if (out > 0) { x = x0 + mx - out * sp * nx; z = z0 + mz - out * sp * nz; }
+        if (!poolIn(x, z, IN)) { const [qx, qz] = poolEdge(thOf(x, z), IN - 0.005); x = qx; z = qz; }
+        // and she turns that way
+        const hw = fromPool(x0 + hx * 0.2, z0 + hz * 0.2, _b).sub(fromPool(x0, z0, _w)).projectOnPlane(st.dir).normalize();
+        const da = Math.atan2(_v.crossVectors(st.heading, hw).dot(up), st.heading.dot(hw));
+        st.heading.applyAxisAngle(up, da * (1 - Math.exp(-6 * dt))).normalize();
+      }
       // the swimmer doing lengths: she keeps her lane, and so does the critic — no swimming through her
       const o = swimmerAt?.();
       if (o) { const dx = x - o[0], dz = z - o[1], d = Math.hypot(dx, dz); if (d < 0.46) { x = o[0] + dx / (d || 1) * 0.46; z = o[1] + dz / (d || 1) * 0.46; } }
-      if (poolIn(x, z, IN)) fromPool(x, z, st.dir);
+      // never lost outside the water (a push or a corner): back onto the line just inside the wall
+      if (!poolIn(x, z, IN)) {
+        const [ex, ez] = poolEdge(thOf(x, z), IN - 0.005); x = ex; z = ez;
+      }
+      fromPool(x, z, st.dir);
       st.heading.projectOnPlane(st.dir).normalize();
     }
     // the camera's facing eases round behind her while she swims forward
-    if (swim.v > 0.05) { const ang = Math.atan2(_a.crossVectors(st.camFwd, st.heading).dot(up), st.camFwd.dot(st.heading)); if (Math.cos(ang) > -0.3) st.camFwd.applyAxisAngle(up, ang * (1 - Math.exp(-1.2 * dt))); }
+    // (always, now that steering doesn't follow the camera: it used to give up when she faced it,
+    // so she swam toward the lens and her forward tip read as standing upright)
+    if (swim.dirn === 0) { const ang = Math.atan2(_a.crossVectors(st.camFwd, st.heading).dot(up), st.camFwd.dot(st.heading)); st.camFwd.applyAxisAngle(up, ang * (1 - Math.exp(-(swim.v > 0.05 ? 1.6 : 0.8) * dt))).normalize(); }
     // stepping in / climbing out
     let tr = 1;
     if (swim.dirn) {
