@@ -1422,12 +1422,17 @@ export function station() {
   K.box(PL, 0.06, 0.18, paint(0xf0d060), 0, PH + 0.005, pz0 - PD + 0.12, 0.01).userData.noInk = true;
   for (const s of [-1, 1]) K.put(wedge(1.2, PH, PD), paint(PAL.kerb), s * (PL / 2 + 0.6), 0, pz0 - PD / 2, [0, s > 0 ? 0 : Math.PI, 0]);
   const CH = 2.45, cz = pz0 - PD + 0.4;
-  K.box(PL - 0.6, 0.1, PD - 0.1, paint(0xe8ddc6), 0, PH + CH, pz0 - (PD - 0.1) / 2, 0.03, [-0.05, 0, 0]);
+  // (the canopy and its valance have their own materials, so they stay their own meshes when
+  // baked: they lift away while you're under them or in the train beside them, see main.js)
+  const canopyM = paint(0xe8ddc6, { unique: true }), fretM = paint(0xfffaf0, { unique: true });
+  K.box(PL - 0.6, 0.1, PD - 0.1, canopyM, 0, PH + CH, pz0 - (PD - 0.1) / 2, 0.03, [-0.05, 0, 0]);
   const fret = new THREE.Shape(); const fw = PL - 0.6, nT = Math.round(fw / 0.16);
   fret.moveTo(-fw / 2, 0); fret.lineTo(fw / 2, 0); fret.lineTo(fw / 2, -0.06);
   for (let k = 0; k < nT; k++) { const x0 = fw / 2 - k * fw / nT; fret.lineTo(x0 - fw / nT / 2, -0.24); fret.lineTo(x0 - fw / nT, -0.06); }
   fret.lineTo(-fw / 2, 0);
-  K.put(extrude(fret, 0.02, 0.006, 4), trim, 0, PH + CH - 0.07, pz0 - PD + 0.02);
+  K.put(extrude(fret, 0.02, 0.006, 4), fretM, 0, PH + CH - 0.07, pz0 - PD + 0.02);
+  K.g.userData.roofMats = K.g.userData.canopyMats = [canopyM, fretM];   // (roofMats: bake keeps them apart, their outlines with them)
+  K.g.userData.canopyArea = { x0: -PL / 2 - 0.6, x1: PL / 2 + 0.6, z0: STATION_TRACK.z - 1.6, z1: pz0 + 0.15 };   // (platform + the train beside it, station-local)
   for (let k = 0; k < 6; k++) {
     const x = -5.0 + k * 2.0;
     K.put(lathe([[0.001, 0], [0.1, 0], [0.1, 0.1], [0.05, 0.16], [0.04, CH - 0.25], [0.07, CH - 0.18], [0.08, CH - 0.1], [0.001, CH - 0.1]], 12), iron, x, PH, cz);

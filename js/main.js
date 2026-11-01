@@ -147,6 +147,8 @@ function loop() {
   if (town.train) {
     const st = player.st, inT = st.mode === 'walk' && town.train.inside(st.dir);
     for (const r of town.train.roofs) r.visible = !inT;
+    // …and the platform canopy over it (and over you on the platform): it hid her from the camera
+    if (town.stationCanopy) { const under = st.mode === 'walk' && (inT || town.stationCanopy.inside(st.dir)); for (const m of town.stationCanopy.meshes) m.visible = !under; }
     if (inT) { if (st.prePitch == null) st.prePitch = st.camPitch; st.camPitch += (0.85 - st.camPitch) * (1 - Math.exp(-3 * dt)); }
     else if (st.prePitch != null) { st.camPitch += (st.prePitch - st.camPitch) * (1 - Math.exp(-3 * dt)); if (Math.abs(st.camPitch - st.prePitch) < 0.01) st.prePitch = null; }
   }
