@@ -3,7 +3,7 @@
 // reserves its ground before any road is laid, roads bend around reserved
 // ground, and nothing may be built on anything (see CLAUDE.md).
 import * as THREE from 'three';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import PLAN, { R, R_PLAN } from './manifest.js';
 import { PAL, paint, ink } from './style.js';
 export { R };

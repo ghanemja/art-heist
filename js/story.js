@@ -4,7 +4,7 @@
 // you think you know, you name someone and back it with two things you found.
 import * as THREE from 'three';
 import { crumpledTicket } from './ticket.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { HARBOUR } from './harbour.js';
 import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt, onRoad, nearestRoad } from './world.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';

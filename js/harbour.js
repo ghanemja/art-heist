@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { R, frame, flatten, reserve, alignToSurface, yawToFace, addFloor, SEA } from './world.js';
 import { PAL, paint, ink, mergeStatic } from './style.js';
 import { rbox, lathe, lamp } from './props.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 
 const OFF = [2, 2.5];                 // the quay's centre in the site frame
 const LAND = 0.45;                    // the levelled land's height
