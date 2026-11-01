@@ -1697,7 +1697,9 @@ function bake(g, roots = [g]) {
     if (o.userData.lampMark) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); lamps.push([fp.x, fp.z, o.userData.lampMark]); }
     if (o.userData.foot) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); foots.push([fp.x, fp.z, o.userData.foot]); return; }
     if (!o.isMesh || o.userData.isInk) return;
-    const geo = o.geometry.clone().applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
+    // (copied into a plain BufferGeometry: clone() first builds a default-sized geometry of the
+    // part's own type — a whole rounded box, sphere or tube — only to overwrite it; the data is the same)
+    const geo = new THREE.BufferGeometry().copy(o.geometry).applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
     // (noGround: a prop the walker must not stand on — a hedge, a bench, a planter — keeps that
     // flag on its merged mesh; a draped surface's polygon offset — its layer over the ground and
     // the paving it meets — survives the merge into vertex colours)
