@@ -168,7 +168,35 @@ export function buildFootpaths(scene, town) {
       [-8.35, 8.3, 0.34], [-8.0, 10.1, 0.34], [A.x + 0.2, A.z - 1.6, 0.34], [A.x, A.z, 0.34], [A.x + 0.25, A.z + 1.6, 0.34],
       [A.x + 1.3, A.z + 2.35, 0.33], [A.x + 2.8, A.z + 2.2, 0.33], ...(kT ? runIn(kT, 0.32) : [])],
   ].filter(Boolean);
-  const chains = ctrl.map((c) => sampleChain(c.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 0.05)));
+  // the world gets re-planned under these paths (the planet's size, trees moved): rather than trust
+  // the waypoints, each path is nudged clear of every collider (trees, lamps, posts) and reserved
+  // zone near it. Only waypoints out on the grass move; the ends that meet a kerb stay put, square
+  const cols = town.colliders.filter(c => arc(c.dir, c0) < 26).map(c => [...Lc(c.dir), c.r]);
+  const zoneXY = ZONES.filter(zz => zz.key !== 'park' && zz.key !== 'meadow' && arc(zz.dir, c0) < 34).map(zz => [...Lc(zz.dir), zz.r]);
+  const clearOf = (c) => {
+    const fixed = (k) => k < 2 || k >= c.length - 3 || Math.hypot(c[k][0], c[k][1]) < EDGE + 0.3;
+    for (let it = 0; it < 16; it++) {
+      const ch = sampleChain(c); let moved = false;
+      const nudge = (px, pz, dx, dz, by) => {                       // the free waypoint nearest the trouble moves
+        let ki = -1, kd = 1e9;
+        c.forEach((q, k) => { if (fixed(k)) return; const d = Math.hypot(q[0] - px, q[1] - pz); if (d < kd) { kd = d; ki = k; } });
+        if (ki < 0 || kd > 2.5) return;
+        const l = Math.hypot(dx, dz) || 1; c[ki][0] += dx / l * by; c[ki][1] += dz / l * by; moved = true;
+      };
+      for (const [cx, cz, cr] of cols) {
+        let bi = -1, bd = 1e9;
+        ch.forEach((p, i) => { const d = Math.hypot(p[0] - cx, p[1] - cz) - p[2]; if (d < bd) { bd = d; bi = i; } });
+        if (bd < cr + 0.15) nudge(ch[bi][0], ch[bi][1], ch[bi][0] - cx, ch[bi][1] - cz, cr + 0.2 - bd);
+      }
+      for (const [zx, zz, zr] of zoneXY) for (const p of ch) {
+        const d = Math.hypot(p[0] - zx, p[1] - zz) - zr - p[2];
+        if (d < 0.1) { nudge(p[0], p[1], p[0] - zx, p[1] - zz, 0.15 - d); break; }
+      }
+      if (!moved) break;
+    }
+    return c;
+  };
+  const chains = ctrl.map((c) => sampleChain(clearOf(c.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 0.05).map(p => p.slice()))));
   const discs = [{ x: A.x, z: A.z, r: 1.42 }, NOOK];
   const caps = [kW, kWf, kN, kS, kT].filter(Boolean).map(apron);
   // (nothing may be laid on reserved ground: other than the park and the meadow, the field stops
