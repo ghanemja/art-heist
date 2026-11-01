@@ -13,7 +13,7 @@ import { loadHuman, makeHuman, pose, sit, LOOKS, HUMAN_SCALE } from './human.js'
 
 const UP = new THREE.Vector3(0, 1, 0);
 const MODES = {
-  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.88, radius: 0.3, follow: 1.4 },
+  walk: { max: 3.4, accel: 9, turn: 10, camD: 5.6, camH: 2.2, look: 0.88, radius: 0.3, follow: 2.6 },
   jeep: { max: 11, accel: 6, turn: 2.4, camD: 9.5, camH: 3.6, look: 1.2, radius: 0.8, follow: 3.0 },
   boat: { max: 5.5, accel: 2.2, turn: 1.5, camD: 8.0, camH: 3.0, look: 0.9, radius: 0.7, follow: 2.2 },
 };
@@ -530,7 +530,11 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
     const ang = Math.atan2(_w.crossVectors(st.camFwd, st.heading).dot(up), st.camFwd.dot(st.heading));
     const moving = Math.min(1, Math.abs(st.speed) / 2), ca = Math.cos(ang);
     let follow = st.mode !== 'walk' ? M.follow * moving
-      : (st.dragT > 1.2 ? M.follow * moving * (ca > 0 ? 0.35 + 0.65 * ca : ca > -0.35 ? 0.25 : 0) : 0);
+      : (st.dragT > 1.2 ? M.follow * moving * (ca > 0 ? 0.35 + 0.65 * ca : ca > -0.35 ? 0.14 : 0) : 0);
+    // (on foot it turns with her as she walks forward or on a diagonal — rate 2.6, was 1.4 and felt
+    // like it lagged behind her turns. Walking straight sideways it still only drifts (0.14 × 2.6,
+    // about what it was): the keys steer relative to the camera, so a camera that chased a sideways
+    // walk would send her round in a circle)
     if (st.recenter > 0) { st.recenter -= dt; follow = Math.max(follow, 7); }
     if (follow) st.camFwd.applyAxisAngle(up, ang * (1 - Math.exp(-follow * dt)));
     st.zoom += (st.zoomT - st.zoom) * (1 - Math.exp(-8 * dt));
