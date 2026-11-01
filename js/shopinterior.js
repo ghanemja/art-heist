@@ -13,7 +13,7 @@
 //  · the room's own soft sound (audio.setRoom) and a warm vignette over the view
 import * as THREE from 'three';
 import { paint, ink } from './style.js';
-import { radiusAt } from './world.js';
+import { R, radiusAt } from './world.js';
 import { audio } from './audio.js';
 
 const SH = { W: 5.6, D: 4.6, H: 3.0, FY: 0.16 };       // must match buildings.js projectShop's shell
@@ -235,7 +235,7 @@ export function createShopInteriors(scene, shops, { player, game, colliders }) {
     return S;
   });
   const _p = new THREE.Vector3(), cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false };
-  const local = (S, dir) => S.lm.root.worldToLocal(_p.copy(dir).multiplyScalar(40));
+  const local = (S, dir) => S.lm.root.worldToLocal(_p.copy(dir).multiplyScalar(R));
   const backDir = (S) => S.door.W(0, -5).sub(st.dir).projectOnPlane(st.dir).normalize();
   const fadeDo = (fn) => {
     busy = true; st.enabled = false; fade.style.opacity = '1';

@@ -19,8 +19,9 @@
 // things keep their place in the scene (raycasts against the town's statics never
 // test layers, so the walk rays still find the ground).
 import * as THREE from 'three';
+import { R } from './manifest.js';
 
-const P = 39.2;                       // a ball safely inside the lowest ground and the sea
+const P = R - 0.8;                    // a ball safely inside the lowest ground and the sea
 const HIDE = 31;                      // the layer a hidden thing is parked on
 const MIN_PX = 1.1;                   // smaller than this radius on screen (px): not drawn
 const LOD_PX = 45;                    // a person under this height on screen: no small parts
@@ -32,6 +33,7 @@ const _c = new THREE.Vector3(), _box = new THREE.Box3(), _s = new THREE.Sphere()
 // nearest point, is under LOD_TOL pixels (√3 × grid: the furthest a vertex can move)
 const LOD_CELLS = [0.003, 0.0065, 0.014, 0.03, 0.065, 0.14];
 const LOD_TOL = 1.0;                  // px (device pixels): a vertex moved less than this (the worst case) can't be seen
+let LOD_NOW = /[?&]lodnow=1/.test(globalThis.location?.search || '');     // (dev: ?lodnow=1, or culler.lodNow = true, rebuilds a patched mesh the moment it changes — to compare)
 const LOD_MIN_TRIS = 240;             // a mesh smaller than this isn't worth simplifying
 const LOD_KEEP = 0.8;                 // a version is kept only if it's at most this share of the last one
 const LOD_KEEP_PATCHED = 0.7;         // (a patched mesh keeps every version in the JS heap — it rebuilds from them: fewer, further apart)
@@ -40,6 +42,8 @@ const _lod = new WeakMap();           // geometry → [{ cw, geo }] its simpler 
 const _scale = new WeakMap();         // geometry → world units per geometry unit (the first mesh seen drawing it)
 const _queue = [];                    // geometries waiting for their versions
 const _freeArr = function () { this.array = null; };
+const PRIME = 30;                     // the layer prime() draws on
+const _primeMat = new THREE.ShaderMaterial({ vertexShader: 'void main() { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }', fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }' });
 function _rayHi(raycaster, hits) {
   const g = this.geometry; this.geometry = g.userData.lodOf || g;
   try { THREE.Mesh.prototype.raycast.call(this, raycaster, hits); } finally { this.geometry = g; }
@@ -175,12 +179,14 @@ function cellIds(P, used, n, x0, y0, z0, cell, grp, cl) {
 // with each patch's ball
 const CHUNK = 2.0;
 const _chunky = new WeakSet();
+const _wide = new WeakSet();          // (the planet and the sea: patches three times as wide — thousands fewer to test each frame)
+const _keepOrder = new WeakSet();     // (a mesh that labels its triangles by their order — the road sheet's triPart — keeps its index as it is)
 // geometries whose meshes never raycast through what they draw (a hull, a static thing whose
 // ground rays go through gpuOnly's copy, people and cars — never ground, and the talk camera reads
 // the whole shape): their simpler versions' indices leave the JS heap once on the GPU (see prime)
 const _rayless = new WeakSet();        // geometries drawn by a big static mesh (set when it's collected)
 function chunksOf(g, P, I, ni, scale, IDX) {
-  const cell = CHUNK / scale, nt = ni / 3, at = I ? (k) => I[k] : (k) => k;
+  const cell = CHUNK * (_wide.has(g) ? 3 : 1) / scale, nt = ni / 3, at = I ? (k) => I[k] : (k) => k;
   const ids = new Map(), tc = new Uint32Array(nt); let nch = 0;
   for (let t = 0; t < nt; t++) {
     const a = at(t * 3) * 3, b = at(t * 3 + 1) * 3, c = at(t * 3 + 2) * 3;
@@ -205,7 +211,7 @@ function chunksOf(g, P, I, ni, scale, IDX) {
   }
   // (the whole version is drawn from the mesh's own index, reordered — unless that was let go)
   let hi = hs;
-  if (I && g.index?.array === I) { I.set(hs); hi = I; }
+  if (I && g.index?.array === I && !_keepOrder.has(g)) { I.set(hs); hi = I; }
   return { chunked: true, n: nch, C, hi, off, lv: [] };
 }
 
@@ -265,6 +271,8 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         const big = !q.isSkinnedMesh && !person && !o.userData.noGround && _lod.get(q.geometry) === null &&
           q.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) > CHUNK * 0.9 && (q.geometry.index ? q.geometry.index.count : q.geometry.attributes.position.count) >= 3000;
         if (big) _chunky.add(q.geometry);
+        if (q.userData.triPart) _keepOrder.add(q.geometry);
+        if (huge) _wide.add(q.geometry);
         if (huge && !_chunky.has(q.geometry)) return;
         if (_lod.get(q.geometry) === null) { if (q.raycast !== THREE.Mesh.prototype.raycast || o.userData.noGround) _rayless.add(q.geometry); else _rayless.delete(q.geometry); }
         lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person });
@@ -296,15 +304,15 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       for (let c = 0; c < n; c++) { _w.set(ch.C[c * 4], ch.C[c * 4 + 1], ch.C[c * 4 + 2]).applyMatrix4(m.matrixWorld); L.wc[c * 4] = _w.x; L.wc[c * 4 + 1] = _w.y; L.wc[c * 4 + 2] = _w.z; L.wc[c * 4 + 3] = ch.C[c * 4 + 3] * L.ws; }
     }
     if (!L.dyn) {
-      L.cc = new Int8Array(n).fill(-9);
+      L.cc = new Int8Array(n).fill(-9); L.built = new Int8Array(n).fill(-2);
       const dyn = new THREE.BufferGeometry();
       for (const [name, a] of Object.entries(L.hi.attributes)) dyn.setAttribute(name, a);
-      dyn.setIndex(new THREE.BufferAttribute(new ch.hi.constructor(ch.hi.length), 1).setUsage(THREE.DynamicDrawUsage));
+      dyn.setIndex(new THREE.BufferAttribute(new ch.hi.constructor(ch.hi.length), 1).setUsage(THREE.DynamicDrawUsage));   // (full size from the start: the GPU buffer is made to it)
       dyn.boundingSphere = L.hi.boundingSphere; dyn.boundingBox = L.hi.boundingBox; dyn.userData.lodOf = L.hi;
       L.dyn = dyn; m.geometry = dyn;
       if (m.raycast === THREE.Mesh.prototype.raycast) m.raycast = _rayHi;   // (its rays read its whole shape: the patches' index comes and goes)
     }
-    const W = L.wc, cc = L.cc, lv = ch.lv; let dirty = false;
+    const W = L.wc, cc = L.cc, lv = ch.lv; let dirty = false, urgent = cc[0] === -9 || LOD_NOW || hz.jump;
     for (let c = 0; c < n; c++) {
       _w.set(W[c * 4] - eye.x, W[c * 4 + 1] - eye.y, W[c * 4 + 2] - eye.z);
       const d = Math.max(1e-3, _w.length()), r = W[c * 4 + 3];
@@ -317,9 +325,24 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         for (let i = lv.length - 1; i >= 0; i--) if (lv[i].cw * px <= (i > cc[c] ? LOD_TOL / 1.15 : LOD_TOL)) { k = i; break; }
       }
       if (k !== cc[c]) { cc[c] = k; dirty = true; }
+      // (a patch in the view itself that the index doesn't hold yet can't wait; everything else —
+      // one leaving, one just past the edge, a change of version — waits its turn: see rebuild)
+      if (k !== -2 && L.built[c] === -2 && hz.view.intersectsSphere(_s)) urgent = true;
     }
-    if (!dirty) return;
-    const ia = L.dyn.index, out = new ch.hi.constructor(ch.hi.length); let w = 0;
+    if (!dirty && !(urgent && L.queued)) return;
+    if (urgent) rebuild(L, ch); else if (!L.queued) { L.queued = true; L.ch = ch; _later.push(L); }
+  }
+  // put a patched mesh's index together again from its patches' runs
+  function rebuild(L, ch) {
+    const cc = L.cc, lv = ch.lv, n = ch.n;
+    L.queued = false; L.built.set(cc);
+    const ia = L.dyn.index;
+    let any = false; for (let c = 0; c < n && !any; c++) if (cc[c] !== -2) any = true;
+    // (nothing of it in view: no new index — it'd wait in the heap till drawn — and not drawn at
+    // all, not even as an empty call)
+    if (!any) { L.dyn.setDrawRange(0, 0); if (!L.off) { L.off = true; if (L.m.userData._lay == null) L.m.userData._lay = L.m.layers.mask; L.m.layers.mask = 1 << HIDE; } return; }
+    if (L.off) { L.off = false; L.m.layers.mask = L.m.userData._lay; }
+    const out = new ch.hi.constructor(ch.hi.length); let w = 0;
     for (let c = 0; c < n; c++) {
       const k = cc[c]; if (k === -2) continue;
       const src = k < 0 ? ch.hi : lv[k].arr, of = k < 0 ? ch.off : lv[k].off;
@@ -352,7 +375,10 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
   // frame time, so the work still finishes in a few seconds)
   let busy = false, lastT = 0, frameMs = 16;
   // the horizon, and the view a little wider than the camera's (patches just out of it are kept ready)
-  const hz = { ok: false, alpha: 0, tang: 0, el: 0, near: new THREE.Frustum(), wide: new THREE.Frustum() }, _pm = new THREE.Matrix4();
+  const hz = { ok: false, alpha: 0, tang: 0, el: 0, view: new THREE.Frustum(), near: new THREE.Frustum(), wide: new THREE.Frustum() }, _pm = new THREE.Matrix4();
+  // patched meshes whose patches changed but nothing new came into view: a couple rebuilt a frame
+  // (turning on the spot used to rebuild every patched mesh in sight, every frame)
+  const _later = [];
   function work() {
     if (busy || !_queue.length) return;
     busy = true;
@@ -376,21 +402,23 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
   let primeK = -1;
   function prime() {
     if (!renderer || primeK < 0) return;
-    const k = primeK++, swapped = [], culled = [], mats = new Set();
+    const k = primeK++, swapped = [];
     for (const st of roots.values()) for (const L of st.lods) {
       const lv = L.levels || _lod.get(L.hi);
       if (L.dead || !lv || lv.chunked || !(lv.length > k)) continue;
-      swapped.push([L.m, L.m.geometry]); L.m.geometry = lv[k].geo;
+      const ix = lv[k].geo.index; if (!ix.array || ix.onUploadCallback !== _freeArr) continue;
+      swapped.push([L.m, L.m.geometry, L.m.layers.mask, L.m.frustumCulled]);
+      L.m.geometry = lv[k].geo; L.m.layers.set(PRIME); L.m.frustumCulled = false;
     }
     if (!swapped.length) { primeK = -1; return; }
-    const lay = camera.layers.mask; camera.layers.enableAll();
-    scene.traverse(o => { if (!o.isMesh) return; if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
-      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m?.visible) mats.add(m); });
-    for (const m of mats) m.visible = false;
+    // (an index is only sent up when it's drawn: these are, with a shader that puts every vertex
+    // outside the view — nothing reaches the screen — and nothing else on the camera's layer)
+    const lay = camera.layers.mask, over = scene.overrideMaterial;
+    camera.layers.set(PRIME); scene.overrideMaterial = _primeMat;
     try { renderer.render(scene, camera); }
     finally {
-      for (const m of mats) m.visible = true; for (const o of culled) o.frustumCulled = true;
-      camera.layers.mask = lay; for (const [m, g] of swapped) m.geometry = g;
+      scene.overrideMaterial = over; camera.layers.mask = lay;
+      for (const [m, g, l, fc] of swapped) { m.geometry = g; m.layers.mask = l; m.frustumCulled = fc; }
     }
   }
   return {
@@ -403,7 +431,11 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       const alpha = behindOK ? Math.asin(P / el) : 0, tang = behindOK ? Math.sqrt(el * el - P * P) : 0;
       hz.ok = behindOK; hz.alpha = alpha; hz.tang = tang; hz.el = el;
       camera.updateMatrixWorld();
-      for (const [fr, k] of [[hz.near, 1.2], [hz.wide, 1.4]]) {
+      // (a cut — the talk camera, a teleport — puts everything right at once; only a steady turn
+      // or walk spreads its rebuilds over the next frames)
+      hz.jump = !hz.lastQ || hz.lastP.distanceToSquared(e) > 2.25 || hz.lastQ.angleTo(camera.quaternion) > 0.35;
+      (hz.lastP ||= new THREE.Vector3()).copy(e); (hz.lastQ ||= new THREE.Quaternion()).copy(camera.quaternion);
+      for (const [fr, k] of [[hz.view, 1.05], [hz.near, 1.3], [hz.wide, 1.6]]) {
         const t = camera.near * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * k, w = t * camera.aspect;
         _pm.makePerspective(-w, w, t, -t, camera.near, camera.far).multiply(camera.matrixWorldInverse);
         fr.setFromProjectionMatrix(_pm);
@@ -426,9 +458,11 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         if (!hide && st.lods.length) pick(st, d, e, fd, hz);
       }
       const now = performance.now(); if (lastT) frameMs += (Math.min(1000, now - lastT) - frameMs) * 0.2; lastT = now;
+      for (let k = 0; (hz.jump || k < 2) && _later.length; k++) { const L = _later.shift(); if (L.queued && !L.dead) rebuild(L, L.ch); }
       work();
       prime();
     },
+    set lodNow(v) { LOD_NOW = !!v; },
     get lodPending() { return _queue.length + (primeK >= 0 ? 1 : 0); },
     get hiddenCount() { let k = 0; for (const s of roots.values()) if (s.hidden) k++; return k; },
     roots,

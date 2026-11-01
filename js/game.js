@@ -280,7 +280,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       parked.position.copy(player.root.position); parked.quaternion.copy(player.root.quaternion); parked.visible = true; seatParked();
       // step out beside the car
       const side = new THREE.Vector3().crossVectors(player.st.dir, player.st.heading).normalize();
-      player.st.dir.multiplyScalar(40).addScaledVector(side, 1.6).normalize();
+      player.st.dir.multiplyScalar(R).addScaledVector(side, 1.6).normalize();
       showKeys(); renderCase();
     }
   }
@@ -1029,8 +1029,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       // slow load or a first-frame stall would already have turned it on to the empty fields
       G.titleA = (G.titleA ?? 1.57) + dt * 0.05;
       const a = G.titleA;
-      camera.position.set(Math.sin(a) * 96, 30, Math.cos(a) * 96);
-      camera.up.set(0, 1, 0); camera.lookAt(0, 30, 0);
+      const k = R / 40;                                           // (framed for a radius-40 planet: the same framing at any size)
+      camera.position.set(Math.sin(a) * 96 * k, 30 * k, Math.cos(a) * 96 * k);
+      camera.up.set(0, 1, 0); camera.lookAt(0, 30 * k, 0);
       return true;
     }
     // glints bob gently so you notice them without being told

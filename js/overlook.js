@@ -3,7 +3,7 @@
 // Step up behind it and press E: the view narrows to the eyepiece's circle, aimed at the
 // town from high over the hill; drag (or the arrow keys / WASD) to look round, E or Esc to step back.
 import * as THREE from 'three';
-import { groundAt, slerpDir as slerp } from './world.js';
+import { R, groundAt, slerpDir as slerp } from './world.js';
 
 export function createTelescope({ town, game, player, camera }) {
   const T = town.roadside?.telescope;
@@ -28,7 +28,7 @@ export function createTelescope({ town, game, player, camera }) {
   const town0 = T.town.clone().normalize(), here = T.dir.clone().normalize();
   const span = here.angleTo(town0);
   const up = slerp(here, town0, 0.42);
-  const eye = up.clone().multiplyScalar(groundAt(up) + 7 + span * 40 * 0.35);
+  const eye = up.clone().multiplyScalar(groundAt(up) + 7 + span * R * 0.35);
   const aim = town0.clone().multiplyScalar(groundAt(town0)).sub(eye).normalize();
   const toTown = aim.clone().sub(up.clone().multiplyScalar(up.dot(aim))).normalize();
   const side = new THREE.Vector3().crossVectors(toTown, up).normalize();

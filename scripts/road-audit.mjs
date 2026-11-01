@@ -125,7 +125,7 @@ const res = await p.evaluate(async () => {
   V.scene.traverse(o => { if (o.isMesh && o.userData.roadPart && o.visible !== false) parts.push(o); });
   const tris = await Promise.all(parts.map(async o => {
     o.updateWorldMatrix(true, false);
-    const g = o.geometry, pos = g.attributes.position, idx = g.index, m = o.matrixWorld, v = new THREE.Vector3();
+    const g = o.geometry.userData.lodOf || o.geometry, pos = g.attributes.position, idx = g.index, m = o.matrixWorld, v = new THREE.Vector3();   // (the whole sheet, not the distance LOD's patches)
     const wp = new Float32Array(pos.count * 3);
     for (let k = 0; k < pos.count; k++) { v.fromBufferAttribute(pos, k).applyMatrix4(m); wp[k * 3] = v.x; wp[k * 3 + 1] = v.y; wp[k * 3 + 2] = v.z; }
     let tp = null;                                   // per-triangle part (the one-sheet surface: by vertex colour)
