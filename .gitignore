@@ -12,3 +12,4 @@ node_modules/
 # can re-run, but never shipped. The scene loads only the decimated models/opt/*.glb.
 models/_raw/
 
+out/
