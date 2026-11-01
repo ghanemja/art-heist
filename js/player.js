@@ -4,7 +4,7 @@
 // most adventure games live or die by. On foot, controls are camera-relative;
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { R, SEA, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir, LOTS, camBlocksNear, camBlocked } from './world.js';
 import { buildBoat, createWake } from './harbour.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';

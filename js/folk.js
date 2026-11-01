@@ -8,7 +8,8 @@ import * as THREE from 'three';
 import { paint, ink } from './style.js';
 import { lathe } from './props.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { buildHead, HC, sculpt, lineAt } from './faces.js';
 
 // every townsperson's overall size: the Citizen Maker bystanders (citizens.js) set the town's

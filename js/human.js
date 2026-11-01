@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { paint, ink, blobShadow } from './style.js';
 import { makeFolk, poseFolk, shoeGeo } from './folk.js';
 import { noseGeo } from './faces.js';
@@ -719,7 +719,9 @@ export function swimPose(inst, c, k = 1) {
   else if (c < 0.75) { const u = S((c - 0.5) / 0.25); lift = 1.3 + 1.3 * u; spread = 0.2; bend = 1.8 - 1.7 * u; }
   else { lift = 2.6; spread = 0.2; bend = 0.1; }
   const tread = 1 - k, sc = Math.sin(c * Math.PI * 2);
-  lift = lift * k + tread * 1.2; spread = spread * k + tread * (0.45 + 0.25 * sc); bend = bend * k + tread * 1.1;
+  // (treading: the hands scull in front of her chest, under the water — sweeping out and in —
+  // never up over her head)
+  lift = lift * k + tread * 0.62; spread = spread * k + tread * (0.62 + 0.3 * sc); bend = bend * k + tread * (0.75 - 0.2 * sc);
   turn(inst, 'upperarmL', side, lift); turn(inst, 'upperarmR', side, lift);
   turn(inst, 'upperarmL', fwd, spread); turn(inst, 'upperarmR', fwd, -spread);
   turn(inst, 'lowerarmL', side, bend); turn(inst, 'lowerarmR', side, bend);
@@ -733,9 +735,10 @@ export function swimPose(inst, c, k = 1) {
     turn(inst, 'foot' + L, side, 0.5 - 0.3 * kk);              // toes pointed on the glide
   }
   // head up out of the water, looking where she's going; the chest lifts on the pull
-  turn(inst, 'neck', side, -0.45);
-  turn(inst, 'head', side, -0.5 - 0.12 * k * sc);
-  turn(inst, 'spine2', side, -0.12 * k * Math.max(0, sc));
+  // (on her rig a positive turn about `side` tips the head and chest BACK: up, against the body's pitch)
+  turn(inst, 'neck', side, 0.45);
+  turn(inst, 'head', side, 0.5 + 0.12 * k * sc);
+  turn(inst, 'spine2', side, 0.12 * k * Math.max(0, sc));
   turn(inst, 'head', up, 0.25 * Math.sin(c * Math.PI * 2) * tread);
 }
 // a golf swing: s runs −1 (the top of the backswing) … 0 (address / impact) … 1 (the follow-

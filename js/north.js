@@ -27,6 +27,7 @@ import { poseFolk, STANCES, ikArm, ikLeg, gripHand, FIST } from './folk.js';
 import { audio } from './audio.js';
 import { buildRiverWater, createRiverLife } from './riverlife.js';
 import { createClubPlay } from './club.js';
+import { poolDepth, submerge } from './submerged.js';
 
 const L2 = (a) => ll(a[0], a[1]);
 export const NORTH = {
@@ -293,8 +294,8 @@ function mosaicTexture() {
 // that steps: a shallow sun ledge at the west end, two wide entry steps, the deep basin and a
 // round raised seat — and paints the mosaic where it lands: the floor, the step treads, and
 // (in shade) the risers and walls, the mosaic carried up them. Caustics wander over it and the
-// view wobbles with the ripples; the swimmer's body under the surface is a capsule traced in
-// the same march. On top: a clear tint that thickens with depth and at grazing angles, ripple
+// view wobbles with the ripples. A swimmer's body under the surface is her own mesh, drawn
+// through the water after it (submerged.js: the water writes the far depth). On top: a clear tint that thickens with depth and at grazing angles, ripple
 // strokes, rings round the swimmer, a dark rim line. One draw, one texture.
 const POOL_VS = /* glsl */`
   uniform float uTime; attribute float aLift; varying vec3 vP;
@@ -306,9 +307,9 @@ const POOL_VS = /* glsl */`
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }`;
 const POOL_FS = /* glsl */`
-  uniform float uTime, uLight, uSwimOn, uMos, uS, uMeOn, uMeK; uniform vec2 uAB; uniform vec3 uCam, uSwim, uSwimH, uSwimF, uMeA, uMeB;
+  uniform float uTime, uLight, uSwimOn, uMos, uS, uMeOn, uMeK; uniform vec2 uAB; uniform vec3 uCam, uSwim, uMeA;
   uniform sampler2D tMos;
-  uniform vec3 cDeep, cTint, cFoam, cTop, cSkin, cMeTop, cMeBottom, cMeSkin;
+  uniform vec3 cDeep, cTint, cFoam;
   varying vec3 vP;
   float edgeR(vec2 p) { vec2 q = p / uAB; float th = atan(q.y, q.x); return (1.0 + 0.10 * sin(2.0 * th + 0.5) + 0.08 * sin(3.0 * th + 2.0)) - length(q); }
   float depthAt(vec2 p) {
@@ -321,19 +322,6 @@ const POOL_FS = /* glsl */`
     return d;
   }
   vec3 mos(vec2 uv) { return texture2D(tMos, uv / (2.0 * uMos * uS) + 0.5).rgb; }
-  float capsule(vec3 ro, vec3 rd, vec3 a, vec3 b, float r) {
-    vec3 ba = b - a, oa = ro - a;
-    float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
-    float A = baba - bard * bard, B = baba * rdoa - baoa * bard, C = baba * oaoa - baoa * baoa - r * r * baba, h = B * B - A * C;
-    if (h >= 0.0) {
-      float t = (-B - sqrt(h)) / A, y = baoa + t * bard;
-      if (y > 0.0 && y < baba) return t;
-      vec3 oc = (y <= 0.0) ? oa : ro - b;
-      B = dot(rd, oc); C = dot(oc, oc) - r * r; h = B * B - C;
-      if (h > 0.0) return -B - sqrt(h);
-    }
-    return -1.0;
-  }
   void main() {
     vec3 rd = normalize(vP - uCam);
     rd.y = min(rd.y, -0.03); rd = normalize(rd);
@@ -367,18 +355,7 @@ const POOL_FS = /* glsl */`
       float c = sin(h.x * 13.0 + uTime * 1.3 + 2.0 * sin(h.z * 9.0 + uTime * 0.9)) * sin(h.z * 12.0 - uTime * 1.1 + 2.0 * sin(h.x * 7.0 - uTime * 0.7));
       col = mix(col, cFoam, smoothstep(0.72, 0.95, c) * 0.45);       // caustics: the mosaic dances
     }
-    if (uSwimOn > 0.5) {
-      // her body lying along the swim: the trunk in her suit (shoulders → hips), her legs trailing behind
-      float tb = capsule(ro, r, uSwim, uSwimH, 0.1);
-      if (tb > 0.0 && tb < t) { col = cTop * 0.92; t = tb; }
-      float tl = capsule(ro, r, uSwimH, uSwimF, 0.065);
-      if (tl > 0.0 && tl < t) { col = cSkin * 0.92; t = tl; }
-    }
-    if (uMeOn > 0.5) {                              // the critic, swimming: her body under the surface, from her shoulders (A) back to her feet (B)
-      float tb = capsule(ro, r, uMeA, uMeB, 0.085);
-      if (tb > 0.0 && tb < t) { vec3 q = ro + r * tb; float u = clamp(dot(q - uMeA, uMeB - uMeA) / dot(uMeB - uMeA, uMeB - uMeA), 0.0, 1.0);
-        col = (u < 0.42 ? cMeTop : u < 0.9 ? cMeBottom : cMeSkin) * 0.92; t = tb; }
-    }
+    // (the swimmers' bodies under the surface are their own meshes, drawn through the water: submerged.js)
     float fres = pow(1.0 - abs(rd.y), 3.0);
     col = mix(col, cDeep, clamp(t * -r.y / 1.4, 0.0, 0.45));        // deeper water, bluer
     col = mix(col, cTint, 0.14 + 0.45 * fres);
@@ -401,12 +378,10 @@ function poolWater() {
     vertexShader: POOL_VS, fragmentShader: POOL_FS,
     uniforms: {
       uTime: { value: 0 }, uLight: { value: 1 }, uSwimOn: { value: 0 }, uMos: { value: MOS }, uS: { value: POOL_S },
-      uMeOn: { value: 0 }, uMeK: { value: 0 }, uMeA: { value: new THREE.Vector3() }, uMeB: { value: new THREE.Vector3() },
+      uMeOn: { value: 0 }, uMeK: { value: 0 }, uMeA: { value: new THREE.Vector3() },
       uAB: { value: new THREE.Vector2(POOL_A, POOL_B) }, uCam: { value: new THREE.Vector3() }, uSwim: { value: new THREE.Vector3(0, -0.05, 0) },
-      uSwimH: { value: new THREE.Vector3(0.3, -0.2, 0) }, uSwimF: { value: new THREE.Vector3(0.7, -0.4, 0) },
       tMos: { value: mosaicTexture() },
-      // (cTop/cSkin: the swimmer's suit and skin, set from her look; cMe*: the critic's)
-      cDeep: C(0x1f7fa6), cTint: C(0x8fd8e6), cFoam: C(0xf6fdff), cTop: C(0x3f5872), cSkin: C(0xe6b99a), cMeTop: C(0xa898c4), cMeBottom: C(0x4d5f86), cMeSkin: C(0xdca78a),
+      cDeep: C(0x1f7fa6), cTint: C(0x8fd8e6), cFoam: C(0xf6fdff),
     },
   });
   // the surface: the outline filled in rings round the centre (so the wobble has vertices to move)
@@ -697,7 +672,8 @@ export function buildNorth(scene, { add, solid, boulevard }) {
     for (let i = 0; i < pos.count; i++) lift[i] = groundY(P.x + pos.getX(i), P.z + pos.getZ(i)) - gy;   // (the deck and coping were laid on the same ground)
     w.geometry.setAttribute('aLift', new THREE.BufferAttribute(lift, 1));
     w.position.set(P.x, gy + 0.03, P.z); g.add(w);
-    out.club.water = w; }
+    out.club.water = w;
+    poolDepth(w); }                                  // (swimmers' bodies show through it: submerged.js)
   // the club's car park and drive are paved: the car may pull in off the road
   { const g = out.club.root, inv = g.matrixWorld.clone().invert(), p = new THREE.Vector3(), r = g.position.length();
     LOTS.push((d) => { if (arc(d, out.club.dir) > 7) return false; p.copy(d).multiplyScalar(r).applyMatrix4(inv); return Math.abs(p.x + 0.2) < 2.4 && p.z > 2.6 && p.z < 6.2; }); }
@@ -981,12 +957,12 @@ export function createNorthLife({ scene, town, game, player }) {
   });
   // a swimmer doing lengths: shoulders out of the water, gently bobbing
   const pl = club.pool;
-  // (she lies along the water, so her blob shadow stays off; the pool's shader draws her body under the surface)
+  // (she lies along the water, so her blob shadow stays off; her body under the surface is drawn through the water: submerged.js)
   { const d = CLW(pl.swim[0], pl.swimZ), obj = put(PEOPLE.swimmer, d, CLW(pl.swim[0] + 1, pl.swimZ));
     obj.children.forEach(c => { if (c !== obj.userData.turn) c.visible = false; });
     obj.userData.turn.rotation.x = SWIM_PITCH;
-    if (club.water) club.water.material.uniforms.cTop.value.set(PEOPLE.swimmer.top);
-    const p = { obj, dir: d.clone(), kind: 'swim', x: pl.swim[0], way: 1, turn: 0, ph: 0 }; people.push(p); }
+    const p = { obj, dir: d.clone(), kind: 'swim', x: pl.swim[0], way: 1, turn: 0, ph: 0 }; people.push(p);
+    p.sub = club.water ? submerge(obj, club.water) : null; }                     // her body under the surface, through the water
   // a reader on the middle lounger
   // (the seated stance is drawn for a bench seat ~0.2 higher than a lounger's: she sits down onto it)
   { const L = club.loungers[1], d = CLW(L.x - 0.1, L.z), obj = put(PEOPLE.lounger, d, CLW(L.fx, L.fz), -0.04);
@@ -1078,12 +1054,12 @@ export function createNorthLife({ scene, town, game, player }) {
             const J = h.J, sh = J.armL.getWorldPosition(new THREE.Vector3()).add(J.armR.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
             p.obj.worldToLocal(sh); tg.position.set(-sh.x, -sh.y - 0.035 + bob, -sh.z);
             p.obj.updateWorldMatrix(true, true);
-            // the pool's shader draws the part of her under the surface: her trunk, and her legs behind
+            // the rings round her shoulders (the pool's shader); her body under the surface is her own (submerged.js)
             if (T && club.water) {
               const w = club.water, at = (o) => w.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
-              const s0 = at(J.armL).add(at(J.armR)).multiplyScalar(0.5), hp = at(J.hips), ft = at(J.footL).add(at(J.footR)).multiplyScalar(0.5);
-              T.uSwimOn.value = 1; T.uSwim.value.copy(s0); T.uSwimH.value.copy(hp); T.uSwimF.value.copy(ft);
+              T.uSwimOn.value = 1; T.uSwim.value.copy(at(J.armL).add(at(J.armR)).multiplyScalar(0.5));
             }
+            p.sub?.update();
           }
         } else if (p.kind === 'walk') {
           if (player.st.mode === 'walk' && arc(here, p.dir) < 1.1) { if (h) poseFolk(h, dt, 0); continue; }

@@ -16,6 +16,7 @@ import { R, radiusAt } from './world.js';
 import { paint, ink, PAL } from './style.js';
 import { swimPose, swingPose } from './human.js';
 import { sfxOut } from './audio.js';
+import { submerge } from './submerged.js';
 
 const CSS = `
   body.club-on #hint { display: none; }
@@ -146,7 +147,7 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
     swim.tr = 0; swim.dirn = 1; swim.k = 0; swim.v = 0; swim.c = 0.5;
     st.heading.copy(swim.to).sub(swim.from).projectOnPlane(st.dir).normalize();
     st.camFwd.copy(st.heading);
-    extras(false); st.stickOn = true;
+    extras(false); st.stickOn = true; subMe()?.set(true);
     actBtn.lastChild.textContent = 'get out'; show(actBtn);
     splash(0.18, 0.6, 1100);
   }
@@ -158,10 +159,17 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
     show(actBtn, false);
     splash(0.1, 0.4, 800);
   }
-  // her shoulders → feet, for the pool's shader (its body-under-the-surface and rings)
+  // her shoulders, for the pool's shader (the rings round her)
   const _j1 = new THREE.Vector3(), _j2 = new THREE.Vector3();
   const shoulderMid = (out) => { const b = critic().bones; return out.copy(b.upperarmL.getWorldPosition(_j1)).add(b.upperarmR.getWorldPosition(_j2)).multiplyScalar(0.5); };
-  const feetMid = (out) => { const b = critic().bones; return out.copy(b.footL.getWorldPosition(_j1)).add(b.footR.getWorldPosition(_j2)).multiplyScalar(0.5); };
+  // her twin under the surface (submerged.js): made the first time she swims (her model streams in),
+  // shown only while she's in the pool
+  let sub = null, subOf = null;
+  const subMe = () => {
+    const inst = critic(); if (!inst?.rig || !water) return null;
+    if (subOf !== inst) { sub = submerge(inst.rig, water); subOf = inst; }
+    return sub;
+  };
   const keyDown = (...c) => c.some(k => st.keys.has(k));
   function updateSwim(dt, t) {
     const inst = critic(); if (!inst?.bones?.head) return;
@@ -211,24 +219,26 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
     const pitch = (0.45 + 0.75 * swim.k) * tr;
     walkBody.rotation.set(pitch, 0, 0);
     swimPose(inst, swim.c, swim.k * tr);
-    // set her in the water: her head bone just over the surface, kept over st.dir
+    // set her in the water: her head bone (the base of the skull) a little over the surface, so her
+    // chin is clear of the water, kept over st.dir
     const root = player.root, surf = surfR(st.dir), ground = player.st.grT ?? radiusAt(st.dir);
     root.position.copy(st.dir).multiplyScalar(surf);
     root.updateMatrixWorld(true);
     const head = inst.bones.head.getWorldPosition(_b).sub(root.position);
     const hy = head.dot(up), hf = head.dot(st.heading);
-    const inWater = _v.copy(st.dir).multiplyScalar(surf + 0.015 - hy).addScaledVector(st.heading, -hf);
+    const inWater = _v.copy(st.dir).multiplyScalar(surf + 0.045 - hy).addScaledVector(st.heading, -hf);
     if (tr < 1) {                                  // on the deck at the start of the step / the end of the climb
       const onDeck = _w.copy(st.dir).multiplyScalar(ground);
       root.position.lerpVectors(onDeck, inWater, tr).addScaledVector(up, 0.18 * Math.sin(Math.PI * tr));
     } else root.position.copy(inWater);
     root.position.addScaledVector(up, 0.012 * Math.sin(t * 2.6 + swim.c * 6.28) * (1 - swim.k * 0.5));
     root.updateMatrixWorld(true);
-    // the pool's shader: her body under the surface, the rings
+    // the pool's shader: the rings and froth round her shoulders. Her body under the surface is her
+    // own, drawn through the water (submerged.js)
+    subMe()?.update();
     if (U) {
       U.uMeOn.value = 1;
-      water.worldToLocal(shoulderMid(U.uMeA.value)); water.worldToLocal(feetMid(U.uMeB.value));
-      U.uMeA.value.y = Math.min(U.uMeA.value.y, -0.04); U.uMeB.value.y = Math.min(U.uMeB.value.y, -0.04);
+      water.worldToLocal(shoulderMid(U.uMeA.value)); U.uMeA.value.y = Math.min(U.uMeA.value.y, -0.04);
       U.uMeK.value = swim.k * (0.5 + 0.5 * Math.max(0, Math.sin((swim.c - 0.55) * Math.PI * 2))) * tr + 0.25 * (1 - swim.k) * tr;
     }
     // a soft splash with each kick
@@ -241,7 +251,7 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
     camEase(dt, 4, 6);
   }
   function finishSwim() {
-    if (U) U.uMeOn.value = 0;
+    if (U) U.uMeOn.value = 0; sub?.set(false);
     st.dir.copy(swim.to);
     end();
     swim.dirn = 0;
@@ -471,7 +481,7 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
     update(dt, t) {
       // anything else taking over (the police, the epilogue, a conversation) ends it at once
       if (mode && (G.ui !== 'activity' || G.state !== 'play')) {
-        if (mode === 'swim') { if (U) U.uMeOn.value = 0; if (swim.dirn !== 1) { const [x, z] = toPool(st.dir), [ox, oz] = poolEdge(thOf(x, z), 0.3); fromPool(ox, oz, st.dir); } swim.dirn = 0; }
+        if (mode === 'swim') { if (U) U.uMeOn.value = 0; sub?.set(false); if (swim.dirn !== 1) { const [x, z] = toPool(st.dir), [ox, oz] = poolEdge(thOf(x, z), 0.3); fromPool(ox, oz, st.dir); } swim.dirn = 0; }
         if (mode === 'range' && clubG) clubG.visible = false;
         end();
       }

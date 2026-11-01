@@ -7,7 +7,7 @@
 // same surface inside a hairline mask (a parting, sideburns, a swept-back line),
 // with volume on top — so they hug the skull instead of sitting on it like a cap.
 import * as THREE from 'three';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { paint } from './style.js';
 
 export const HR = 0.118, HC = new THREE.Vector3(0, 0.12, 0.018);

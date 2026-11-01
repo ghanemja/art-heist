@@ -26,7 +26,7 @@ const errs = [], logs = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 page.on('console', (m) => { const t = m.text(); if (m.type() === 'error') errs.push(t); if (/ReadPixels|stall|perf:/i.test(t)) logs.push(m.type() + ': ' + t); });
 const t0 = Date.now();
-await page.goto(`http://localhost:${process.env.PORT || 8123}/index.html?dpr=1${extra}`, { timeout: 180000 });
+await page.goto(`http://localhost:${process.env.PORT || 8123}/index.html?dpr=1${extra}`, { waitUntil: 'commit', timeout: 0 });   // (the load event waits for the whole build: longer than goto's 30 s)
 await page.waitForFunction(() => window.__v2?.culler, null, { timeout: 180000 });
 const loadS = (Date.now() - t0) / 1000;
 // play state, title hidden
