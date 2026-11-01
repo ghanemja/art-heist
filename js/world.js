@@ -14,16 +14,23 @@ const llRaw = (lat, lon) => {
   return new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(a), Math.cos(a) * Math.sin(b)).normalize();
 };
 // ── the plan on a smaller planet ──
-// The plan's [lat, lon] are drawn on a radius-R_PLAN planet. On a smaller one, a place keeps its
-// bearing from the town centre, and its distance along the surface (world units) is remapped:
-// unchanged out to PACK_NEAR (downtown, the museum, the station, the harbour, the Library, the
-// shops nearest town: their spacing is the plan's), then the open country beyond is squeezed so the far side still fits.
-const PACK_NEAR = 36;
+// The plan's [lat, lon] are drawn on a radius-R_PLAN planet. On the smaller one, every place keeps
+// its bearing from the town centre AND its distance from it along the ground (world units), so
+// the town and everything round it keep their drawn spacing — the smaller sphere just wraps the
+// outer places round its back instead of leaving it empty. Only the far tail past PACK_NEAR (what
+// would run past the antipode) is squeezed in. (Where that wrap crowds places sideways, the plan
+// spreads them: their [lat, lon]s in manifest.js / north.js were laid out for this.)
+const PACK_NEAR = Math.PI * R - 12;
 const _C = llRaw(...PLAN.town.center), _ax = new THREE.Vector3();
 function packDist(d) {
   if (d <= PACK_NEAR) return d;
-  const k = (Math.PI * R - PACK_NEAR - 1) / (Math.PI * R_PLAN - PACK_NEAR);   // (the antipode lands just short of the new one)
+  const k = (Math.PI * R - 2 - PACK_NEAR) / (Math.PI * R_PLAN - PACK_NEAR);
   return PACK_NEAR + (d - PACK_NEAR) * k;
+}
+export function unpackDist(d) {                                     // (the inverse: for the layout tools)
+  if (d <= PACK_NEAR) return d;
+  const k = (Math.PI * R - 2 - PACK_NEAR) / (Math.PI * R_PLAN - PACK_NEAR);
+  return PACK_NEAR + (d - PACK_NEAR) / k;
 }
 export const ll = (lat, lon) => {
   const v = llRaw(lat, lon);
