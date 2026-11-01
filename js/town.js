@@ -20,6 +20,7 @@ import { railLoop, buildRailway, onRail, railBranch, RAIL } from './rail.js';
 import { createFreight } from './freight.js';
 import { planNorth, buildNorth } from './north.js';
 import { dressRoads } from './roadside.js';
+import { planRoundabout, reserveIsland, openThrough, loopThrough, buildIsland as buildRbIsland } from './roundabout.js';
 
 export const TOWN_C = llv(PLAN.town.center);
 const ROAD_MAJOR = 1.05, ROAD_MINOR = 0.62;
@@ -203,7 +204,29 @@ export function buildTown(scene) {
   deflect(ring, { closed: true });
   const ringS = smooth(ring, 2, true);
   deflect(ringS, { closed: true });                          // smoothing must not cut back into a zone
-  out.boulevard = buildRoad(scene, ringS, { half: ROAD_MAJOR, closed: true });
+  // the roundabout (roundabout.js): its ring is laid first, then the boulevard opened round it —
+  // each end comes in square onto the ring's middle line. The boulevard's ROADS entry keeps the
+  // whole loop (round the ring) as `loop`: the cyclists ride it, and it bounds the main town
+  const RBS = PLAN.town.roundabout;
+  const rbt = out.roundabout = RBS ? planRoundabout(ringS, RBS, TOWN_C, llv) : null;
+  const openB = rbt && openThrough(ringS, rbt);
+  if (openB) {
+    rbt.pts = buildRoad(scene, rbt.pts, { half: rbt.half, closed: true, dashed: false });
+    rbt.road = ROADS[ROADS.length - 1];
+    out.boulevard = buildRoad(scene, openB, { half: ROAD_MAJOR });
+    const B = ROADS[ROADS.length - 1];
+    B.loop = loopThrough(out.boulevard, rbt);
+    rbt.arms = [out.boulevard[0], out.boulevard[out.boulevard.length - 1]];
+    reserveIsland(rbt);
+  } else out.boulevard = buildRoad(scene, ringS, { half: ROAD_MAJOR, closed: true });
+  // where a road may leave the trunk (spur(), the bridge road): the boulevard — not where it runs
+  // into the roundabout — and the roundabout's ring, clear of the arms already on it
+  const trunk = () => {
+    if (!openB) return out.boulevard;
+    const armsOn = [...rbt.arms, ...out.spurs.filter(sp => arc(sp.pts[0], rbt.c) < rbt.r + 0.3).map(sp => sp.pts[0])];
+    return [...out.boulevard.filter(p => arc(p, rbt.c) > rbt.r + rbt.half + 3.0),
+      ...rbt.pts.filter(p => armsOn.every(a => arc(a, p) > 3.4))];
+  };
 
   // downtown grid, clipped to the reservation map
   const P = PLAN.town.pitch, CAP = PLAN.town.radius, K = Math.ceil(CAP / P);
@@ -274,10 +297,11 @@ export function buildTown(scene) {
   // (bulb: it ends in a turning circle)
   const SPUR_GAP = 4.5;
   const spur = (target, stopShort, key, { via = null, bulb = false } = {}) => {
-    let near = out.boulevard[0];
-    for (const p of out.boulevard) if (arc(p, target) < arc(near, target)) near = p;
-    let best = null, host = out.boulevard;
-    for (const p of out.boulevard) {
+    const TR = trunk();
+    let near = TR[0];
+    for (const p of TR) if (arc(p, target) < arc(near, target)) near = p;
+    let best = null, host = TR;
+    for (const p of TR) {
       if (out.spurs.some(sp => arc(sp.pts[0], p) < SPUR_GAP)) continue;
       if (!best || arc(p, target) < arc(best, target)) best = p;
     }
@@ -296,13 +320,16 @@ export function buildTown(scene) {
     const total = arc(best, target);
     // a place right beside the road it branches off gets just a short drive up to it (no room for
     // a turning circle); one that close to the boulevard needs no road at all
-    const drive = host !== out.boulevard && total < stopShort + 4;
-    if (total < stopShort + (host !== out.boulevard ? 0.5 : 1.5)) return null;
+    const drive = host !== TR && total < stopShort + 4;
+    if (total < stopShort + (host !== TR ? 0.5 : 1.5)) return null;
     if (drive) bulb = false;
     // it leaves its road square: out along that road's normal (toward the place) for a car's
     // length or two, then on to the place (from a point that isn't the road's nearest to the place,
     // a straight line would leave at a slant, or run off along it)
-    const hi = host.indexOf(best), ht = host[Math.min(host.length - 1, hi + 1)].clone().sub(host[Math.max(0, hi - 1)]);
+    // (on the ring its normal is radial; the trunk list is pieced together, so its neighbours aren't)
+    const onRing = openB && rbt.pts.includes(best), H = host === TR && !onRing ? out.boulevard : host, hi = H.indexOf(best);
+    const ht = onRing ? new THREE.Vector3().crossVectors(rbt.c, best)
+      : H[Math.min(H.length - 1, hi + 1)].clone().sub(H[Math.max(0, hi - 1)]);
     const nrm = new THREE.Vector3().crossVectors(best, ht).normalize();
     if (nrm.dot(target.clone().sub(best)) < 0) nrm.negate();
     const w = best.clone().multiplyScalar(R).addScaledVector(nrm, 2.4).normalize();
@@ -614,7 +641,7 @@ export function buildTown(scene) {
     for (const k of [-1, 1]) solid(fC(MALL.at[0] + 1.5, MALL.at[1] + k * 5.1), 0.8);
   }
   for (let k = 0; k < out.boulevard.length; k += 7) {
-    const p = out.boulevard[k], q = out.boulevard[(k + 1) % out.boulevard.length];
+    const p = out.boulevard[k], q = out.boulevard[Math.min(k + 1, out.boulevard.length - 1)] === p ? out.boulevard[k - 1] : out.boulevard[(k + 1) % out.boulevard.length];
     const side = new THREE.Vector3().crossVectors(p, q.clone().sub(p)).normalize();
     for (const s of [-1, 1]) {
       const d = p.clone().multiplyScalar(R).addScaledVector(side, s * 2.3).normalize();
@@ -771,10 +798,12 @@ export function buildTown(scene) {
   // the north: the river and its bridge, the country club, the driving range, Riverbend Close
   // the island out in the sea, with its lighthouse (farm.js)
   if (PLAN.terrain.island) out.island = buildIsland(llv(PLAN.terrain.island.at), TOWN_C, add, solid);
-  out.north = buildNorth(scene, { add, solid, boulevard: out.boulevard });
+  out.north = buildNorth(scene, { add, solid, boulevard: trunk() });
   // the roads' verges: street trees out of town, a lamp where each road leaves the ring, a
   // turning circle and a viewpoint at the overlook (after the rail and the north: it sees them all)
-  out.roadside = dressRoads(scene, { add, solid, spurs: out.spurs, boulevard: out.boulevard, townC: TOWN_C, ringR: PLAN.town.boulevard, sites: out.sites, colliders: out.colliders });
+  out.roadside = dressRoads(scene, { add, solid, spurs: out.spurs, boulevard: out.boulevard, townC: TOWN_C, ringR: PLAN.town.boulevard, sites: out.sites, colliders: out.colliders, roundabout: openB ? rbt : null });
+  // the roundabout's island: a grass dome in a stone kerb, flowers, the yarn-and-hook sculpture
+  if (openB) out.roundabout.island = buildRbIsland(scene, rbt, { add, solid, faceTo: TOWN_C.clone().sub(rbt.c) });
   // helpers the story uses to place things
   out.townAt = ([x, y]) => fC(x, y);
   out.toTown = toTown;

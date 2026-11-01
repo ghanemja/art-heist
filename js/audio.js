@@ -1,19 +1,19 @@
-// ─── SOUND: a quiet noir score and the night's air, all synthesised (no files) ──
-// Investigative, never shrill: plucked upright bass, brushes, low muted piano and
-// pads in D minor, everything under a dark lowpass. No bells, chimes or high ringing —
-// nothing here sounds above ~350 Hz except brush noise and the soft low end of the keys.
-//
-//   scene 'title'  – a slow low pad and a lone bass, behind the title page
-//   scene 'night'  – the cold open: wind, a low drone, a heartbeat pulse (cue() swells)
-//   scene 'dawn'   – the editor's texts: the pad alone, warming up
-//   scene 'day'    – the investigation: a swung walking bass, brushes, piano stabs
-//   scene 'tense'  – the countdown: a driving bass ostinato over a low pulse
-//   scene 'end'    – the epilogue: warm major chords, no drums
+// ─── SOUND: the planet's own air, and music only when the story earns it ──────
+// All synthesised (no files). Most of the time there is NO music — you hear the world:
+//   • wind and leaves, birds by day, crickets at night, the sea when you're near it,
+//     a far-off town hum and the odd car passing in the distance;
+//   • your own footsteps (grass, pavement, floorboards) in time with the critic's stride;
+//   • your car's engine and tyres (pitch follows the speed), the boat's motor.
+// Music comes in only for story beats, as short cues (sting()):
+//   clue – a new find   lead – a find that points at the culprit   wrong – Vivi isn't convinced
+//   solved – the case cracked   getaway – Rex bolts
+// …and three scored scenes that ARE events: the cold open's heist ('night'), the rocket
+// countdown ('tense') and the epilogue ('end'). 'title', 'dawn' and 'day' are just the air.
 //
 // The context starts on the first click/key (browsers forbid autoplay). M or the
 // sound button mutes everything, the bump voices too (they play through sfxOut()).
 
-let AC = null, master, musicBus, ambBus, sfxBus, verbIn, noiseBuf, windGain, windLP;
+let AC = null, master, musicBus, ambBus, outBus, sfxBus, verbIn, noiseBuf, windGain, windLP;
 let muted = false;
 const LEVEL = 0.75;                                 // overall: a background score, under the game
 try { muted = localStorage.getItem('sound') === 'off'; } catch { /* private window */ }
@@ -35,6 +35,7 @@ function build() {
   const dark = AC.createBiquadFilter(); dark.type = 'lowpass'; dark.frequency.value = 2400; dark.Q.value = 0.5;
   musicBus = AC.createGain(); musicBus.gain.value = 0; musicBus.connect(dark); dark.connect(master);
   ambBus = AC.createGain(); ambBus.gain.value = 1; ambBus.connect(master);
+  outBus = AC.createGain(); outBus.gain.value = 1; outBus.connect(ambBus);   // the outdoors (ducked inside a room)
   sfxBus = AC.createGain(); sfxBus.gain.value = 1; sfxBus.connect(master);
   // a small dark room: a decaying-noise impulse, lowpassed
   const len = AC.sampleRate * 2.4, imp = AC.createBuffer(2, len, AC.sampleRate);
@@ -53,8 +54,9 @@ function build() {
   const lfo2 = AC.createOscillator(), lfo2G = AC.createGain(); lfo2.frequency.value = 0.13; lfo2G.gain.value = 0.25;
   windGain = AC.createGain(); windGain.gain.value = 0;
   const wMod = AC.createGain(); wMod.gain.value = 0.75; lfo2.connect(lfo2G); lfo2G.connect(wMod.gain);
-  w.connect(windLP); windLP.connect(wMod); wMod.connect(windGain); windGain.connect(ambBus);
+  w.connect(windLP); windLP.connect(wMod); wMod.connect(windGain); windGain.connect(outBus);
   w.start(); lfo.start(); lfo2.start();
+  buildAir();
   // a hidden tab gets silence (and a scheduler that doesn't fall behind)
   document.addEventListener('visibilitychange', () => { if (document.hidden) AC.suspend(); else AC.resume(); });
   setInterval(pump, 25);
@@ -126,10 +128,10 @@ const CH = {
 };
 const PROG = { minor: ['Dm', 'Bb', 'Gm', 'A7'], end: ['F', 'Dm', 'Gm', 'C'] };
 const SCENES = {
-  title: { bpm: 66, vol: 0.85, wind: 0.05 },
+  title: { bpm: 66, vol: 0.85, wind: 0.05, air: true },     // air: no score, just the world
   night: { bpm: 60, vol: 0.9, wind: 0.16 },
-  dawn:  { bpm: 66, vol: 0.8, wind: 0.07 },
-  day:   { bpm: 84, vol: 0.45, wind: 0.025 },
+  dawn:  { bpm: 66, vol: 0.85, wind: 0.06, air: true },
+  day:   { bpm: 84, vol: 0.85, wind: 0.035, air: true },
   tense: { bpm: 112, vol: 0.7, wind: 0.04 },
   end:   { bpm: 74, vol: 0.8, wind: 0.03 },
 };
@@ -137,29 +139,13 @@ let scene = null, step = 0, nextT = 0;
 // one bar = 8 swung eighths; called for each eighth just ahead of time
 function play(sc, s, t, beat) {
   const bar = Math.floor(s / 8), e = s % 8, prog = sc === 'end' ? PROG.end : PROG.minor;
-  const c = CH[prog[bar % 4]], phrase = bar % 8;
-  if (sc === 'title' || sc === 'dawn') {
-    if (e === 0 && bar % 2 === 0) pad(c.pad, t, beat * 8.5, sc === 'dawn' ? 0.03 : 0.028);
-    if (e === 0) bass(c.walk[0], t, beat * 2, 0.26);
-    if (e === 5 && sc === 'dawn' && bar % 2) keys(c.keys.slice(0, 3), t, beat * 1.5, 0.045);
-  } else if (sc === 'night') {
+  const c = CH[prog[bar % 4]];
+  if (sc === 'night') {
     // drone + heartbeat; a low minor-second rub creeps in every other bar
     if (e === 0 && bar % 2 === 0) pad(Ns('D2 A2'), t, beat * 8.5, 0.04, 320);
     if (e === 0 || e === 1) kick(t + (e ? -beat * 0.2 : 0), e ? 0.16 : 0.24, 70);
     if (e === 4 && bar % 2) bass(N('Eb2'), t, beat * 2, 0.16);
     if (e === 0 && bar % 2 === 0) bass(N('D2'), t, beat * 3, 0.24);
-  } else if (sc === 'day') {
-    // walking bass on every beat, brushes on 2 & 4, piano on 1 and the and-of-2
-    const drums = phrase < 6;
-    if (e % 2 === 0) {
-      const i = e / 2, nxt = CH[prog[(bar + 1) % 4]].walk[0];
-      const f = i === 3 ? nxt * (Math.random() < 0.5 ? 2 ** (1 / 12) : 2 ** (-1 / 12)) : c.walk[i];   // a chromatic step into the next chord
-      bass(f, t, beat * 0.9, 0.3);
-      if (drums && (i === 1 || i === 3)) brush(t, 0.045, 0.2);
-      if (drums && i === 0) kick(t, 0.14, 80);
-    } else if (drums) brush(t, 0.02, 0.09);
-    if (e === 0) keys(c.keys, t, beat * 1.2, 0.055);
-    if (e === 3 && bar % 2) keys(c.keys.slice(1), t, beat * 0.6, 0.04);
   } else if (sc === 'tense') {
     // eighth-note ostinato, kick on every beat, the pad a low cluster
     const line = Ns('D2 D2 F2 D2 Eb2 D2 A1 C2');
@@ -176,6 +162,7 @@ function play(sc, s, t, beat) {
 function pump() {
   if (!AC || !scene || AC.state !== 'running') return;
   const sc = SCENES[scene], beat = 60 / sc.bpm;
+  if (sc.air) return;                                                   // no score: the world is the soundtrack
   if (nextT < AC.currentTime) nextT = AC.currentTime + 0.05;            // fell behind (tab was asleep)
   while (nextT < AC.currentTime + 0.2) {
     play(scene, step, nextT, beat);
@@ -183,6 +170,209 @@ function pump() {
     step++;
   }
 }
+
+
+// ── the world's own air ──
+// Built once with the context. Continuous layers (leaves, town hum, sea, engine) are
+// looped noise/oscillators whose gains tick() steers; birds, crickets, far cars and
+// footsteps are one-shots scheduled from tick().
+const air = { night: 0, water: 0, day: 1, birdT: 1.5, carT: 6, crickets: [], wc: null, mode: 'walk', leaves: null, hum: null, sea: null, seaLP: null, eng: null };
+const rnd = (a, b) => a + Math.random() * (b - a);
+// a voice's way out: through a pan, into the outdoors (or the sfx bus)
+function panned(pan, to = outBus) {
+  if (!AC.createStereoPanner) return to;
+  const p = AC.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); p.connect(to); return p;
+}
+function noiseSrc(t, len, off = Math.random() * 1.5) { const s = AC.createBufferSource(); s.buffer = noiseBuf; s.start(t, off); s.stop(t + len); return s; }
+function loopNoise() { const s = AC.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(0, Math.random() * 1.5); return s; }
+function filt(type, f, Q = 0.7) { const b = AC.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = Q; return b; }
+function gainNode(v = 0) { const g = AC.createGain(); g.gain.value = v; return g; }
+
+function buildAir() {
+  // leaves: a soft high hiss that gusts with the wind
+  { const src = loopNoise(), hp = filt('highpass', 1400), bp = filt('bandpass', 3200, 0.4), g = gainNode(0), gust = gainNode(0.6);
+    const lfo = AC.createOscillator(), lg = gainNode(0.45); lfo.frequency.value = 0.11; lfo.connect(lg); lg.connect(gust.gain); lfo.start();
+    src.connect(hp); hp.connect(bp); bp.connect(gust); gust.connect(g); g.connect(outBus); air.leaves = g; }
+  // the town, far off: a low rumble you only notice when it stops
+  { const src = loopNoise(), lp = filt('lowpass', 140, 0.5), g = gainNode(0); src.connect(lp); lp.connect(g); g.connect(outBus); air.hum = g; }
+  // the sea: low surf that swells and draws back
+  { const src = loopNoise(), lp = filt('lowpass', 520, 0.6), g = gainNode(0), swell = gainNode(0.55);
+    const lfo = AC.createOscillator(), lg = gainNode(0.45); lfo.frequency.value = 0.13; lfo.connect(lg); lg.connect(swell.gain); lfo.start();
+    const lfo2 = AC.createOscillator(), lg2 = gainNode(260); lfo2.frequency.value = 0.13; lfo2.connect(lg2); lg2.connect(lp.frequency); lfo2.start();
+    src.connect(lp); lp.connect(swell); swell.connect(g); g.connect(outBus); air.sea = g; }
+  // the engine (car or boat): a buzzy fundamental + a sub, putting through a firing tremolo,
+  // under a lowpass that opens with the revs; tyres/hull noise beside it
+  { const g = gainNode(0), lp = filt('lowpass', 380, 1.1), putt = gainNode(0.7);
+    const o1 = AC.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 36;
+    const o2 = AC.createOscillator(); o2.type = 'square'; o2.frequency.value = 18; const o2g = gainNode(0.5);
+    const am = AC.createOscillator(); am.frequency.value = 18; const amG = gainNode(0.3); am.connect(amG); amG.connect(putt.gain);
+    o1.connect(lp); o2.connect(o2g); o2g.connect(lp); lp.connect(putt); putt.connect(g); g.connect(sfxBus);
+    o1.start(); o2.start(); am.start();
+    const rs = loopNoise(), rlp = filt('lowpass', 300, 0.5), rg = gainNode(0); rs.connect(rlp); rlp.connect(rg); rg.connect(sfxBus);
+    air.eng = { g, lp, o1, o2, am, amG, rg, rlp }; }
+  for (let i = 0; i < 4; i++) air.crickets.push({ t: rnd(0, 2), per: rnd(0.55, 1.1), f: rnd(3400, 4300), pan: rnd(-0.9, 0.9), n: 2 + (i % 3) });
+}
+
+// a bird: one of a few calls, soft and a little way off
+function bird(t) {
+  const pan = rnd(-0.85, 0.85), out = filt('lowpass', 5200, 0.5), g = gainNode(0);
+  out.connect(g); g.connect(panned(pan)); const v = rnd(0.02, 0.045);
+  const kind = Math.random();
+  const note = (t0, f0, f1, len, vol = v) => {
+    const o = AC.createOscillator(), e = gainNode(0); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + len);
+    e.gain.setValueAtTime(0.0001, t0); e.gain.exponentialRampToValueAtTime(vol, t0 + len * 0.2); e.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+    o.connect(e); e.connect(out); o.start(t0); o.stop(t0 + len + 0.02);
+  };
+  g.gain.value = 1;
+  if (kind < 0.3) {                         // a two-note whistle, sometimes answered
+    const f = rnd(2200, 3000); note(t, f, f * 1.18, 0.14); note(t + 0.22, f * 1.12, f * 0.86, 0.2);
+    if (Math.random() < 0.4) { note(t + 0.7, f, f * 1.18, 0.14); note(t + 0.92, f * 1.12, f * 0.86, 0.2); }
+  } else if (kind < 0.55) {                 // a quick trill, falling
+    const f = rnd(3000, 3800), n = 5 + (Math.random() * 6 | 0);
+    for (let i = 0; i < n; i++) note(t + i * 0.055, f * (1 - i * 0.02), f * (0.94 - i * 0.02), 0.045, v * 0.8);
+  } else if (kind < 0.8) {                  // a warble: chirps up and down
+    const f = rnd(2400, 3400), n = 3 + (Math.random() * 4 | 0);
+    for (let i = 0; i < n; i++) { const up = i % 2 ? 0.85 : 1.25; note(t + i * 0.11, f, f * up, 0.08 + Math.random() * 0.04, v * rnd(0.6, 1)); }
+  } else {                                  // a wood pigeon: low, breathy 'hoo-hoo, hoo'
+    const f = rnd(480, 560);
+    for (const [k, len] of [[0, 0.32], [0.45, 0.22], [0.75, 0.38]]) note(t + k, f * 0.92, f, len, v * 0.9);
+  }
+}
+// a cricket: a few fast pulses of a high tone
+function cricket(c, t, vol) {
+  const g = gainNode(0), lp = filt('lowpass', 6000, 0.5); g.connect(lp); lp.connect(panned(c.pan));
+  const o = AC.createOscillator(); o.frequency.value = c.f; o.connect(g); o.start(t); o.stop(t + c.n * 0.05 + 0.05);
+  for (let i = 0; i < c.n; i++) { const p = t + i * 0.05; g.gain.setValueAtTime(0.0001, p); g.gain.linearRampToValueAtTime(vol, p + 0.008); g.gain.linearRampToValueAtTime(0.0001, p + 0.03); }
+}
+// a car on a road somewhere off: swells up, passes across, fades (the pitch drops as it goes)
+function farCar(t, vol) {
+  const len = rnd(4, 6.5), dir = Math.random() < 0.5 ? -1 : 1, mid = t + len * 0.5;
+  const out = AC.createStereoPanner ? AC.createStereoPanner() : null, g = gainNode(0);
+  if (out) { out.pan.setValueAtTime(-0.8 * dir, t); out.pan.linearRampToValueAtTime(0.8 * dir, t + len); g.connect(out); out.connect(outBus); } else g.connect(outBus);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, mid); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  const bp = filt('bandpass', 420, 0.9); bp.frequency.setValueAtTime(520, t); bp.frequency.exponentialRampToValueAtTime(330, t + len);
+  noiseSrc(t, len + 0.1).connect(bp); bp.connect(g);
+  const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(rnd(52, 62), t); o.frequency.linearRampToValueAtTime(rnd(40, 46), t + len);
+  const olp = filt('lowpass', 220), og = gainNode(0.35); o.connect(olp); olp.connect(og); og.connect(g); o.start(t); o.stop(t + len + 0.1);
+}
+// a footstep: grass (a soft crush), hard (heel and toe on stone), wood (a hollow knock)
+function footstep(t, surf, vol, side) {
+  const out = panned(side * 0.12, sfxBus), g = gainNode(1); g.connect(out);
+  const tick = (t0, type, f, Q, len, v) => {
+    const e = gainNode(0), b = filt(type, f * rnd(0.85, 1.15), Q); noiseSrc(t0, len + 0.02).connect(b); b.connect(e); e.connect(g);
+    e.gain.setValueAtTime(0.0001, t0); e.gain.exponentialRampToValueAtTime(v, t0 + 0.006); e.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+  };
+  const thud = (t0, f, v, len = 0.09) => {
+    const o = AC.createOscillator(), e = gainNode(0); o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * 0.55, t0 + len);
+    e.gain.setValueAtTime(0.0001, t0); e.gain.exponentialRampToValueAtTime(v, t0 + 0.005); e.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+    o.connect(e); e.connect(g); o.start(t0); o.stop(t0 + len + 0.02);
+  };
+  if (surf === 'grass') {
+    tick(t, 'bandpass', 1900, 0.8, 0.11, vol * 0.5); tick(t + 0.03, 'bandpass', 2800, 1, 0.08, vol * 0.3); thud(t, 85, vol * 0.35);
+  } else if (surf === 'wood') {
+    thud(t, 150, vol * 0.7, 0.1); tick(t, 'bandpass', 900, 1.2, 0.05, vol * 0.3); thud(t + 0.05, 180, vol * 0.25, 0.06);
+  } else {
+    thud(t, 110, vol * 0.5, 0.07); tick(t, 'highpass', 1800, 0.7, 0.04, vol * 0.45); tick(t + 0.055, 'bandpass', 2600, 1.4, 0.03, vol * 0.25);
+  }
+}
+// getting in or out of the car: a door's clunk; getting in also turns the key
+function door(t) {
+  const o = AC.createOscillator(), e = gainNode(0); o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.12);
+  e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(0.25, t + 0.004); e.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  o.connect(e); e.connect(sfxBus); o.start(t); o.stop(t + 0.2);
+  const b = filt('bandpass', 1200, 1), n = gainNode(0); noiseSrc(t, 0.08).connect(b); b.connect(n); n.connect(sfxBus);
+  n.gain.setValueAtTime(0.0001, t); n.gain.exponentialRampToValueAtTime(0.1, t + 0.004); n.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+}
+function crank(t) {
+  for (let i = 0; i < 4; i++) {
+    const p = t + i * 0.11, b = filt('bandpass', 260, 2), n = gainNode(0); noiseSrc(p, 0.1).connect(b); b.connect(n); n.connect(sfxBus);
+    n.gain.setValueAtTime(0.0001, p); n.gain.exponentialRampToValueAtTime(0.18, p + 0.02); n.gain.exponentialRampToValueAtTime(0.0001, p + 0.09);
+  }
+}
+
+// once a frame from main.js: what's around the critic, and what she's doing
+//   night 0…1, mode 'walk'|'jeep'|'boat', speed (world units/s), wc (her stride phase),
+//   surface 'grass'|'hard'|'wood', water 0…1 (how near the sea is), inside (a room)
+function tick(dt, w) {
+  if (!AC || AC.state !== 'running') return;
+  const t = AC.currentTime, T = 0.4;
+  const day = 1 - w.night, outside = !w.inside;
+  air.night = w.night; air.day = day;
+  outBus.gain.setTargetAtTime(outside ? 1 : 0.1, t, 0.5);
+  air.leaves.gain.setTargetAtTime(0.02 + 0.012 * day, t, T);
+  air.hum.gain.setTargetAtTime(0.05 + 0.04 * day, t, T);
+  air.sea.gain.setTargetAtTime(0.14 * w.water + (w.mode === 'boat' ? 0.05 : 0), t, 0.8);
+  // engine
+  const E = air.eng, v = Math.abs(w.speed);
+  if (w.mode !== air.mode) {
+    if (w.mode === 'jeep') { door(t); crank(t + 0.25); }
+    else if (air.mode === 'jeep') door(t + 0.05);
+    air.mode = w.mode;
+  }
+  if (w.mode === 'jeep') {
+    const gear = v < 4 ? v / 4 : v < 8 ? (v - 4) / 4 : (v - 8) / 3;     // three gears: the revs climb and drop back
+    const rev = 0.15 + 0.85 * Math.min(1, gear) * Math.min(1, v / 2);
+    E.o1.frequency.setTargetAtTime(34 + 40 * rev + 2 * v, t, 0.1); E.o2.frequency.setTargetAtTime((34 + 40 * rev + 2 * v) / 2, t, 0.1);
+    E.am.frequency.setTargetAtTime((34 + 40 * rev) / 2, t, 0.1); E.amG.gain.setTargetAtTime(0.3, t, 0.2);
+    E.lp.frequency.setTargetAtTime(260 + 650 * rev, t, 0.1);
+    E.g.gain.setTargetAtTime(0.06 + 0.07 * rev, t, 0.15);
+    E.rg.gain.setTargetAtTime(0.09 * Math.min(1, v / 9), t, 0.2); E.rlp.frequency.setTargetAtTime(220 + 40 * v, t, 0.2);
+  } else if (w.mode === 'boat') {                                    // an outboard's putt-putt, and the hull through the water
+    const rev = 0.2 + 0.8 * Math.min(1, v / 5.5);
+    E.o1.frequency.setTargetAtTime(28 + 30 * rev, t, 0.2); E.o2.frequency.setTargetAtTime(14 + 15 * rev, t, 0.2);
+    E.am.frequency.setTargetAtTime(7 + 9 * rev, t, 0.2); E.amG.gain.setTargetAtTime(0.55, t, 0.2);
+    E.lp.frequency.setTargetAtTime(220 + 380 * rev, t, 0.2);
+    E.g.gain.setTargetAtTime(0.05 + 0.06 * rev, t, 0.3);
+    E.rg.gain.setTargetAtTime(0.1 * Math.min(1, v / 4), t, 0.3); E.rlp.frequency.setTargetAtTime(700, t, 0.3);
+  } else { E.g.gain.setTargetAtTime(0, t, 0.25); E.rg.gain.setTargetAtTime(0, t, 0.2); }
+  if (muted) { air.wc = w.wc; return; }                               // (nothing to hear: skip the one-shots)
+  // footsteps: a foot lands each time the stride passes a half-turn
+  if (w.mode === 'walk' && w.wc != null) {
+    if (air.wc != null && w.speed > 0.35) {
+      const a = Math.floor((air.wc - Math.PI / 2) / Math.PI), b = Math.floor((w.wc - Math.PI / 2) / Math.PI);
+      if (b > a) footstep(t + 0.01, w.surface, 0.16 + 0.12 * Math.min(1, w.speed / 4.5), b % 2 ? 1 : -1);
+    }
+    air.wc = w.wc;
+  } else air.wc = null;
+  if (!outside) return;
+  // birds by day (more near trees and fields than anywhere — but everywhere has some)
+  air.birdT -= dt;
+  if (air.birdT <= 0) { if (Math.random() < day) bird(t + 0.02); air.birdT = rnd(1.2, 4.5) / Math.max(0.3, day); }
+  // crickets by night
+  if (w.night > 0.15) for (const c of air.crickets) if ((c.t -= dt) <= 0) { cricket(c, t + 0.02, 0.006 * w.night); c.t = c.per * rnd(0.9, 1.1); }
+  // far-off traffic
+  air.carT -= dt;
+  if (air.carT <= 0) { farCar(t + 0.02, 0.04 + 0.03 * day); air.carT = rnd(7, 18) * (1 + w.night * 1.5); }
+}
+
+// ── story cues: short phrases, played once, through the score's bus ──
+const CUES = {
+  clue(t) {                                   // something noticed: a soft rolled question
+    bass(N('D2'), t, 1.4, 0.2); pad(Ns('D2 A2'), t, 2.6, 0.022, 380);
+    keys([N('F3')], t + 0.05, 0.5, 0.05); keys([N('A3')], t + 0.3, 0.5, 0.045); keys(Ns('D3 G3 C4'), t + 0.6, 1.4, 0.04);
+  },
+  lead(t) {                                   // a find that points somewhere: darker, with a pulse under it
+    kick(t, 0.2, 70); bass(N('D2'), t, 1.1, 0.26); bass(N('Bb1'), t + 0.9, 1.6, 0.26);
+    pad(Ns('Bb1 F2 D3'), t + 0.85, 3.2, 0.03, 380);
+    keys(Ns('A3'), t + 0.1, 0.4, 0.05); keys(Ns('Bb3'), t + 0.4, 0.5, 0.05); keys(Ns('D3 F3 A3'), t + 0.9, 1.8, 0.05);
+    kick(t + 0.9, 0.16, 70);
+  },
+  wrong(t) {                                  // Vivi shakes her head
+    bass(N('A1'), t, 1.2, 0.22); keys(Ns('Bb2 E3'), t + 0.1, 0.9, 0.035);
+  },
+  solved(t) {                                 // it all fits: the minor turns to major
+    const b = 0.55, seq = [['Dm', 0], ['Bb', 2], ['C', 4], ['F', 6]];
+    for (const [k, i] of seq) { const c = CH[k]; bass(c.walk[0], t + i * b, b * 2, 0.26); keys(c.keys, t + i * b, b * (i === 6 ? 4 : 1.6), 0.055); }
+    pad(Ns('F2 C3 A3'), t + 6 * b, 4, 0.032);
+    brush(t + 6 * b, 0.04, 0.6);
+  },
+  getaway(t) {                                // Rex bolts: the countdown's figure, once
+    const line = Ns('D2 D2 F2 D2 Eb2 D2 A1 C2'), e = 60 / 112 / 2;
+    for (let i = 0; i < 16; i++) { bass(line[i % 8], t + i * e, e * 0.9, 0.26); if (i % 2 === 0) kick(t + i * e, 0.18, 80); }
+    pad(Ns('D2 Eb2 A2'), t, 16 * e + 0.8, 0.03, 380);
+  },
+};
 
 // ── public ──
 // ── a room's own air, for the walk-in shops: low and soft (no tones up high) ──
@@ -287,7 +477,7 @@ export const audio = {
   },
   // a soft wooden knock for opening a card / a talk
   knock() {
-    if (!AC) return;
+    if (!AC || muted) return;
     const t = AC.currentTime, g = AC.createGain(); env(g, t, 0.003, 0.14, 0.12);
     const o = AC.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(120, t + 0.1);
     o.connect(g); g.connect(sfxBus); o.start(t); o.stop(t + 0.16);
@@ -310,6 +500,14 @@ export const audio = {
       }
     }
   },
+  // a story beat's music (see CUES): the only score you hear while exploring
+  sting(kind) {
+    if (!AC || muted || !CUES[kind]) return;
+    const t = AC.currentTime + 0.05;
+    if (SCENES[scene]?.air) { musicBus.gain.cancelScheduledValues(t); musicBus.gain.setTargetAtTime(SCENES[scene].vol, t, 0.05); }
+    CUES[kind](t);
+  },
+  tick,
   get muted() { return muted; },
   get out() { return master; },          // dev: tap the mix (recording, analysis)
   setMuted(m) {

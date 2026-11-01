@@ -13,7 +13,7 @@ import { createPhone } from './phone.js';
 import { createGuide } from './route.js';
 import { buildWalkers, tickWalkers, walkerHome, WALKERS } from './crowd.js';
 import { createBumps } from './bump.js';
-import { CLUES, PEOPLE, SUSPECTS, PLACES, judge, buildCase, sketchProp } from './story.js';
+import { CLUES, PEOPLE, SUSPECTS, PLACES, CULPRIT, judge, buildCase, sketchProp } from './story.js';
 import { paintPeople, paintThings } from './portraits.js';
 import { ticketCard } from './ticket.js';
 import { LOOKS } from './human.js';
@@ -304,6 +304,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     G.found.add(c.id);
     if (it.glint) it.glint.visible = false;
     if (isNew) {
+      audio.sting(c.proves.includes(CULPRIT) ? 'lead' : 'clue');   // music only for the finds
       if (G.found.size === 1) setTimeout(() => phone.push('Mum', 'saw the museum on the news!! are you safe?? are you eating??'), 2500);
       if (c.id === 'van') setTimeout(() => phone.push('Editor', 'FRAME & CO.? Isn\'t that the framer who hung the whole show?'), 2000);
       if (c.id === 'ticket') phone.addItem('ticket');
@@ -495,6 +496,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       const go = $('nbGo');
       if (go && !go.disabled) go.onclick = () => {
         const v = judge(G.pickSus, [...G.pickClues]);
+        audio.sting(v.ok ? 'solved' : 'wrong');
         $('nbV').innerHTML = `<div class="verdict sk">${v.text}</div>` +
           (v.ok ? `<button class="sk next" id="nbOn">great work — now head to Cape Far Side →</button>` : '');
         if (v.ok) { G.solved = true; G.track = null; updateGoal(); $('nbOn').onclick = closeUI; $('nbOn').scrollIntoView({ block: 'nearest' }); }
@@ -699,6 +701,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   }
   function startGetaway() {
     G.act = 2; G.track = null;
+    audio.sting('getaway');
     const rex = personIt('rex'), van = items.find(i => i.id === 'van');
     relocate(rex, CAPE.rex[0], CAPE.rex[2], CAPE.rex[0], CAPE.rex[2] + 5);
     if (rex.glint) rex.glint.visible = true;
@@ -977,7 +980,10 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       <p class="soft">The planet's still yours — and the buildings dotted around it, out past town, are Janelle's real projects. Pick one on the case board, follow the arrow, and press <kbd>E</kbd> when you get there. Everything else she's made is at <a href="https://ghanemja.github.io" target="_blank" rel="noopener">ghanemja.github.io ↗</a>.</p>
       <button class="sk" id="endOk">keep exploring</button>`;
     show($('endcard'));
-    $('endOk').onclick = () => show($('endcard'), false);
+    // the epilogue's music plays you out, then the planet's own air comes back
+    const calm = () => { if (G.act === 5) audio.setScene('day'); };
+    setTimeout(calm, 45000);
+    $('endOk').onclick = () => { show($('endcard'), false); calm(); };
     updateGoal();
   }
 

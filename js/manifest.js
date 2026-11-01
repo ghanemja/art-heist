@@ -33,6 +33,10 @@ export default {
     // Maple Plaza, the strip mall: town-frame [x, y] of its shopfront line, and
     // the reserved circle (kept clear of the boulevard so the ring isn't pushed)
     mall: { at: [27.4, 0.5], zone: [24.8, 0.5], r: 6.0 },
+    // the roundabout where the boulevard, the Riverbend bridge road and YarnFlow's road meet
+    // (roundabout.js): near `at` on the boulevard, its middle `out` off the line away from town;
+    // ring = its carriageway's centre-line radius, half = the carriageway's half-width
+    roundabout: { at: [30.3, 18.24], ring: 3.4, half: 1.05, out: 2.8 },
   },
   museum: { at: [13, 25], facing: 'town' },
   // the story's places

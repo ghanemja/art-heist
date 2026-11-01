@@ -257,6 +257,11 @@ export function createMinimap({ town, player, game, rooms }) {
       ctx.strokeStyle = ROADEDGE; ctx.lineWidth = Math.max(3, (rd.half * 2 + 0.5) * k); ctx.stroke();
       ctx.strokeStyle = ROAD; ctx.lineWidth = Math.max(2, rd.half * 2 * k); ctx.stroke();
     }
+    // the cobbled footpaths (footpaths.js): thin warm-stone lines from the park out to the roads and the meadow
+    for (const pts of town.footpaths?.lines || []) {
+      polyline(ctx, pts, false, proj, keep);
+      ctx.strokeStyle = '#b9a688'; ctx.lineWidth = Math.max(1, 0.62 * k); ctx.stroke();
+    }
     // buildings: the solid footprints (trees and posts are left off), drawn as one inked
     // silhouette — an ink pass a touch wider, then the fill over it, so the circles merge
     const solids = town.colliders.filter(s => s.r >= 0.6 && !s.soft && !s.carOnly && keep(s.dir));
