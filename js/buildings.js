@@ -1774,6 +1774,76 @@ function weldTess(g) {
   out.setIndex(new THREE.BufferAttribute(m > 65535 ? idx : Uint16Array.from(idx), 1));
   return out;
 }
+// tessellate(g, mod, weld): what `weld ? weldTess(mod.modify(g)) : mod.modify(g)` returns —
+// the same triangles in the same order, the same vertices in the same order, the same index —
+// in one pass over typed arrays. The modifier copies the whole mesh into JS arrays on every one
+// of its passes (most triangles need no split at all) and the weld then hashes ~6 copies of
+// every vertex: together ~1.5 s of the load. Here each triangle is split on its own, depth
+// first (the modifier replaces a split triangle in place, so its pieces come out in that
+// order), with the modifier's own arithmetic (midpoints a + (b − a)·½ in doubles, rounded to
+// float32 only at the end), and its corners go straight into weldTess's hash table.
+const TESS_ATTRS = [['position', 3], ['normal', 3], ['color', 3], ['uv', 2], ['uv1', 2]];
+function tessellate(g, mod, weld) {
+  const has = TESS_ATTRS.filter(([n]) => g.attributes[n]);
+  const ok = has.every(([n, s]) => { const a = g.attributes[n]; return !a.isInterleavedBufferAttribute && a.itemSize === s && !a.normalized && a.array; })
+    && (!g.index || g.index.array) && !g.attributes.position.isInterleavedBufferAttribute;
+  if (!ok) return weld ? weldTess(mod.modify(g)) : mod.modify(g);
+  const src = has.map(([n]) => g.attributes[n].array), sz = has.map(([, s]) => s), NA = has.length;
+  const I = g.index ? g.index.array : null, nt = Math.floor((I ? g.index.count : g.attributes.position.count) / 3);
+  const P = src[0], max2 = mod.maxEdgeLength * mod.maxEdgeLength, maxIt = mod.maxIterations;
+  // a corner: its attributes laid end to end (W numbers); a triangle on the stack: 3 corners
+  const W = sz.reduce((a, b) => a + b, 0);
+  const d2 = (t, a, b) => { const dx = t[a] - t[b], dy = t[a + 1] - t[b + 1], dz = t[a + 2] - t[b + 2]; return dx * dx + dy * dy + dz * dz; };
+  const load = (t, T) => {
+    for (let k = 0; k < 3; k++) { const v = I ? I[t * 3 + k] : t * 3 + k; let o = k * W; for (let a = 0; a < NA; a++) { const s = sz[a], A = src[a]; for (let c = 0; c < s; c++) T[o++] = A[v * s + c]; } }
+  };
+  const long = (t) => { const a = (I ? I[t * 3] : t * 3) * 3, b = (I ? I[t * 3 + 1] : t * 3 + 1) * 3, c = (I ? I[t * 3 + 2] : t * 3 + 2) * 3; return d2(P, a, b) > max2 || d2(P, b, c) > max2 || d2(P, a, c) > max2; };
+  // the output corners, grown as they come (a corner's attributes in their own arrays)
+  let cap = nt * 3 + 64, w = 0, out = sz.map(s => new Float32Array(cap * s));
+  const room = (k) => { if (w + k <= cap) return; cap = Math.max(cap * 2, w + k); out = out.map((D, a) => { const E = new Float32Array(cap * sz[a]); E.set(D); return E; }); };
+  const emit = (T) => { room(3); for (let k = 0; k < 3; k++, w++) { let o = k * W; for (let a = 0; a < NA; a++) { const s = sz[a], D = out[a]; for (let c = 0; c < s; c++) D[w * s + c] = T[o++]; } } };
+  // split one triangle (its corners in TD[depth]) to the leaves, in order; scratch per depth
+  const TD = [], QD = [];
+  for (let d = 0; d <= maxIt; d++) { TD.push(new Float64Array(3 * W)); QD.push(new Float64Array(4 * W)); }
+  const HALVES = [[0, 1, [0, 3, 2], [3, 1, 2]], [1, 2, [0, 1, 3], [3, 2, 0]], [0, 2, [0, 1, 3], [3, 1, 2]]];
+  const split = (depth) => {
+    const T = TD[depth];
+    const dab = d2(T, 0, W), dbc = d2(T, W, 2 * W), dac = d2(T, 0, 2 * W);
+    if (depth >= maxIt || !(dab > max2 || dbc > max2 || dac > max2)) return emit(T);
+    const [e0, e1, A, B] = HALVES[dab >= dbc && dab >= dac ? 0 : dbc >= dab && dbc >= dac ? 1 : 2];
+    const Q = QD[depth]; Q.set(T);
+    for (let c = 0; c < W; c++) { const x = T[e0 * W + c]; Q[3 * W + c] = x + (T[e1 * W + c] - x) * 0.5; }
+    const U = TD[depth + 1];
+    for (const L of [A, B]) { for (let k = 0; k < 3; k++) U.set(Q.subarray(L[k] * W, L[k] * W + W), k * W); split(depth + 1); }
+  };
+  // every corner (float32), in the modifier's order
+  for (let t = 0; t < nt; t++) {
+    if (long(t)) { load(t, TD[0]); split(0); continue; }
+    room(3);
+    for (let k = 0; k < 3; k++, w++) { const v = I ? I[t * 3 + k] : t * 3 + k; for (let a = 0; a < NA; a++) { const s = sz[a], A = src[a], D = out[a]; for (let c = 0; c < s; c++) D[w * s + c] = A[v * s + c]; } }
+  }
+  const n = w; if (cap > n) out = out.map((D, a) => D.slice(0, n * sz[a]));
+  // weld as weldTess does (equal in every attribute to 1e-6 in position, 1e-5 otherwise; the first copy wins)
+  const soup = () => { const r = new THREE.BufferGeometry(); has.forEach(([nm, s], a) => r.setAttribute(nm, new THREE.BufferAttribute(out[a], s))); return r; };
+  if (!weld || !n) return soup();
+  const q = has.map(([nm]) => (nm === 'position' ? 1e6 : 1e5));
+  const size = 1 << Math.ceil(Math.log2(n * 2 + 2)), mask = size - 1, table = new Int32Array(size).fill(-1);
+  const first = new Int32Array(n), idx = new Uint32Array(n); let m = 0;
+  const same = (i, j) => { for (let a = 0; a < NA; a++) { const A = out[a], s = sz[a], Q = q[a]; for (let c = 0; c < s; c++) if (Math.round(A[i * s + c] * Q) !== Math.round(A[j * s + c] * Q)) return false; } return true; };
+  for (let i = 0; i < n; i++) {
+    let h = 0;
+    for (let a = 0; a < NA; a++) { const A = out[a], s = sz[a], Q = q[a]; for (let c = 0; c < s; c++) h = Math.imul(h ^ Math.round(A[i * s + c] * Q), 0x9e3779b1) >>> 0; }
+    let j = h & mask, hit = -1;
+    while (table[j] >= 0) { if (same(first[table[j]], i)) { hit = table[j]; break; } j = (j + 1) & mask; }
+    if (hit < 0) { hit = m++; first[hit] = i; table[j] = hit; }
+    idx[i] = hit;
+  }
+  if (m > n * 0.8) return soup();
+  const r = new THREE.BufferGeometry();
+  has.forEach(([nm, s], a) => { const S = out[a], D = new Float32Array(m * s); for (let v = 0; v < m; v++) for (let c = 0; c < s; c++) D[v * s + c] = S[first[v] * s + c]; r.setAttribute(nm, new THREE.BufferAttribute(D, s)); });
+  r.setIndex(new THREE.BufferAttribute(m > 65535 ? idx : Uint16Array.from(idx), 1));
+  return r;
+}
 function conform(g, sink, groundAt = radiusAt) {
   if (groundAt !== radiusAt) return bend(g, sink, groundAt);
   g.updateMatrixWorld(true);
@@ -1805,9 +1875,9 @@ function conform(g, sink, groundAt = radiusAt) {
   };
   g.userData.lift = (x, z) => at(x, z) - sink;     // (the height it laid a point at: the roof-trim check reads it)
   for (const m of g.children) {
-    m.geometry = weldTess((exact ? _tessFine : _tess).modify(m.geometry));
-    const p = m.geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) + at(p.getX(i), p.getZ(i)) - sink);
+    m.geometry = tessellate(m.geometry, exact ? _tessFine : _tess, true);
+    const p = m.geometry.attributes.position, A = p.array;
+    for (let i = 0; i < p.count * 3; i += 3) A[i + 1] = A[i + 1] + at(A[i], A[i + 2]) - sink;
     p.needsUpdate = true;
     m.geometry.computeBoundingSphere();
     m.geometry.computeBoundingBox();
@@ -1838,7 +1908,7 @@ function bend(g, sink, groundAt) {
   };
   const D = new THREE.Vector3(), up = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion(), n = new THREE.Vector3();
   for (const m of g.children) {
-    m.geometry = _tessFine.modify(m.geometry);
+    m.geometry = tessellate(m.geometry, _tessFine, false);
     const p = m.geometry.attributes.position, N = m.geometry.attributes.normal;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
