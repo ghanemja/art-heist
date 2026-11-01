@@ -12,7 +12,8 @@
 // lies on the ground end to end instead of floating off a radius-40 world.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { settle, radiusAt, drawnGroundAt, pruneDeco } from './world.js';
@@ -1127,17 +1128,49 @@ export function stripMall(o = {}) {
   };
   const lotU = (s, z) => lerpAt(SIDE[s].lot, Math.min(lotEnd, Math.max(lotZ, z)));
   const lotZs = zs.filter(z => z >= lotZ && z <= lotEnd);
-  // a flat slab from an outline [[x, z]…], y0 → y1, its top shaded flat like the ground
-  const slab = (poly, y0, y1, mat) => {
-    const sh = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
-    const geo = new THREE.ExtrudeGeometry(sh, { depth: y1 - y0, bevelEnabled: false });
-    geo.rotateX(-Math.PI / 2); geo.translate(0, y0, 0);
-    const n = geo.attributes.normal; for (let i = 0; i < n.count; i++) if (n.getY(i) > 0.5) n.setXYZ(i, 0, 1, 0);
+  // a flat slab, y0 → y1, its top shaded flat like the ground: the band between two edges A and B
+  // ([[x, z]…], the same count, A[i] across from B[i]) — quads row by row, split across every
+  // ~0.3 so it lays onto the ground smoothly. (It was an extruded outline: on these long, narrow
+  // shapes the cap's triangulation made slivers along every straight run, and laid onto a slope
+  // they stood up inside out — the ink drew them as streaks across the paving)
+  const slab = (A, B, y0, y1, mat) => {
+    const n = A.length, nk = Math.max(1, Math.ceil(Math.max(...A.map((a, i) => Math.hypot(a[0] - B[i][0], a[1] - B[i][1]))) / 0.3));
+    const at = (i, k) => [A[i][0] + (B[i][0] - A[i][0]) * k / nk, A[i][1] + (B[i][1] - A[i][1]) * k / nk];
+    const pos = [], nor = [], uv = [];
+    // (each triangle wound to face `want`: [x, y, z] — degenerate ones, where an edge doubles back on itself, are left out)
+    const tri = (p, q, r, want) => {
+      const ux = q[0] - p[0], uy = q[1] - p[1], uz = q[2] - p[2], vx = r[0] - p[0], vy = r[1] - p[1], vz = r[2] - p[2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz);
+      if (l < 1e-7) return;
+      if (nx * want[0] + ny * want[1] + nz * want[2] < 0) { [q, r] = [r, q]; nx = -nx; ny = -ny; nz = -nz; }
+      for (const v of [p, q, r]) { pos.push(...v); nor.push(nx / l, ny / l, nz / l); uv.push(v[0], v[2]); }
+    };
+    const quad = (a, b, c, d, want) => { tri(a, b, c, want); tri(a, c, d, want); };
+    const P = (xz, y) => [xz[0], y, xz[1]];
+    for (let i = 0; i < n - 1; i++) for (let k = 0; k < nk; k++) {
+      const a = at(i, k), b = at(i, k + 1), c = at(i + 1, k + 1), d = at(i + 1, k);
+      quad(P(a, y1), P(b, y1), P(c, y1), P(d, y1), [0, 1, 0]);
+      quad(P(a, y0), P(b, y0), P(c, y0), P(d, y0), [0, -1, 0]);
+    }
+    // the walls: along each edge (facing away from the other), and across each end
+    for (const [E, F] of [[A, B], [B, A]]) for (let i = 0; i < n - 1; i++) {
+      const out = [(E[i][0] + E[i + 1][0] - F[i][0] - F[i + 1][0]) / 2, 0, (E[i][1] + E[i + 1][1] - F[i][1] - F[i + 1][1]) / 2];
+      quad(P(E[i], y0), P(E[i + 1], y0), P(E[i + 1], y1), P(E[i], y1), out);
+    }
+    for (const [i, j] of [[0, 1], [n - 1, n - 2]]) for (let k = 0; k < nk; k++) {
+      const a = at(i, k), b = at(i, k + 1), out = [a[0] - at(j, k)[0], 0, a[1] - at(j, k)[1]];
+      quad(P(a, y0), P(b, y0), P(b, y1), P(a, y1), out);
+    }
+    for (let v = 0; v < nor.length; v += 3) if (nor[v + 1] > 0.5) { nor[v] = 0; nor[v + 1] = 1; nor[v + 2] = 0; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     return K.put(geo, mat, 0, 0, 0);
   };
   const kerbM = paint(PAL.kerb), paveM = paint(0xe2d6bd), asph = paint(0x8a8392, { hatch: 0 });
   // the asphalt (asphalt meets asphalt at the drive: no drawn edge)
-  slab([...lotZs.map(z => [lotU(1, z), z]), ...lotZs.slice().reverse().map(z => [-lotU(-1, z), z])], 0, 0.05, asph).userData.noInk = true;
+  slab(lotZs.map(z => [lotU(1, z), z]), lotZs.map(z => [-lotU(-1, z), z]), 0, 0.05, asph).userData.noInk = true;
   // (the drive out to the boulevard is mallDrive(), built to the road's real edge once it's placed)
   const PAVE = {};
   for (const s of [-1, 1]) {
@@ -1155,7 +1188,7 @@ export function stripMall(o = {}) {
       const m = KB / Math.max(0.5, nx * b[0] + nz * b[1]);
       return [p[0] + nx * m, p[1] + nz * m];
     });
-    slab([...kl, ...outer.reverse()], 0, 0.1, kerbM);
+    slab(kl, outer, 0, 0.1, kerbM);
     // the pavement: from the building line (beside the tower) or the lot's edge (under its kerb)
     // out to the verge, from the back of the tower to the front of the lot's kerb. Where the
     // road crowds the building it simply ends, square across, at a sensible width
@@ -1166,14 +1199,13 @@ export function stripMall(o = {}) {
       while (a > 0 && ok[a - 1]) a--;
       while (b < zs.length - 1 && ok[b + 1]) b++;
       const run = zs.slice(a, b + 1).map((z, j) => [z, inner[a + j], S.out[a + j]]);
-      const poly = [];
+      const inE = [], outE = [];
       for (let j = 0; j < run.length; j++) {
-        const [z, u] = run[j];
-        if (j && run[j - 1][0] < lotZ && z >= lotZ) poly.push([s * run[j - 1][1], z]);   // the step from the tower's face to the lot's edge
-        poly.push([s * u, z]);
+        const [z, u, o] = run[j];
+        if (j && run[j - 1][0] < lotZ && z >= lotZ) { inE.push([s * run[j - 1][1], z]); outE.push([s * o, z]); }   // the step from the tower's face to the lot's edge
+        inE.push([s * u, z]); outE.push([s * o, z]);
       }
-      for (let j = run.length - 1; j >= 0; j--) poly.push([s * run[j][2], run[j][0]]);
-      slab(poly, 0, 0.08, paveM);
+      slab(inE, outE, 0, 0.08, paveM);
       PAVE[s] = { z0: zs[a], z1: zs[b], inner: (z) => z < lotZ ? X0 : lotU(s, z), out: (z) => lerpAt(S.out, z) };
     }
   }
@@ -1193,10 +1225,10 @@ export function stripMall(o = {}) {
   const IU = -bayX0 + 0.08, IZ0 = lotZ, IZ1 = bayZ0 + bayD, bed = paint(PAL.grassDeep);
   const isZs = [IZ0, ...lotZs.filter(z => z > IZ0 && z < IZ1), IZ1];
   for (const s of [-1, 1]) {
-    slab([...isZs.map(z => [s * IU, z]), ...isZs.slice().reverse().map(z => [s * lotU(s, z), z])], 0, 0.1, kerbM);
+    slab(isZs.map(z => [s * IU, z]), isZs.map(z => [s * lotU(s, z), z]), 0, 0.1, kerbM);
     const bz = isZs.filter(z => z > IZ0 + 0.1 && z < IZ1 - KB);
     const bedZs = [IZ0 + 0.1, ...bz, IZ1 - KB];
-    slab([...bedZs.map(z => [s * (IU + KB), z]), ...bedZs.slice().reverse().map(z => [s * (lotU(s, z) - 0.02), z])], 0.09, 0.115, bed).userData.noInk = true;
+    slab(bedZs.map(z => [s * (IU + KB), z]), bedZs.map(z => [s * (lotU(s, z) - 0.02), z]), 0.09, 0.115, bed).userData.noInk = true;
     const iu = (IU + lotU(s, (IZ0 + IZ1) / 2)) / 2, zc = (IZ0 + IZ1) / 2 - 0.2;
     K.put(_puff.clone().scale(0.34, 0.3, 0.34), paint(PAL.leaf), s * iu, 0.42, zc - 0.5);
     K.put(lathe([[0.001, 0], [0.06, 0], [0.04, 0.35], [0.001, 0.36]], 8), paint(PAL.bark), s * iu, 0.1, zc + 0.35);
@@ -1665,7 +1697,9 @@ function bake(g, roots = [g]) {
     if (o.userData.lampMark) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); lamps.push([fp.x, fp.z, o.userData.lampMark]); }
     if (o.userData.foot) { fp.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); foots.push([fp.x, fp.z, o.userData.foot]); return; }
     if (!o.isMesh || o.userData.isInk) return;
-    const geo = o.geometry.clone().applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
+    // (copied into a plain BufferGeometry: clone() first builds a default-sized geometry of the
+    // part's own type — a whole rounded box, sphere or tube — only to overwrite it; the data is the same)
+    const geo = new THREE.BufferGeometry().copy(o.geometry).applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
     // (noGround: a prop the walker must not stand on — a hedge, a bench, a planter — keeps that
     // flag on its merged mesh; a draped surface's polygon offset — its layer over the ground and
     // the paving it meets — survives the merge into vertex colours)
@@ -1743,6 +1777,76 @@ function weldTess(g) {
   out.setIndex(new THREE.BufferAttribute(m > 65535 ? idx : Uint16Array.from(idx), 1));
   return out;
 }
+// tessellate(g, mod, weld): what `weld ? weldTess(mod.modify(g)) : mod.modify(g)` returns —
+// the same triangles in the same order, the same vertices in the same order, the same index —
+// in one pass over typed arrays. The modifier copies the whole mesh into JS arrays on every one
+// of its passes (most triangles need no split at all) and the weld then hashes ~6 copies of
+// every vertex: together ~1.5 s of the load. Here each triangle is split on its own, depth
+// first (the modifier replaces a split triangle in place, so its pieces come out in that
+// order), with the modifier's own arithmetic (midpoints a + (b − a)·½ in doubles, rounded to
+// float32 only at the end), and its corners go straight into weldTess's hash table.
+const TESS_ATTRS = [['position', 3], ['normal', 3], ['color', 3], ['uv', 2], ['uv1', 2]];
+function tessellate(g, mod, weld) {
+  const has = TESS_ATTRS.filter(([n]) => g.attributes[n]);
+  const ok = has.every(([n, s]) => { const a = g.attributes[n]; return !a.isInterleavedBufferAttribute && a.itemSize === s && !a.normalized && a.array; })
+    && (!g.index || g.index.array) && !g.attributes.position.isInterleavedBufferAttribute;
+  if (!ok) return weld ? weldTess(mod.modify(g)) : mod.modify(g);
+  const src = has.map(([n]) => g.attributes[n].array), sz = has.map(([, s]) => s), NA = has.length;
+  const I = g.index ? g.index.array : null, nt = Math.floor((I ? g.index.count : g.attributes.position.count) / 3);
+  const P = src[0], max2 = mod.maxEdgeLength * mod.maxEdgeLength, maxIt = mod.maxIterations;
+  // a corner: its attributes laid end to end (W numbers); a triangle on the stack: 3 corners
+  const W = sz.reduce((a, b) => a + b, 0);
+  const d2 = (t, a, b) => { const dx = t[a] - t[b], dy = t[a + 1] - t[b + 1], dz = t[a + 2] - t[b + 2]; return dx * dx + dy * dy + dz * dz; };
+  const load = (t, T) => {
+    for (let k = 0; k < 3; k++) { const v = I ? I[t * 3 + k] : t * 3 + k; let o = k * W; for (let a = 0; a < NA; a++) { const s = sz[a], A = src[a]; for (let c = 0; c < s; c++) T[o++] = A[v * s + c]; } }
+  };
+  const long = (t) => { const a = (I ? I[t * 3] : t * 3) * 3, b = (I ? I[t * 3 + 1] : t * 3 + 1) * 3, c = (I ? I[t * 3 + 2] : t * 3 + 2) * 3; return d2(P, a, b) > max2 || d2(P, b, c) > max2 || d2(P, a, c) > max2; };
+  // the output corners, grown as they come (a corner's attributes in their own arrays)
+  let cap = nt * 3 + 64, w = 0, out = sz.map(s => new Float32Array(cap * s));
+  const room = (k) => { if (w + k <= cap) return; cap = Math.max(cap * 2, w + k); out = out.map((D, a) => { const E = new Float32Array(cap * sz[a]); E.set(D); return E; }); };
+  const emit = (T) => { room(3); for (let k = 0; k < 3; k++, w++) { let o = k * W; for (let a = 0; a < NA; a++) { const s = sz[a], D = out[a]; for (let c = 0; c < s; c++) D[w * s + c] = T[o++]; } } };
+  // split one triangle (its corners in TD[depth]) to the leaves, in order; scratch per depth
+  const TD = [], QD = [];
+  for (let d = 0; d <= maxIt; d++) { TD.push(new Float64Array(3 * W)); QD.push(new Float64Array(4 * W)); }
+  const HALVES = [[0, 1, [0, 3, 2], [3, 1, 2]], [1, 2, [0, 1, 3], [3, 2, 0]], [0, 2, [0, 1, 3], [3, 1, 2]]];
+  const split = (depth) => {
+    const T = TD[depth];
+    const dab = d2(T, 0, W), dbc = d2(T, W, 2 * W), dac = d2(T, 0, 2 * W);
+    if (depth >= maxIt || !(dab > max2 || dbc > max2 || dac > max2)) return emit(T);
+    const [e0, e1, A, B] = HALVES[dab >= dbc && dab >= dac ? 0 : dbc >= dab && dbc >= dac ? 1 : 2];
+    const Q = QD[depth]; Q.set(T);
+    for (let c = 0; c < W; c++) { const x = T[e0 * W + c]; Q[3 * W + c] = x + (T[e1 * W + c] - x) * 0.5; }
+    const U = TD[depth + 1];
+    for (const L of [A, B]) { for (let k = 0; k < 3; k++) U.set(Q.subarray(L[k] * W, L[k] * W + W), k * W); split(depth + 1); }
+  };
+  // every corner (float32), in the modifier's order
+  for (let t = 0; t < nt; t++) {
+    if (long(t)) { load(t, TD[0]); split(0); continue; }
+    room(3);
+    for (let k = 0; k < 3; k++, w++) { const v = I ? I[t * 3 + k] : t * 3 + k; for (let a = 0; a < NA; a++) { const s = sz[a], A = src[a], D = out[a]; for (let c = 0; c < s; c++) D[w * s + c] = A[v * s + c]; } }
+  }
+  const n = w; if (cap > n) out = out.map((D, a) => D.slice(0, n * sz[a]));
+  // weld as weldTess does (equal in every attribute to 1e-6 in position, 1e-5 otherwise; the first copy wins)
+  const soup = () => { const r = new THREE.BufferGeometry(); has.forEach(([nm, s], a) => r.setAttribute(nm, new THREE.BufferAttribute(out[a], s))); return r; };
+  if (!weld || !n) return soup();
+  const q = has.map(([nm]) => (nm === 'position' ? 1e6 : 1e5));
+  const size = 1 << Math.ceil(Math.log2(n * 2 + 2)), mask = size - 1, table = new Int32Array(size).fill(-1);
+  const first = new Int32Array(n), idx = new Uint32Array(n); let m = 0;
+  const same = (i, j) => { for (let a = 0; a < NA; a++) { const A = out[a], s = sz[a], Q = q[a]; for (let c = 0; c < s; c++) if (Math.round(A[i * s + c] * Q) !== Math.round(A[j * s + c] * Q)) return false; } return true; };
+  for (let i = 0; i < n; i++) {
+    let h = 0;
+    for (let a = 0; a < NA; a++) { const A = out[a], s = sz[a], Q = q[a]; for (let c = 0; c < s; c++) h = Math.imul(h ^ Math.round(A[i * s + c] * Q), 0x9e3779b1) >>> 0; }
+    let j = h & mask, hit = -1;
+    while (table[j] >= 0) { if (same(first[table[j]], i)) { hit = table[j]; break; } j = (j + 1) & mask; }
+    if (hit < 0) { hit = m++; first[hit] = i; table[j] = hit; }
+    idx[i] = hit;
+  }
+  if (m > n * 0.8) return soup();
+  const r = new THREE.BufferGeometry();
+  has.forEach(([nm, s], a) => { const S = out[a], D = new Float32Array(m * s); for (let v = 0; v < m; v++) for (let c = 0; c < s; c++) D[v * s + c] = S[first[v] * s + c]; r.setAttribute(nm, new THREE.BufferAttribute(D, s)); });
+  r.setIndex(new THREE.BufferAttribute(m > 65535 ? idx : Uint16Array.from(idx), 1));
+  return r;
+}
 function conform(g, sink, groundAt = radiusAt) {
   if (groundAt !== radiusAt) return bend(g, sink, groundAt);
   g.updateMatrixWorld(true);
@@ -1774,9 +1878,9 @@ function conform(g, sink, groundAt = radiusAt) {
   };
   g.userData.lift = (x, z) => at(x, z) - sink;     // (the height it laid a point at: the roof-trim check reads it)
   for (const m of g.children) {
-    m.geometry = weldTess((exact ? _tessFine : _tess).modify(m.geometry));
-    const p = m.geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) + at(p.getX(i), p.getZ(i)) - sink);
+    m.geometry = tessellate(m.geometry, exact ? _tessFine : _tess, true);
+    const p = m.geometry.attributes.position, A = p.array;
+    for (let i = 0; i < p.count * 3; i += 3) A[i + 1] = A[i + 1] + at(A[i], A[i + 2]) - sink;
     p.needsUpdate = true;
     m.geometry.computeBoundingSphere();
     m.geometry.computeBoundingBox();
@@ -1807,7 +1911,7 @@ function bend(g, sink, groundAt) {
   };
   const D = new THREE.Vector3(), up = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion(), n = new THREE.Vector3();
   for (const m of g.children) {
-    m.geometry = _tessFine.modify(m.geometry);
+    m.geometry = tessellate(m.geometry, _tessFine, false);
     const p = m.geometry.attributes.position, N = m.geometry.attributes.normal;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
@@ -1962,13 +2066,16 @@ export function parkSeat(K, x, z, ry) {
   const s = K.sub(x, 0, z, ry), wood = paint(PAL.bark), iron = paint(PAL.ink, { hatch: 0 }), Y = PARK.SEAT_Y;
   for (const zz of [0.1, 0, -0.1]) s.put(rb(1.12, 0.035, 0.09, 0.014, 2), wood, 0, Y - 0.0175, zz);
   for (const [yy, zz] of [[Y + 0.15, -0.175], [Y + 0.27, -0.19]]) s.put(rb(1.12, 0.09, 0.03, 0.012, 2), wood, 0, yy, zz, [-0.14, 0, 0]);
+  // (the irons: segments along each tube as it bends — the rail is straight, the front leg all but
+  // straight, the back leg and the curling armrest need more — and 8 round, so they stay round
+  // up close: ~1.3k triangles a bench, were ~2.6k)
   for (const sx of [-0.5, 0.5]) {
-    const tube = (pts, r = 0.02) => s.put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([py, pz]) => new THREE.Vector3(sx, py, pz))), 14, r, 8, false), iron);
-    tube([[0, 0.13], [Y * 0.5, 0.125], [Y - 0.035, 0.12]]);                                  // front leg
-    tube([[0, -0.15], [Y * 0.6, -0.15], [Y + 0.1, -0.165], [Y + 0.34, -0.215]]);              // back leg, curving up behind the back slats
-    tube([[Y - 0.04, 0.14], [Y - 0.045, -0.16]]);                                              // the rail under the seat
-    tube([[Y - 0.03, 0.12], [Y + 0.12, 0.14], [Y + 0.165, 0.08], [Y + 0.16, -0.17]], 0.018); // the armrest, curling back
-    for (const [py, pz] of [[Y + 0.34, -0.215], [0, 0.13], [0, -0.15]]) s.put(new THREE.SphereGeometry(0.026, 10, 8), iron, sx, py, pz);   // (capped ends: feet and a knob)
+    const tube = (pts, seg, r = 0.02) => s.put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([py, pz]) => new THREE.Vector3(sx, py, pz))), seg, r, 8, false), iron);
+    tube([[0, 0.13], [Y * 0.5, 0.125], [Y - 0.035, 0.12]], 2);                                  // front leg
+    tube([[0, -0.15], [Y * 0.6, -0.15], [Y + 0.1, -0.165], [Y + 0.34, -0.215]], 10);             // back leg, curving up behind the back slats
+    tube([[Y - 0.04, 0.14], [Y - 0.045, -0.16]], 1);                                              // the rail under the seat
+    tube([[Y - 0.03, 0.12], [Y + 0.12, 0.14], [Y + 0.165, 0.08], [Y + 0.16, -0.17]], 12, 0.018); // the armrest, curling back
+    for (const [py, pz] of [[Y + 0.34, -0.215], [0, 0.13], [0, -0.15]]) s.put(new THREE.SphereGeometry(0.026, 8, 6), iron, sx, py, pz);   // (capped ends: feet and a knob)
   }
 }
 
