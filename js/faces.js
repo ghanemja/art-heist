@@ -41,13 +41,16 @@ export const dirOf = (u, v, zs = 1) => new THREE.Vector3(u, v, zs * Math.sqrt(Ma
 
 // a sphere pushed onto the head shape. mask(d) → keep this vertex (hair/beard region);
 // masked-out vertices sink inside the head, which leaves a clean, tapered hairline.
-export function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, color = null, post = null } = {}) {
+// hide(d) → true where something opaque lies over this surface (hair over the scalp, a hat over
+// the hair): a triangle hidden at all three corners is dropped too.
+export function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, color = null, post = null, cull = !post, hide = null } = {}) {
   const g = new THREE.SphereGeometry(1, wSeg, hSeg);
   const p = g.attributes.position, v = new THREE.Vector3(), o = new THREE.Vector3();
   const col = color ? new Float32Array(p.count * 3) : null, c = new THREE.Color();
   // (a vertex masked fully out sinks to 0.9 of the head, inside it: a triangle of three such is
-  // never seen — not even its hull, which the head's own outline covers — so it isn't kept)
-  const sunk = mask && !post ? new Float32Array(p.count) : null;
+  // never seen — not even its hull, which the head's own outline covers — so it isn't kept.
+  // A `post` that might lift sunk vertices back out says so by leaving `cull` off)
+  const sunk = mask && cull || hide ? new Float32Array(p.count) : null;
   for (let i = 0; i < p.count; i++) {
     if (col) { v.fromBufferAttribute(p, i).normalize(); color(v, c); col.set([c.r, c.g, c.b], i * 3); }
     v.fromBufferAttribute(p, i).normalize();
@@ -55,7 +58,7 @@ export function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, colo
     // mask(d) is a signed field (> 0 inside the hair); blend across the edge so the
     // hairline is a smooth curve, not the sphere's grid stepping
     const mk = mask ? ss(mask(v), -0.07, 0.07) : 1;
-    if (sunk) sunk[i] = mk === 0 ? 1 : 0;
+    if (sunk) sunk[i] = mask && cull && mk === 0 || hide?.(v) ? 1 : 0;
     const k = mask ? THREE.MathUtils.lerp(0.9, inflate(v), mk) : inflate(v);
     o.sub(HC).multiplyScalar(k).add(HC);
     if (post) post(o, v);
@@ -69,8 +72,25 @@ export function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, colo
     const S = w.attributes.sunk.array, I = w.index.array, keep = [];
     for (let t = 0; t < I.length; t += 3) if (!(S[I[t]] && S[I[t + 1]] && S[I[t + 2]])) keep.push(I[t], I[t + 1], I[t + 2]);
     w.setIndex(keep); w.deleteAttribute('sunk');
+    return compact(w);
   }
   return w;
+}
+
+// drop the vertices no triangle uses any more (after culling), keeping every attribute
+function compact(g) {
+  const I = g.index.array, n = g.attributes.position.count, map = new Int32Array(n).fill(-1);
+  let m = 0; for (let k = 0; k < I.length; k++) if (map[I[k]] < 0) map[I[k]] = m++;
+  if (m === n) return g;
+  const out = new THREE.BufferGeometry();
+  for (const [name, a] of Object.entries(g.attributes)) {
+    const arr = new a.array.constructor(m * a.itemSize);
+    for (let i = 0; i < n; i++) if (map[i] >= 0) for (let c = 0; c < a.itemSize; c++) arr[map[i] * a.itemSize + c] = a.array[i * a.itemSize + c];
+    out.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize, a.normalized));
+  }
+  const idx = new (m > 65535 ? Uint32Array : Uint16Array)(I.length); for (let k = 0; k < I.length; k++) idx[k] = map[I[k]];
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  return out;
 }
 
 // ── hair texture: combed strands that flow toward where the hair is gathered (the bun,
@@ -144,7 +164,7 @@ export function noseGeo(type, k) {
   for (const s of path.slice(1)) sh.quadraticCurveTo(s[1], s[2], s[3], s[4]);
   const top = path[0][1], bottom = Math.min(...path.slice(1).map(s => s[4]));
   sh.lineTo(-0.01, bottom); sh.lineTo(...path[0]);
-  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.007, bevelSize: 0.006, bevelSegments: 4, curveSegments: 10 });
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.007, bevelSize: 0.006, bevelSegments: 3, curveSegments: 6 });
   g.translate(0, 0, -0.007).rotateY(-Math.PI / 2);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) { const t = THREE.MathUtils.clamp((top - p.getY(i)) / (top - bottom), 0, 1); p.setX(i, p.getX(i) * (0.5 + 0.9 * t)); }
@@ -190,6 +210,19 @@ const HAIR = {
   fringe:{ centre: 0.32, temple: 0.3, side: 0.1, back: -0.45, base: 1.05, vol: 0.05, fringe: 0.06, backVol: 0.03 },
 };
 
+// a beard and moustache grown from the jaw, the mouth left clear
+function beardMask() {
+  const vm = MOUTH_V;
+  return (d) => {
+    const ax = Math.abs(d.x), az = Math.abs(Math.atan2(d.x, d.z));
+    const cheek = -0.26 + 0.24 * ss(ax, 0.3, 0.95);                                // the beard line on the cheek, rising to the sideburn
+    const below = cheek - d.y;
+    const mous = Math.min(0.27 - ax, d.y - (vm + 0.045), (vm + 0.14) - d.y);       // the moustache band
+    const hole = (((d.x / 0.18) ** 2 + ((d.y - vm) / 0.055) ** 2) - 1) * 0.05;     // the mouth stays clear
+    return Math.min(Math.max(below, mous), 1.75 - az, hole);
+  };
+}
+
 // ── the whole head ───────────────────────────────────────────────────────────
 // F: { shape:{…}, nose, noseSize, mouth, eyes, brows, lashes, blush, eyeSize, browW,
 //      hair (HAIR key), beard, glasses }
@@ -199,7 +232,13 @@ export function buildHead(J, S, F, mats) {
   const pt = (u, v, zs = 1) => shape(dirOf(u, v, zs));
   const add = (o) => { J.head.add(o); return o; };
   const bits = [];
-  add(new THREE.Mesh(sculpt(shape, 44, 32), skin));
+  // hair, a beard and a hat are opaque shells over the scalp: what lies well inside their edge
+  // (past the blend at their line) is never seen, so neither the skull under them nor the hair
+  // under the hat is built. (mats.under(d): true under the hat, from folk.js)
+  const H = HAIR[F.hair], hairM_ = H ? hairMask(H) : null, beardM = F.beard ? beardMask() : null, under = mats.under || null;
+  const IN = 0.12;
+  const skullHide = (hairM_ || beardM || under) ? (d) => (hairM_ && hairM_(d) > IN) || (beardM && beardM(d) > IN) || (under && under(d)) : null;
+  add(new THREE.Mesh(sculpt(shape, 44, 32, { hide: skullHide }), skin));
   const lineM = paint(0x2f2028, { hatch: 0 });
   // eyes: dark, a highlight, lids for sleepy/narrow eyes, lashes
   const es = F.eyeSize ?? 1;
@@ -262,22 +301,16 @@ export function buildHead(J, S, F, mats) {
   if (F.glasses) for (const s of [-1, 1]) { const g = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.0038, 6, 18), dark); g.position.copy(pt(s * 0.36, 0.12)).add(new THREE.Vector3(0, 0, 0.012)); bits.push(add(g)); }
   if (F.glasses) bits.push(add(stroke(shape, [[-0.15, 0.15], [0, 0.19], [0.15, 0.15]], 0.003, dark, 0.014)));
   // hair, grown from the scalp inside its hairline
-  const H = HAIR[F.hair];
-  if (H) { const mask = hairMask(H);
-    add(new THREE.Mesh(sculpt(shape, 96, 72, { mask, inflate: hairInflate(H), color: hairColor(H, S.hair ?? 0x3a2a24, mask) }), paint(0xffffff, { vertexColors: true }))); }
+  // (96 round the head carry the combed strands; strands that run up the head need few rows,
+  // strands swept back to a bun or a ponytail cross the rows, so they get more)
+  if (H) { const mask = hairM_, swept = Math.abs((H.flow || [0, 1, 0])[2]) > 0.5;
+    add(new THREE.Mesh(sculpt(shape, 96, swept ? 64 : 48, { mask, inflate: hairInflate(H), color: hairColor(H, S.hair ?? 0x3a2a24, mask), hide: under }), paint(0xffffff, { vertexColors: true }))); }
   // a beard and moustache grown from the jaw, the mouth left clear
   if (F.beard) {
-    const mask = (d) => {
-      const ax = Math.abs(d.x), az = Math.abs(Math.atan2(d.x, d.z));
-      const cheek = -0.26 + 0.24 * ss(ax, 0.3, 0.95);                                // the beard line on the cheek, rising to the sideburn
-      const below = cheek - d.y;
-      const mous = Math.min(0.27 - ax, d.y - (vm + 0.045), (vm + 0.14) - d.y);       // the moustache band
-      const hole = (((d.x / 0.18) ** 2 + ((d.y - vm) / 0.055) ** 2) - 1) * 0.05;     // the mouth stays clear
-      return Math.min(Math.max(below, mous), 1.75 - az, hole);
-    };
+    const mask = beardM;
     // a beard grows downward: strands run vertically, a little fuller and wavier at the chin
     const BH = { flow: [0, -1, 0.2], strands: 46, shineAt: -0.85, sheen: 0xffd9a8 }, bs = hairStrands(BH);
-    add(new THREE.Mesh(sculpt(shape, 96, 72, { mask, inflate: (d) => 1.045 + 0.06 * Math.max(0, -d.y - 0.5) + 0.008 * bs.ridge(d),
+    add(new THREE.Mesh(sculpt(shape, 96, 48, { mask, inflate: (d) => 1.045 + 0.06 * Math.max(0, -d.y - 0.5) + 0.008 * bs.ridge(d),
       color: hairColor(BH, S.hair ?? 0x3a2a24, mask) }), paint(0xffffff, { vertexColors: true })));
   }
   for (const b of bits) b.userData.noInk = true;
