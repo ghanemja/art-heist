@@ -1,12 +1,18 @@
 // ─── THE PLAN ────────────────────────────────────────────────────────────────
 // Every deliberate placement on the planet, in one file. Positions are
-// [lat, lon] in degrees; sizes are world units (a person ≈ 1 tall, a car ≈ 2
-// long). On a radius-40 planet one unit ≈ 1.43° of arc.
+// [lat, lon] in degrees, drawn for a radius-40 planet (one unit ≈ 1.43° of arc there);
+// sizes are world units (a person ≈ 1 tall, a car ≈ 2 long). The planet is smaller (R):
+// world.js `ll` packs the plan onto it.
 //
 // The world is designed around the heist: a compact downtown with the museum
 // on its edge, the places the story sends you (station, harbour, airport,
 // launch pad), and Janelle's projects as buildings around town.
-export const R = 40;
+// The plan below is drawn for a radius-40 planet (R_PLAN). The planet itself is R: smaller packs
+// the same places closer (world.js `ll` keeps everything near town at its drawn spacing and
+// squeezes the open country beyond). ?R=<n> previews another size.
+export const R_PLAN = 40;
+const R_ASK = typeof location !== 'undefined' ? +new URLSearchParams(location.search).get('R') : 0;
+export const R = R_ASK >= 24 && R_ASK <= 40 ? R_ASK : 32;
 
 export default {
   R,
@@ -32,7 +38,7 @@ export default {
   sites: {
     station:   { at: [-10, -18], r: 7.4, shift: -1.45, stop: 3.5, name: 'Central Station' },  // hall + platform + track
     harbour:   { at: [-20, 10], r: 4.0, name: 'The Harbour' },
-    airport:   { at: [30, 92], r: 14, name: 'Airport' },
+    airport:   { at: [29, 99], r: 14, name: 'Airport' },
     launchpad: { at: [-8, -150], r: 7, stop: 6.2, name: 'Cape Far Side' },   // the finale: pad, gantry, rocket, crates
     overlook:  { at: [49, -40], r: 3.5, name: 'Summit Overlook' },
   },
@@ -44,11 +50,11 @@ export default {
   projects: [
     { key: 'library',   name: 'The Library', tag: 'the bookshelf', at: [44, 2], style: 'library', decor: true },   // scenery only: no portfolio link
     // the shops of ghanemja.github.io's Main Street, each a walk-in shop out here (style = its shop)
-    { key: 'behaviors', name: 'Behavior Search', tag: 'the proving ground · research', at: [2, 58], style: 'behaviors',
+    { key: 'behaviors', name: 'Behavior Search', tag: 'the proving ground · research', at: [-1, 63], style: 'behaviors',
       desc: 'Search NVIDIA SimReady 3D objects by how they move, not how they look: all 2,166 rigid assets pushed, tilted and dropped in a physics simulator — 106,757 probe runs.', url: 'https://ghanemja.github.io/behaviors/' },
-    { key: 'deckgpt',   name: 'DeckGPT', tag: 'picture palace · ai', at: [-12, 76], style: 'deckgpt',
+    { key: 'deckgpt',   name: 'DeckGPT', tag: 'picture palace · ai', at: [-15, 83], style: 'deckgpt',
       desc: 'Builds a presentation with you, step by step — Scope, Story, Visuals, then the Deck — in your house style.', url: 'https://pptgpt.netlify.app' },
-    { key: 'borrowed-eyes', name: 'Borrowed Eyes', tag: 'optics & menagerie · game', at: [-20, 40], style: 'eyes', lot: 1,
+    { key: 'borrowed-eyes', name: 'Borrowed Eyes', tag: 'optics & menagerie · game', at: [-23, 45], style: 'eyes', lot: 1,
       desc: 'A browser game about how other animals see: photograph 14 hidden animals and borrow their eyes — bee ultraviolet, snake heat pits, bat echolocation, owl night vision.', url: 'https://ghanemja.github.io/borrowed_eyes/' },
     { key: 'yarnflow',  name: 'YarnFlow', tag: 'pattern haberdashery · crochet', at: [34, 53], style: 'yarn', lot: 1,
       desc: 'A crochet studio: watch a pattern get made stitch by stitch in 3D, learn the stitches, and share what you make.', url: 'https://ghanemja.github.io/crochet/' },

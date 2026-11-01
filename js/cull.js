@@ -19,8 +19,9 @@
 // things keep their place in the scene (raycasts against the town's statics never
 // test layers, so the walk rays still find the ground).
 import * as THREE from 'three';
+import { R } from './manifest.js';
 
-const P = 39.2;                       // a ball safely inside the lowest ground and the sea
+const P = R - 0.8;                    // a ball safely inside the lowest ground and the sea
 const HIDE = 31;                      // the layer a hidden thing is parked on
 const MIN_PX = 1.1;                   // smaller than this radius on screen (px): not drawn
 const LOD_PX = 45;                    // a person under this height on screen: no small parts

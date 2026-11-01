@@ -4,14 +4,35 @@
 // ground, and nothing may be built on anything (see CLAUDE.md).
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import PLAN, { R } from './manifest.js';
+import PLAN, { R, R_PLAN } from './manifest.js';
 import { PAL, paint, ink } from './style.js';
 export { R };
 
 const UP = new THREE.Vector3(0, 1, 0);
-export const ll = (lat, lon) => {
+const llRaw = (lat, lon) => {
   const a = lat * Math.PI / 180, b = lon * Math.PI / 180;
   return new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(a), Math.cos(a) * Math.sin(b)).normalize();
+};
+// ── the plan on a smaller planet ──
+// The plan's [lat, lon] are drawn on a radius-R_PLAN planet. On a smaller one, a place keeps its
+// bearing from the town centre, and its distance along the surface (world units) is remapped:
+// unchanged out to PACK_NEAR (downtown, the museum, the station, the harbour, the Library, the
+// shops nearest town: their spacing is the plan's), then the open country beyond is squeezed so the far side still fits.
+const PACK_NEAR = 36;
+const _C = llRaw(...PLAN.town.center), _ax = new THREE.Vector3();
+function packDist(d) {
+  if (d <= PACK_NEAR) return d;
+  const k = (Math.PI * R - PACK_NEAR - 1) / (Math.PI * R_PLAN - PACK_NEAR);   // (the antipode lands just short of the new one)
+  return PACK_NEAR + (d - PACK_NEAR) * k;
+}
+export const ll = (lat, lon) => {
+  const v = llRaw(lat, lon);
+  if (R === R_PLAN) return v;
+  const ang = _C.angleTo(v); if (ang < 1e-9) return v;
+  _ax.crossVectors(_C, v);
+  if (_ax.lengthSq() < 1e-18) _ax.set(0, 1, 0).cross(_C);     // (the exact antipode: any bearing)
+  _ax.normalize();
+  return _C.clone().applyAxisAngle(_ax, packDist(ang * R_PLAN) / R).normalize();
 };
 export const llv = (p) => ll(p[0], p[1]);
 export const arc = (a, b) => a.angleTo(b) * R;                 // world-unit distance along the surface
