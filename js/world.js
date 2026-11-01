@@ -21,7 +21,7 @@ const llRaw = (lat, lon) => {
 // would run past the antipode) is squeezed in. (Where that wrap crowds places sideways, the plan
 // spreads them: their [lat, lon]s in manifest.js / north.js were laid out for this.)
 const PACK_NEAR = Math.PI * R - 12;
-const _C = llRaw(...PLAN.town.center), _ax = new THREE.Vector3();
+const _C = llRaw(...PLAN.town.center), _ax = new THREE.Vector3(), _sx = new THREE.Vector3();
 function packDist(d) {
   if (d <= PACK_NEAR) return d;
   const k = (Math.PI * R - 2 - PACK_NEAR) / (Math.PI * R_PLAN - PACK_NEAR);
@@ -48,6 +48,8 @@ const F = {
   bay: { d: llv(T.bay.at), r: T.bay.r, depth: T.bay.depth },
   mtn: { d: llv(T.mountain.at), r: T.mountain.r, h: T.mountain.height },
   isl: T.island ? { d: llv(T.island.at), r: T.island.r, h: T.island.height } : null,
+  strait: T.strait ? (() => { const a = llv(T.bay.at), b = llv(T.sea.at);
+    return { a, b, n: new THREE.Vector3().crossVectors(a, b).normalize(), ab: a.angleTo(b), half: T.strait.half, depth: T.strait.depth }; })() : null,
 };
 export const SEA = 0.0;                                         // sea level above R
 const LAND = 0.45;                                              // the plateau's level
@@ -121,6 +123,16 @@ export function surfH(d) {
   for (const w of [F.sea, F.bay]) {
     const dw = arc(d, w.d);
     if (dw < w.r) h += (-w.depth - h) * (1 - ss(w.r * 0.7, w.r, dw));
+  }
+  // the strait: a channel along the great circle from the bay's middle to the sea's (boat-wide,
+  // banks sloping like the bay's), so the harbour opens onto the open sea
+  if (F.strait) {
+    const s = F.strait, dn = d.dot(s.n), off = Math.abs(Math.asin(Math.max(-1, Math.min(1, dn)))) * R;   // (across the line, world units)
+    if (off < s.half) {
+      // (along the line: d's angle from a toward b — a × d points along n while d lies on b's side)
+      const along = Math.atan2(_sx.crossVectors(s.a, d).dot(s.n), d.dot(s.a));
+      if (along > 0 && along < s.ab) h += (-s.depth - h) * (1 - ss(s.half * 0.45, s.half, off));
+    }
   }
   // the island: a low mound back up out of the sea (sandy shore round it)
   if (F.isl) { const di = arc(d, F.isl.d); if (di < F.isl.r) h += (F.isl.h - h) * (1 - ss(F.isl.r * 0.45, F.isl.r, di)); }
