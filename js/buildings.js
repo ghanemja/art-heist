@@ -1128,17 +1128,49 @@ export function stripMall(o = {}) {
   };
   const lotU = (s, z) => lerpAt(SIDE[s].lot, Math.min(lotEnd, Math.max(lotZ, z)));
   const lotZs = zs.filter(z => z >= lotZ && z <= lotEnd);
-  // a flat slab from an outline [[x, z]…], y0 → y1, its top shaded flat like the ground
-  const slab = (poly, y0, y1, mat) => {
-    const sh = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
-    const geo = new THREE.ExtrudeGeometry(sh, { depth: y1 - y0, bevelEnabled: false });
-    geo.rotateX(-Math.PI / 2); geo.translate(0, y0, 0);
-    const n = geo.attributes.normal; for (let i = 0; i < n.count; i++) if (n.getY(i) > 0.5) n.setXYZ(i, 0, 1, 0);
+  // a flat slab, y0 → y1, its top shaded flat like the ground: the band between two edges A and B
+  // ([[x, z]…], the same count, A[i] across from B[i]) — quads row by row, split across every
+  // ~0.3 so it lays onto the ground smoothly. (It was an extruded outline: on these long, narrow
+  // shapes the cap's triangulation made slivers along every straight run, and laid onto a slope
+  // they stood up inside out — the ink drew them as streaks across the paving)
+  const slab = (A, B, y0, y1, mat) => {
+    const n = A.length, nk = Math.max(1, Math.ceil(Math.max(...A.map((a, i) => Math.hypot(a[0] - B[i][0], a[1] - B[i][1]))) / 0.3));
+    const at = (i, k) => [A[i][0] + (B[i][0] - A[i][0]) * k / nk, A[i][1] + (B[i][1] - A[i][1]) * k / nk];
+    const pos = [], nor = [], uv = [];
+    // (each triangle wound to face `want`: [x, y, z] — degenerate ones, where an edge doubles back on itself, are left out)
+    const tri = (p, q, r, want) => {
+      const ux = q[0] - p[0], uy = q[1] - p[1], uz = q[2] - p[2], vx = r[0] - p[0], vy = r[1] - p[1], vz = r[2] - p[2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz);
+      if (l < 1e-7) return;
+      if (nx * want[0] + ny * want[1] + nz * want[2] < 0) { [q, r] = [r, q]; nx = -nx; ny = -ny; nz = -nz; }
+      for (const v of [p, q, r]) { pos.push(...v); nor.push(nx / l, ny / l, nz / l); uv.push(v[0], v[2]); }
+    };
+    const quad = (a, b, c, d, want) => { tri(a, b, c, want); tri(a, c, d, want); };
+    const P = (xz, y) => [xz[0], y, xz[1]];
+    for (let i = 0; i < n - 1; i++) for (let k = 0; k < nk; k++) {
+      const a = at(i, k), b = at(i, k + 1), c = at(i + 1, k + 1), d = at(i + 1, k);
+      quad(P(a, y1), P(b, y1), P(c, y1), P(d, y1), [0, 1, 0]);
+      quad(P(a, y0), P(b, y0), P(c, y0), P(d, y0), [0, -1, 0]);
+    }
+    // the walls: along each edge (facing away from the other), and across each end
+    for (const [E, F] of [[A, B], [B, A]]) for (let i = 0; i < n - 1; i++) {
+      const out = [(E[i][0] + E[i + 1][0] - F[i][0] - F[i + 1][0]) / 2, 0, (E[i][1] + E[i + 1][1] - F[i][1] - F[i + 1][1]) / 2];
+      quad(P(E[i], y0), P(E[i + 1], y0), P(E[i + 1], y1), P(E[i], y1), out);
+    }
+    for (const [i, j] of [[0, 1], [n - 1, n - 2]]) for (let k = 0; k < nk; k++) {
+      const a = at(i, k), b = at(i, k + 1), out = [a[0] - at(j, k)[0], 0, a[1] - at(j, k)[1]];
+      quad(P(a, y0), P(b, y0), P(b, y1), P(a, y1), out);
+    }
+    for (let v = 0; v < nor.length; v += 3) if (nor[v + 1] > 0.5) { nor[v] = 0; nor[v + 1] = 1; nor[v + 2] = 0; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     return K.put(geo, mat, 0, 0, 0);
   };
   const kerbM = paint(PAL.kerb), paveM = paint(0xe2d6bd), asph = paint(0x8a8392, { hatch: 0 });
   // the asphalt (asphalt meets asphalt at the drive: no drawn edge)
-  slab([...lotZs.map(z => [lotU(1, z), z]), ...lotZs.slice().reverse().map(z => [-lotU(-1, z), z])], 0, 0.05, asph).userData.noInk = true;
+  slab(lotZs.map(z => [lotU(1, z), z]), lotZs.map(z => [-lotU(-1, z), z]), 0, 0.05, asph).userData.noInk = true;
   // (the drive out to the boulevard is mallDrive(), built to the road's real edge once it's placed)
   const PAVE = {};
   for (const s of [-1, 1]) {
@@ -1156,7 +1188,7 @@ export function stripMall(o = {}) {
       const m = KB / Math.max(0.5, nx * b[0] + nz * b[1]);
       return [p[0] + nx * m, p[1] + nz * m];
     });
-    slab([...kl, ...outer.reverse()], 0, 0.1, kerbM);
+    slab(kl, outer, 0, 0.1, kerbM);
     // the pavement: from the building line (beside the tower) or the lot's edge (under its kerb)
     // out to the verge, from the back of the tower to the front of the lot's kerb. Where the
     // road crowds the building it simply ends, square across, at a sensible width
@@ -1167,14 +1199,13 @@ export function stripMall(o = {}) {
       while (a > 0 && ok[a - 1]) a--;
       while (b < zs.length - 1 && ok[b + 1]) b++;
       const run = zs.slice(a, b + 1).map((z, j) => [z, inner[a + j], S.out[a + j]]);
-      const poly = [];
+      const inE = [], outE = [];
       for (let j = 0; j < run.length; j++) {
-        const [z, u] = run[j];
-        if (j && run[j - 1][0] < lotZ && z >= lotZ) poly.push([s * run[j - 1][1], z]);   // the step from the tower's face to the lot's edge
-        poly.push([s * u, z]);
+        const [z, u, o] = run[j];
+        if (j && run[j - 1][0] < lotZ && z >= lotZ) { inE.push([s * run[j - 1][1], z]); outE.push([s * o, z]); }   // the step from the tower's face to the lot's edge
+        inE.push([s * u, z]); outE.push([s * o, z]);
       }
-      for (let j = run.length - 1; j >= 0; j--) poly.push([s * run[j][2], run[j][0]]);
-      slab(poly, 0, 0.08, paveM);
+      slab(inE, outE, 0, 0.08, paveM);
       PAVE[s] = { z0: zs[a], z1: zs[b], inner: (z) => z < lotZ ? X0 : lotU(s, z), out: (z) => lerpAt(S.out, z) };
     }
   }
@@ -1194,10 +1225,10 @@ export function stripMall(o = {}) {
   const IU = -bayX0 + 0.08, IZ0 = lotZ, IZ1 = bayZ0 + bayD, bed = paint(PAL.grassDeep);
   const isZs = [IZ0, ...lotZs.filter(z => z > IZ0 && z < IZ1), IZ1];
   for (const s of [-1, 1]) {
-    slab([...isZs.map(z => [s * IU, z]), ...isZs.slice().reverse().map(z => [s * lotU(s, z), z])], 0, 0.1, kerbM);
+    slab(isZs.map(z => [s * IU, z]), isZs.map(z => [s * lotU(s, z), z]), 0, 0.1, kerbM);
     const bz = isZs.filter(z => z > IZ0 + 0.1 && z < IZ1 - KB);
     const bedZs = [IZ0 + 0.1, ...bz, IZ1 - KB];
-    slab([...bedZs.map(z => [s * (IU + KB), z]), ...bedZs.slice().reverse().map(z => [s * (lotU(s, z) - 0.02), z])], 0.09, 0.115, bed).userData.noInk = true;
+    slab(bedZs.map(z => [s * (IU + KB), z]), bedZs.map(z => [s * (lotU(s, z) - 0.02), z]), 0.09, 0.115, bed).userData.noInk = true;
     const iu = (IU + lotU(s, (IZ0 + IZ1) / 2)) / 2, zc = (IZ0 + IZ1) / 2 - 0.2;
     K.put(_puff.clone().scale(0.34, 0.3, 0.34), paint(PAL.leaf), s * iu, 0.42, zc - 0.5);
     K.put(lathe([[0.001, 0], [0.06, 0], [0.04, 0.35], [0.001, 0.36]], 8), paint(PAL.bark), s * iu, 0.1, zc + 0.35);
