@@ -19,7 +19,7 @@ export default {
   // geography: shaped features, not noise
   terrain: {
     plateau: { at: [12, 4], r: 21 },          // downtown + boulevard sit on level ground
-    sea: { at: [-62, 14], r: 22, depth: 1.8 }, // the southern sea (r 30 on the radius-40 planet)
+    sea: { at: [-62, 14], r: 15, depth: 1.8 }, // the southern sea (r 30 on the radius-40 planet)
     bay: { at: [-30, 8], r: 9, depth: 1.5 },   // an inlet of the sea, up to the harbour
     mountain: { at: [52, -42], r: 10, height: 3.6 },
     hills: 0.32,                              // rolling amplitude everywhere else
