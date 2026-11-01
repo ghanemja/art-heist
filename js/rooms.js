@@ -139,6 +139,7 @@ const stripeTex = (draw, len, thick, horiz) => {
 function showcase(K, place) {
   const w = SCR_W, h = SCR_H, z = -D + 0.6;
   const grp = new THREE.Group(); grp.position.set(0, SCR_Y, z); K.g.add(grp);
+  if (place.id === 'yarnflow') { grp.scale.setScalar(0.72); grp.position.y = 1.42; }   // (hung on the wall, clear of the floor: its walnut frame is deep)
   const F = kit(grp);
   // the screen itself, set in a dark recess so it reads as lit from within
   F.box(w + 0.04, h + 0.04, 0.04, paint(0x2a2230, { hatch: 0 }), 0, 0, -0.02, 0.01);
