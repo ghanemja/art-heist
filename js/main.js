@@ -20,15 +20,28 @@ import { buildFootpaths } from './footpaths.js';
 import { createDoorCop } from './doorcop.js';
 import { createMinimap } from './minimap.js';
 import { audio } from './audio.js';
+import { QUALITY, detectQuality, onQuality, watchFrame } from './quality.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+// full drawing or light mode (quality.js): from what the device says about itself now, and from
+// the first seconds of frame time later (watchFrame, in the loop); ?quality=low|high pins it
+detectQuality(renderer.getContext());
 // phones: fewer pixels, cooler GPU. That's the most it draws at: a machine that can't keep up is
 // given fewer (adaptive resolution, in the loop below); ?dpr=<n> pins it (screenshots, comparisons)
 const DPR_PIN = +new URLSearchParams(location.search).get('dpr') || 0;
-const DPR_MAX = DPR_PIN || Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75);
-const DPR_MIN = DPR_PIN || Math.min(DPR_MAX, Math.max(0.8, DPR_MAX * 0.6));
+const dprCaps = (low) => {
+  const max = DPR_PIN || Math.min(devicePixelRatio, low ? 1.0 : matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75);
+  return { max, min: DPR_PIN || Math.min(max, low ? 0.7 : Math.max(0.8, max * 0.6)) };
+};
+let { max: DPR_MAX, min: DPR_MIN } = dprCaps(QUALITY.low);
 renderer.setPixelRatio(DPR_MAX);
-const res = { dpr: DPR_MAX, ft: [], calm: 0, last: performance.now() };   // (the adaptive resolution's state: see adaptRes)
+const res = { dpr: DPR_MAX, ft: [], calm: 0, last: performance.now(), max: DPR_MAX, min: DPR_MIN };   // (the adaptive resolution's state: see adaptRes)
+// light mode from the frame times: the lower caps at once (the rest of it follows on its own)
+onQuality(() => {
+  ({ max: DPR_MAX, min: DPR_MIN } = dprCaps(true)); res.max = DPR_MAX; res.min = DPR_MIN;
+  if (res.dpr > DPR_MAX) { res.dpr = DPR_MAX; renderer.setPixelRatio(DPR_MAX); }
+  res.ft.length = 0; res.calm = -12;
+});
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping;          // gouache: colours as painted
@@ -41,6 +54,9 @@ buildPlanet(scene);
 const sky = buildSky(scene);
 const lights = buildLights(scene);
 const clouds = buildClouds(scene);
+// light mode: no clouds (purely decorative, ~70 draws a frame and always drawn: the culler leaves the
+// sky be. Without their ink they read as smoke, so they go altogether)
+onQuality(() => { clouds.visible = false; });
 const town = buildTown(scene);
 buildRoadSurface(scene);          // every road is laid: draw the network as one sheet (kerb returns at every junction)
 layLotsOnSheet(town);             // the shops' car-park markings down onto that asphalt as drawn
@@ -107,7 +123,7 @@ gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera, { avatar: player.root, renderer });
 window.__R = R;
-window.__v2 = { res, culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS, northLife };
+window.__v2 = { res, quality: QUALITY, culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS, northLife };
 window.__v2.meadow = meadow;
 window.__v2.shopInside = shopInside;
 // the corner mini map (and the big map behind it): where you are, and tap a place to travel there on foot
@@ -125,7 +141,9 @@ window.__v2.raygrid = raygridStats;
 // reads the ratio too: fewer pixels, coarser far meshes.)
 function adaptRes() {
   const now = performance.now(), ms = now - res.last; res.last = now;
-  if (DPR_PIN || document.hidden || ms > 250) return;              // (a background tab / a deliberate stall: not a measure)
+  watchFrame(ms, DPR_PIN || res.dpr <= DPR_MIN);                   // (a device that can't keep up: light mode)
+  // (a background tab / a deliberate stall: not a measure. In light mode a slow frame is just slow)
+  if (DPR_PIN || document.hidden || ms > (QUALITY.low ? 1000 : 250)) return;
   res.ft.push(ms); if (res.ft.length < 60) return;
   const med = res.ft.sort((a, b) => a - b)[30]; res.ft.length = 0;
   let to = res.dpr;

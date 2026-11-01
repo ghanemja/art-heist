@@ -1,6 +1,6 @@
 // Headless smoke test of the main app: run it before pushing anything that touches js/.
 //   python3 -m http.server 8123 &          (from the repo root; PORT=<n> for another)
-//   node scripts/smoke.mjs                 (THREE_DIR=<unpacked three@0.160.0 package> serves three locally:
+//   node scripts/smoke.mjs                 (QUERY='&quality=low' adds to the address; THREE_DIR=<unpacked three@0.160.0 package> serves three locally:
 //                                           (cd /tmp && npm pack three@0.160.0 && tar xzf three-0.160.0.tgz) → /tmp/package)
 // Fails (exit 1) on: any console error or uncaught exception, any local file answering 4xx/5xx,
 // the world not finishing its build, the player not moving when walked, the museum room not opening.
@@ -17,11 +17,11 @@ page.on('pageerror', (e) => problems.push('uncaught: ' + String(e).slice(0, 300)
 page.on('console', (m) => { if (m.type() === 'error') problems.push('console: ' + m.text().slice(0, 300)); });
 page.on('response', (r) => { if (r.status() >= 400 && r.url().startsWith(BASE)) problems.push(`${r.status()} ${r.url().slice(BASE.length)}`); });
 const t0 = Date.now();
-await page.goto(BASE + 'index.html?dpr=1', { waitUntil: 'commit', timeout: 0 });
+await page.goto(BASE + 'index.html?dpr=1' + (process.env.QUERY || ''), { waitUntil: 'commit', timeout: 0 });
 const built = await page.waitForFunction(() => window.__v2?.culler, null, { timeout: 180000 }).then(() => true, () => false);
 if (!built) problems.push('the world never finished building (window.__v2.culler)');
 const loadS = (Date.now() - t0) / 1000;
-let walked = 0, room = false;
+let walked = 0, room = false, quality = null;
 if (built) {
   await page.evaluate(() => { const { game, player } = window.__v2; game.G.state = 'play'; player.st.enabled = true; player.st.playing = true; });
   const p0 = await page.evaluate(() => window.__v2.player.st.dir.toArray());
@@ -34,8 +34,9 @@ if (built) {
     await new Promise((r) => setTimeout(r, 4000)); return !!V.rooms.inside; });
   if (!room) problems.push('the museum room did not open');
   await page.waitForTimeout(2000);
+  quality = await page.evaluate(() => window.__v2.quality ? window.__v2.quality.level + (window.__v2.quality.why ? ' (' + window.__v2.quality.why + ')' : '') : null);
 }
 await browser.close();
-console.log(JSON.stringify({ loadS, walked: +walked.toFixed(2), room }));
+console.log(JSON.stringify({ loadS, walked: +walked.toFixed(2), room, quality }));
 if (problems.length) { console.error('✗ smoke test failed:\n  ' + problems.join('\n  ')); process.exit(1); }
 console.log('✓ smoke test passed');
