@@ -202,21 +202,73 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   }
 
   // ── temple body: the great hall behind the columns ──
-  add(rbox(CW, ENT_Y - Y0, DEPTH, 0.08), STONE, 0, Y0 + (ENT_Y - Y0) / 2, ZC);
-  // rusticated base course + pilasters along the sides
-  add(rbox(CW + 0.14, 0.42, DEPTH + 0.14, 0.06), STONE_D, 0, Y0 + 0.21, ZC);
+  // (the main app leaves one of the great doors open: there the front wall is a slab with
+  // a real doorway through it, WD deep, onto a dim, lamp-lit hall — see the doors below)
+  const WD = 0.7, ZB = FRONT - WD, DW = 1.3, DH = 2.0;
+  if (!openDoor) {
+    add(rbox(CW, ENT_Y - Y0, DEPTH, 0.08), STONE, 0, Y0 + (ENT_Y - Y0) / 2, ZC);
+    // rusticated base course + pilasters along the sides
+    add(rbox(CW + 0.14, 0.42, DEPTH + 0.14, 0.06), STONE_D, 0, Y0 + 0.21, ZC);
+  } else {
+    const H = ENT_Y - Y0, sw = (CW - DW) / 2, FD = WD + 0.16, fz = FRONT - FD / 2;   // (the front pieces reach 0.16 into the body: no seam)
+    add(rbox(CW, H, ZB - BACK, 0.08), STONE, 0, Y0 + H / 2, (ZB + BACK) / 2);
+    for (const s of [-1, 1]) add(rbox(sw, H, FD, 0.08), STONE, s * (DW / 2 + sw / 2), Y0 + H / 2, fz);
+    add(rbox(DW + 0.2, H - DH, FD, 0.06), STONE, 0, Y0 + DH + (H - DH) / 2, fz);       // over the doorway
+    add(rbox(CW + 0.14, 0.42, ZB - BACK + 0.07, 0.06), STONE_D, 0, Y0 + 0.21, (ZB + BACK - 0.07) / 2);
+    for (const s of [-1, 1]) add(rbox(sw + 0.07, 0.42, WD + 0.07 + 0.1, 0.06), STONE_D, s * (DW / 2 + (sw + 0.07) / 2), Y0 + 0.21, FRONT + 0.07 - (WD + 0.17) / 2);
+  }
   for (const s of [-1, 1]) for (let k = 0; k < 5; k++) {
     add(rbox(0.12, ENT_Y - Y0 - 0.5, 0.42, 0.04), TRIM, s * (CW / 2 + 0.05), Y0 + (ENT_Y - Y0) / 2 + 0.2, BACK + 0.8 + k * 1.45);
   }
   // the great bronze doors under an arched, glowing fanlight
   {
     const dz = FRONT + 0.02;
-    add(rbox(1.62, 2.66, 0.16, 0.05), TRIM, 0, Y0 + 1.33, dz);                 // surround
-    add(rbox(1.3, 2.0, 0.14, 0.03), BRONZE, 0, Y0 + 1.0, dz + 0.05);            // leaves
-    add(rbox(0.03, 1.96, 0.16, 0.01), DARK, 0, Y0 + 1.0, dz + 0.06);            // the gap
-    for (const s of [-1, 1]) {                                                  // pulls + panels
-      add(new THREE.SphereGeometry(0.045, 12, 8), GOLD, s * 0.1, Y0 + 1.0, dz + 0.14);
-      for (const yy of [0.55, 1.4]) add(rbox(0.46, 0.62, 0.04, 0.02), BRONZE, s * 0.33, Y0 + yy, dz + 0.13);
+    if (!openDoor) {
+      add(rbox(1.62, 2.66, 0.16, 0.05), TRIM, 0, Y0 + 1.33, dz);                 // surround
+      add(rbox(1.3, 2.0, 0.14, 0.03), BRONZE, 0, Y0 + 1.0, dz + 0.05);            // leaves
+      add(rbox(0.03, 1.96, 0.16, 0.01), DARK, 0, Y0 + 1.0, dz + 0.06);            // the gap
+      for (const s of [-1, 1]) {                                                  // pulls + panels
+        add(new THREE.SphereGeometry(0.045, 12, 8), GOLD, s * 0.1, Y0 + 1.0, dz + 0.14);
+        for (const yy of [0.55, 1.4]) add(rbox(0.46, 0.62, 0.04, 0.02), BRONZE, s * 0.33, Y0 + yy, dz + 0.13);
+      }
+    } else {
+      // the main app: the west leaf (museum −x) stands open, swung in on its hinge, so the
+      // doorway shows the dim hall inside — the way in. The east leaf stays shut.
+      for (const s of [-1, 1]) add(rbox(0.16, 2.66, 0.16, 0.05), TRIM, s * 0.73, Y0 + 1.33, dz);   // surround: jambs…
+      add(rbox(1.62, 0.66, 0.16, 0.05), TRIM, 0, Y0 + 2.33, dz);                                  // …and head
+      const LZ = FRONT - 0.05, LW = 0.63;
+      add(rbox(LW, DH, 0.14, 0.03), BRONZE, DW / 2 - LW / 2 - 0.01, Y0 + DH / 2, LZ);             // the shut leaf
+      add(new THREE.SphereGeometry(0.045, 12, 8), GOLD, 0.1, Y0 + 1.0, LZ + 0.09);
+      for (const yy of [0.55, 1.4]) add(rbox(0.46, 0.62, 0.04, 0.02), BRONZE, 0.33, Y0 + yy, LZ + 0.08);
+      const hinge = new THREE.Group(); hinge.position.set(-DW / 2 + 0.03, Y0, LZ); hinge.rotation.y = 1.28; g.add(hinge);   // swung in ~73°
+      add(rbox(LW, DH, 0.14, 0.03), BRONZE, LW / 2, DH / 2, 0, hinge);                            // the open leaf
+      add(new THREE.SphereGeometry(0.045, 12, 8), GOLD, LW - 0.11, 1.0, 0.09, hinge);
+      for (const yy of [0.55, 1.4]) add(rbox(0.46, 0.62, 0.04, 0.02), BRONZE, LW - 0.33, yy, 0.08, hinge);
+      add(new THREE.SphereGeometry(0.045, 12, 8), GOLD, LW - 0.11, 1.0, -0.09, hinge);           // (its inner pull)
+      // the hall beyond: dim, with a warm lamp glow low down and an empty gilt frame on the far
+      // wall — painted on the reveal's back, unlit (keep: it stays dark in the sun)
+      const cv = document.createElement('canvas'); cv.width = 128; cv.height = 192;
+      const c = cv.getContext('2d');
+      let gr = c.createLinearGradient(0, 0, 0, 192); gr.addColorStop(0, '#120c1a'); gr.addColorStop(0.55, '#241626'); gr.addColorStop(1, '#3a2420');
+      c.fillStyle = gr; c.fillRect(0, 0, 128, 192);
+      gr = c.createRadialGradient(64, 170, 4, 64, 160, 110); gr.addColorStop(0, 'rgba(255,190,110,0.62)'); gr.addColorStop(0.45, 'rgba(220,140,70,0.22)'); gr.addColorStop(1, 'rgba(220,140,70,0)');
+      c.fillStyle = gr; c.fillRect(0, 0, 128, 192);
+      c.fillStyle = 'rgba(30,18,22,0.85)'; c.fillRect(0, 150, 128, 42);                  // the far floor, in shadow
+      gr = c.createRadialGradient(64, 165, 2, 64, 165, 60); gr.addColorStop(0, 'rgba(255,200,130,0.5)'); gr.addColorStop(1, 'rgba(255,200,130,0)');
+      c.fillStyle = gr; c.fillRect(0, 140, 128, 52);                                      // the lamp's pool on it
+      c.strokeStyle = 'rgba(214,170,80,0.55)'; c.lineWidth = 5; c.strokeRect(38, 62, 52, 40);   // an empty frame
+      c.strokeStyle = 'rgba(120,90,50,0.6)'; c.lineWidth = 1.5; c.strokeRect(44, 68, 40, 28);
+      const hall = new THREE.CanvasTexture(cv); hall.colorSpace = THREE.SRGBColorSpace;
+      const HALL = new THREE.MeshBasicMaterial({ map: hall }); HALL.userData.keep = true;
+      const back = add(new THREE.PlaneGeometry(DW, DH), HALL, 0, Y0 + DH / 2, ZB + 0.01);
+      back.userData.noInk = true;
+      // the reveal behind the doors: lined dark, a dark floor (the light falls off inside)
+      const SHADE = new THREE.MeshBasicMaterial({ color: 0x1d1420 }); SHADE.userData.keep = true;
+      const FLOOR = new THREE.MeshBasicMaterial({ color: 0x3a2622 }); FLOOR.userData.keep = true;
+      const rd = ZB - (LZ - 0.07);                                                              // from the door's back face to the hall
+      for (const s of [-1, 1]) { const m = add(new THREE.PlaneGeometry(-rd, DH), SHADE, s * (DW / 2 - 0.004), Y0 + DH / 2, (ZB + LZ - 0.07) / 2); m.rotation.y = -s * Math.PI / 2; m.userData.noInk = true; }
+      { const m = add(new THREE.PlaneGeometry(DW, -rd), SHADE, 0, Y0 + DH - 0.004, (ZB + LZ - 0.07) / 2); m.rotation.x = Math.PI / 2; m.userData.noInk = true; }
+      { const m = add(new THREE.PlaneGeometry(DW, -rd + 0.08), FLOOR, 0, Y0 + 0.004, (ZB + LZ) / 2); m.rotation.x = -Math.PI / 2; m.userData.noInk = true; }
     }
     const fan = add(new THREE.CircleGeometry(0.62, 32, 0, Math.PI), WIN, 0, Y0 + 2.02, dz + 0.1);
     fan.scale.y = 0.85;
@@ -538,7 +590,13 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
     const tapeMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.5 });
     const postGeo = lathe([[0.001, 0], [0.18, 0], [0.18, 0.04], [0.06, 0.08], [0.045, 0.2], [0.045, 1.0], [0.07, 1.04], [0.07, 1.1], [0.001, 1.12]], 16);
     const xs = [-4.2, -1.5, 1.5, 4.2], z = -2.0, y0 = PZ;
-    xs.forEach(x => add(postGeo, BRONZE, x, y0, z));
+    // the outer two stand on the lawn beside the forecourt (it ends at r 3.3), not at its paving
+    // height — they floated there, and she stood on their feet — the post stretched so the tape
+    // stays level; none of them is ground to stand on
+    xs.forEach(x => {
+      const foot = Math.hypot(x, z + 0.3) < 3.3 ? y0 : 0.08, post = add(postGeo, BRONZE, x, foot, z);
+      post.scale.y = (y0 + 1.12 - foot) / 1.12; post.userData.noGround = true;
+    });
     for (let i = 0; i < xs.length - 1; i++) {
       const L = xs[i + 1] - xs[i];
       const geo = new THREE.PlaneGeometry(L, 0.11, 12, 1);
@@ -762,11 +820,11 @@ export function buildMuseum({ lite = false, glowMats = [], artBase = ART, openDo
   for (const s of [-1, 1]) {
     for (const z of [-2.8, -6.0, -9.0]) {
       const x = s * 7.15;
-      add(potGeo, POT, x, -0.05, z);
-      add(new THREE.SphereGeometry(0.42, 14, 10), HEDGE, x, 0.82, z);
+      add(potGeo, POT, x, -0.05, z).userData.noGround = true;
+      add(new THREE.SphereGeometry(0.42, 14, 10), HEDGE, x, 0.82, z).userData.noGround = true;
     }
-    // a clipped hedge along the front of each wing
-    add(rbox(2.0, 0.5, 0.45, 0.14, 2), HEDGE, s * WING_X, Y0 + 0.25, FRONT + 0.4);
+    // a clipped hedge along the front of each wing (a prop: never a floor to stand on)
+    add(rbox(2.0, 0.5, 0.45, 0.14, 2), HEDGE, s * WING_X, Y0 + 0.25, FRONT + 0.4).userData.noGround = true;
   }
 
   // ── the ladder: someone propped it to the east wing roof ──

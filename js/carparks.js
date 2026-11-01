@@ -20,7 +20,7 @@ export function createCarParks({ scene, town }) {
     const at = (x, z) => root.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
     { const inv = root.matrixWorld.clone().invert(), p = new THREE.Vector3(), r = root.position.length();
       LOTS.push((d) => { p.copy(d).multiplyScalar(r).applyMatrix4(inv); const x = s * p.x;
-        return (x > L.x0 - 0.1 && x < L.x1 && p.z > L.z0 && p.z < L.z1) || (x > -1.0 && x <= L.x0 && p.z > L.apron[0] - 0.2 && p.z < L.apron[1] + 0.3); }); }   // (over the spur's end too: turning in isn't held at the kerb)
+        return (x > L.x0 - 0.1 && x < L.x1 && p.z > L.z0 && p.z < L.z1) || (x > -1.0 && x <= L.x0 && p.z > L.apron[0] - 0.8 && p.z < L.apron[1] + 0.3); }); }   // (over the spur's end too: turning in isn't held at the kerb)
     const spec = PARKED[lm.style];
     if (!spec) continue;
     // nose in: the car's +z toward the lot's outer kerb, its bumper short of the wheel stop

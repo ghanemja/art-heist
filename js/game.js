@@ -898,7 +898,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   function policeRoutes() {
     const pad = capeDir(0, 0);
     let rd = null, ci = 0, best = 1e9;                        // the road that reaches the cape: its sample nearest the pad
-    for (const r of ROADS) r.pts.forEach((q, i) => { const a = arc(q, pad); if (a < best) { best = a; rd = r; ci = i; } });
+    for (const r of ROADS) if (!r.disc) r.pts.forEach((q, i) => { const a = arc(q, pad); if (a < best) { best = a; rd = r; ci = i; } });   // (not a turning circle)
     if (!rd || best > 14) return;                              // no road out here: the old straight run-in
     const P0 = rd.pts, away = ci > P0.length / 2 ? -1 : 1;     // walking the samples away from the cape
     for (const P of cape.police) {
@@ -1053,5 +1053,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const afterRender = () => phone.afterRender(renderer, placeName());
   return { G, update, closeUI, items, doors, FACE, SKETCH, bumps, walkers, phone, afterRender, startGetaway, startCountdown, abortLaunch, jeepSpot: () => jeepDir.clone(),
     // read-only peeks for the test harness (tests/): where the act-3 console and the moored boat are, the countdown
-    consoleDir: () => cape.consoleDir?.clone(), boatSpot: () => boatDir.clone(), countdown: () => cape.count };
+    consoleDir: () => cape.consoleDir?.clone(), boatSpot: () => boatDir.clone(), countdown: () => cape.count,
+    // the lead the to-do list's arrow points at (the mini map pins it)
+    target: () => (G.state === 'play' ? currentTarget() : null) };
 }

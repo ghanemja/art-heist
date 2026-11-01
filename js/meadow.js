@@ -22,10 +22,13 @@ import { sfxOut } from './audio.js';
 
 const rng = (s) => () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
 
-// ── where: across the road on the park's west side (Lantern Park's own placed frame, +z toward
-// town; walking north up that road the park is on your left and the meadow on your right, among
-// the lawn's scattered trees). The frame() helper's side axis is the placed frame's −x.
-const SPOT = { x: -11.9, z: 0.3, a: 3.4, b: 5.2, rot: -0.12, reserveR: 3.6 };
+// ── where: across the road on the park's west side, on the long wedge of lawn between that road
+// and the cul-de-sac road, round the little stone cairn and the lawn's trees (Lantern Park's own
+// placed frame, +z toward town). It used to sit further south, on the open hillside straight
+// across from the park (x −11.9, z 0.3, rot −0.12); moved up onto this lawn by request, its long
+// axis turned to run along the wedge, clear of both kerbs. The frame() helper's side axis is the
+// placed frame's −x.
+const SPOT = { x: -9.76, z: 14.25, a: 3.3, b: 5.2, rot: 0.18, reserveR: 3.6 };
 function meadowFrame() {
   const T = llv(PLAN.town.center), p = llv(PLAN.park.at), f = frame(p, T);
   const c = f(-SPOT.x, SPOT.z);

@@ -215,6 +215,10 @@ export const STANCES = {
     L: { fwd: -0.12, out: 0.56, twist: 1.6, bend: 1.35, wrist: 0.2, grip: 0.3 },
     R: { fwd: 0.3, out: -0.14, twist: 0.4, bend: 1.9, wrist: 0.0, grip: 0.62, hold: ['cup', [-0.033, -0.046, 0.004], [2.2, 0, 0]] },
     anim: (side, t, p) => { if (side === 'R') { const sip = Math.max(0, Math.sin(t * 0.55)) ** 10; p.bend += 0.5 * sip; p.fwd += 0.25 * sip; } } },
+  door: { free: 'R',           // the constable at the museum's open door: thumb hooked in his belt, the free hand waves you in (doorcop.js)
+    L: { fwd: -0.25, out: 0.42, twist: 0.75, bend: 1.45, wrist: -1.2, grip: 0.3 },
+    R: { fwd: 0.04, out: 0.02, twist: 0.15, bend: 0.3, wrist: 0, grip: 0.35 },
+    anim: (side, t, p) => { if (side === 'R') { p.fwd += 0.05 * Math.sin(t * 0.5); p.bend += 0.08 * Math.sin(t * 0.7 + 1); } } },
   reading: { free: null, ik: true, read: true, seated: true },   // on a bench, a newspaper open in both hands (readPose)
   crossed: { free: 'R',        // the framer: arms crossed, defensive
     L: { fwd: 0.62, out: -0.2, twist: 1.35, bend: 2.0, wrist: 0, grip: 0.6 },
@@ -439,6 +443,9 @@ export function makeFolk(spec) {
       const pts = [[0.86, 0.14], [0.8, -0.3], [0.5, -0.74], [0.12, -0.93]].map(([u, v]) => { const d = new V3(sx * u, v, Math.sqrt(Math.max(0, 1 - u * u - v * v))).normalize(); return sh(d).add(d.multiplyScalar(0.007)); });
       const strap = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, 0.0035, 5, false), paint(0x2a2230, { hatch: 0 })); strap.userData.noInk = true; J.head.add(strap);
     }
+  } else if (S.hat === 'swimcap') { // a swim cap: a smooth shell moulded to this skull, over the brow and the tops of the ears
+    const g = sculpt(sh, 56, 42, { mask: (d) => d.y - lineAt(d, 0.5, 0.1, -0.3), inflate: () => 1.075 });
+    J.head.add(new THREE.Mesh(g, hatM));
   } else if (S.hat === 'beanie') {
     const g = sculpt(sh, 48, 36, { mask: (d) => d.y - lineAt(d, 0.4, 0.2, -0.1), inflate: () => 1.13 });
     J.head.add(new THREE.Mesh(g, hatM));
@@ -534,6 +541,23 @@ export function ikArm(J, side, target, pole) {
   _x.crossVectors(_y, _z);
   J['arm' + side].quaternion.setFromRotationMatrix(_m4.makeBasis(_x, _y, _z));
   J['fore' + side].rotation.set(-bend, 0, 0);
+}
+// ── the same for a leg: put the ankle at `target` (hips frame), knee toward `pole`; the shin folds back ──
+const TH = 0.27, SH = 0.25;
+export function ikLeg(J, side, target, pole) {
+  const S0 = J['thigh' + side].position;
+  const D = target.clone().sub(S0);
+  const d = THREE.MathUtils.clamp(D.length(), Math.abs(TH - SH) + 0.005, TH + SH - 0.001);
+  D.normalize();
+  const A = Math.acos(THREE.MathUtils.clamp((TH * TH + d * d - SH * SH) / (2 * TH * d), -1, 1));
+  const bend = Math.PI - Math.acos(THREE.MathUtils.clamp((TH * TH + SH * SH - d * d) / (2 * TH * SH), -1, 1));
+  const p = pole.clone().addScaledVector(D, -pole.dot(D)).normalize();
+  const u = D.clone().multiplyScalar(Math.cos(A)).addScaledVector(p, Math.sin(A));
+  _y.copy(u).negate();
+  _z.copy(D).addScaledVector(u, -D.dot(u)).normalize().negate();                     // the shin folds toward −Z
+  _x.crossVectors(_y, _z);
+  J['thigh' + side].quaternion.setFromRotationMatrix(_m4.makeBasis(_x, _y, _z));
+  J['shin' + side].rotation.set(bend, 0, 0);
 }
 // the director writing: board held at the waist, tilted to her face; her pen moves along
 // the lines, she pauses now and then to look up — and stops to look at you when you talk
@@ -680,5 +704,6 @@ export function poseFolk(inst, dt, k, { talk = 0 } = {}) {
   }
   if (st?.ik) writePose(inst, t, talk);
   if (st?.read) readPose(inst, t, talk);
+  if (st?.pose) st.pose(inst, t, talk, dt);                  // a stance with its own whole-body pose (north.js: golf, swim)
   return Math.abs(c) * 0.03 * k;
 }

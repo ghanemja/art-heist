@@ -5,7 +5,7 @@
 // in the jeep, they're throttle + steer.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R, SEA, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir, LOTS } from './world.js';
+import { R, SEA, radiusAt, groundAt, standAt, footing, isWater, arc, nearestRoad, slerpDir, LOTS, camBlocksNear, camBlocked } from './world.js';
 import { buildBoat, createWake } from './harbour.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { rbox, lathe } from './props.js';
@@ -408,6 +408,10 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         let iy = (key('KeyW', 'ArrowUp') ? 1 : 0) - (key('KeyS', 'ArrowDown') ? 1 : 0);
         const sm = Math.hypot(st.stick.x, st.stick.y);
         if (!ix && !iy && sm > 0.2) { ix = st.stick.x; iy = st.stick.y; }
+        // a key (or the stick) still held from before a cut — S held to walk out of a room's
+        // front, which faces the other way out here — counts only once it's let go: else she
+        // spins round and walks straight back in through the door
+        if (st.inputHold) { if (ix || iy) ix = iy = 0; else st.inputHold = false; }
         if (ix || iy) {
           _w.copy(_f).multiplyScalar(iy).addScaledVector(_r, ix).normalize();
           // turn smoothly toward the input direction (by angle, so a U-turn can't collapse)
@@ -450,7 +454,10 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
         const perp = st.dir.clone().sub(c.dir.clone().multiplyScalar(c.dir.dot(st.dir))).normalize();
         const w = lim / R;
         st.dir.copy(c.dir).multiplyScalar(Math.cos(w)).addScaledVector(perp, Math.sin(w)).normalize();
-        st.speed *= 0.92;
+        // on foot she slows by how squarely she walks into it: brushing past a planter or along a
+        // bench kept braking her every frame (to under half pace in a second) on the cluttered
+        // cobbled forecourts
+        st.speed *= st.mode === 'walk' ? 1 - 0.08 * Math.max(0, -st.heading.dot(perp)) : 0.92;
       }
       // the jeep is long: its nose collides too
       if (st.mode === 'jeep') for (const c of colliders) {
@@ -543,16 +550,18 @@ export function createPlayer(scene, camera, colliders, startDir, startToward) {
       .addScaledVector(st.camFwd.clone().applyAxisAngle(up, yaw), -camD * (1 + st.camPitch * 0.25))
       .addScaledVector(up, camH + st.camPitch * 4.5 * st.zoom);
     const near = colliders.filter(c => c.r >= 0.5 && !c.carOnly && arc(st.dir, c.dir) < c.r + camD + 2);
+    const blocks = camBlocksNear(head, camD * 1.5 + 6, 0.3);     // shops' walls and roofs (not one she's inside)
     const reach = (w) => {
       for (let i = 1; i <= 10; i++) {
-        const p = head.clone().lerp(w, i / 10).normalize();
-        if (near.some(c => arc(p, c.dir) < c.r + 0.4)) return (i - 1.5) / 10;
+        const q = head.clone().lerp(w, i / 10), p = q.clone().normalize();
+        if (near.some(c => arc(p, c.dir) < c.r + 0.4) || blocks.length && camBlocked(q, 0.4, blocks)) return (i - 1.5) / 10;
       }
       return 1;
     };
     if (reach(camAt(0)) < 1) {
-      for (const o of [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.3, -1.3, 1.8, -1.8]) {
-        if (reach(camAt(o)) >= 1) { st.camFwd.applyAxisAngle(up, o * (1 - Math.exp(-3 * dt))); break; }
+      // (a cut — back out of a shop onto its stoop — takes the clear angle at once: no swing out of a wall)
+      for (const o of [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.3, -1.3, 1.55, -1.55, 1.8, -1.8, 2.3, -2.3]) {
+        if (reach(camAt(o)) >= 1) { st.camFwd.applyAxisAngle(up, o * (st.camInit ? 1 - Math.exp(-3 * dt) : 1)); break; }
       }
     }
     // still blocked: come in only so far, and rise over the obstacle instead —

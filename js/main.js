@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, registerGround, standAt, paintRoadMarkings, LAMPS, collectLamps } from './world.js';
+import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, paintRoadMarkings, buildRoadSurface, LAMPS, collectLamps } from './world.js';
 import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
@@ -9,12 +9,14 @@ import { createCitizens } from './citizens.js';
 import { createCuller, lodPrepare } from './cull.js';
 import { createPlaza } from './plaza.js';
 import { createPark } from './park.js';
-import { createShopInteriors } from './shopinterior.js';
+import { createShopInteriors, shopDoorway } from './shopinterior.js';
 import { createRooms, ROOM_STYLES } from './rooms.js';
 import { createCarParks } from './carparks.js';
 import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
 import { createMeadow } from './meadow.js';
+import { createDoorCop } from './doorcop.js';
+import { createMinimap } from './minimap.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -31,6 +33,7 @@ const sky = buildSky(scene);
 const lights = buildLights(scene);
 const clouds = buildClouds(scene);
 const town = buildTown(scene);
+buildRoadSurface(scene);          // every road is laid: draw the network as one sheet (kerb returns at every junction)
 collectLamps([scene, ...town.shops.map(sp => sp.root)]);   // every lamp's spot, before the props are baked (the shops' own are in their frames)
 // the town's loose props (trees, lamps, benches, planters…), each baked down in place to a fill
 // and a hull — before anything reads the ground, so the walk rays index the baked meshes
@@ -54,7 +57,7 @@ const atmosphere = {
 };
 
 registerGround([scene]);          // everything static drawn so far is walkable ground (people come after)
-paintRoadMarkings();             // centre lines last: they need every road (and the drawn ground)
+paintRoadMarkings(scene);        // centre lines last: they need every road (and the drawn ground)
 const mf = town.museum.frame;
 const player = createPlayer(scene, camera, town.colliders, mf(0.8, 3.4), mf(0, -6));
 const game = createGame({ scene, camera, town, player, atmosphere, renderer });
@@ -66,28 +69,25 @@ const northLife = createNorthLife({ scene, town, game, player });          // th
 createCarParks({ scene, town });                                         // the project shops' car parks: a parked car each
 // the wildflower meadow across the road from Lantern Park: run through it, the flowers squash and spring back
 const meadow = createMeadow({ scene, town, player, camera });
-const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper && !ROOM_STYLES.has(l.style)));   // the project shops' living rooms
-// YarnFlow, Borrowed Eyes and QR Compass open into whole rooms (rooms.js): walk in at the door.
+// the project shops' living rooms: E at the front door fades you in (the shopfront lifts away)
+const shopInside = createShopInteriors(scene, town.landmarks.filter((l) => l.upper && !ROOM_STYLES.has(l.style)), { player, game, colliders: town.colliders });
+// YarnFlow, Borrowed Eyes and QR Compass open into whole rooms (rooms.js): E at the front door.
 // The museum's front door is an E prompt on the forecourt: inside is the crime scene.
 const rooms = createRooms({ scene, camera, player, game });
 for (const o of [lights.hemi, lights.sun, sky]) o.layers.enable(2);       // the rooms are drawn on layer 2
-const roomDoors = town.landmarks.filter((l) => ROOM_STYLES.has(l.style)).map((lm) => {
+for (const lm of town.landmarks.filter((l) => ROOM_STYLES.has(l.style))) {
   lm.noLift = true;                                                    // (no cutaway: you go through to the room)
-  const _p = new THREE.Vector3();
-  return {
-    key: lm.style,
-    inside: (dir) => { lm.root.worldToLocal(_p.copy(dir).multiplyScalar(40)); return lm.inside(_p.x, _p.z) && _p.z < 2.0; },
-    out: () => {                                                        // back on the stoop, facing the street
-      const a = lm.root.localToWorld(new THREE.Vector3(0, 0, 3.2)), b = lm.root.localToWorld(new THREE.Vector3(0, 0, 6));
-      const dir = a.clone().normalize();
-      return { dir, heading: b.sub(a).projectOnPlane(dir).normalize() };
-    },
-  };
-});
-game.doors.push({ dir: mf(0, -1.75), r: 1.3, label: 'go inside the museum', act: () => rooms.enter({ key: 'museum', out: () => {
+  const door = shopDoorway(lm, town.colliders);                        // (the doorway is shut: only E takes you in)
+  game.doors.push({ dir: door.at, r: 1.3, label: `go inside ${lm.name}`, act: () => rooms.enter({ key: lm.style, out: door.out }) });
+}
+const museumDoor = { dir: mf(0, -1.75), r: 1.3, label: 'go inside the museum', act: () => rooms.enter({ key: 'museum', out: () => {
   const dir = mf(0, -1.0);
   return { dir, heading: mf(0, 2).sub(dir).projectOnPlane(dir).normalize() };
-} }) });
+} }) };
+game.doors.push(museumDoor);
+// the museum's open front door: a constable beside it waves you in, with a speech bubble (doorcop.js)
+const doorCop = createDoorCop({ scene, town, game, player, camera, rooms });
+game.doors.push({ dir: doorCop.dir, r: 1.6, label: 'go inside the museum', act: museumDoor.act });   // (E by him goes in too)
 const telescope = createTelescope({ town, game, player, camera });   // the Summit Overlook's telescope: E for a look at the town
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
@@ -95,8 +95,12 @@ lodPrepare(scene);                // (the distance LOD holds on to what it needs
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera, { avatar: player.root, renderer });
-window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, LAMPS };
+window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS, northLife };
 window.__v2.meadow = meadow;
+window.__v2.shopInside = shopInside;
+// the corner mini map (and the big map behind it): where you are, and tap a place to travel there on foot
+const minimap = createMinimap({ town, player, game, rooms });
+window.__v2.minimap = minimap;
 
 const clock = new THREE.Clock();
 function loop() {
@@ -111,7 +115,8 @@ function loop() {
   }
   town.museum.tick(t, 1 - atm.k);
   telescope?.update(dt);
-  if (!game.update(dt, t)) { rooms.watch(roomDoors); if (!rooms.update(dt, t)) player.update(dt, t); }
+  doorCop.update(dt);
+  if (!game.update(dt, t)) { if (!rooms.update(dt, t)) player.update(dt, t); }
   town.tickShops(player.st.dir);                 // inside a project shop: its upper walls lift away
   // inside a carriage of the parked train: its roof lifts off and the camera rises to look in
   if (town.train) {
@@ -128,6 +133,7 @@ function loop() {
     shopInside.update(dt, t, player);
   }
   if (!rooms.inside) meadow.update(dt);          // the meadow's stomp trail + "stomp!" words
+  minimap.update(dt);                            // (a 2D canvas, redrawn a few times a second)
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
