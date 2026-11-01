@@ -61,7 +61,10 @@ export function createGuide({ scene, player }) {
   const geo = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);          // lying flat, pointing along -z… so flip:
   geo.rotateY(Math.PI);                                                        // …pointing along +z (forward)
   const geoInk = geo.clone().scale(1.22, 1, 1.22).translate(0, -0.005, -0.03);
-  const gold = paint(PAL.gold, { emissive: 0x6a4a10, hatch: 0 }), inkM = paint(PAL.ink, { hatch: 0 });
+  // (their own materials: paint() hands out shared ones — the ink here is every dark trim's, the
+  // rooms' screen and label backings too — and a depth offset set on a shared one pulls them all
+  // forward, over whatever lies just in front of them)
+  const gold = paint(PAL.gold, { emissive: 0x6a4a10, hatch: 0, unique: true }), inkM = paint(PAL.ink, { hatch: 0, unique: true });
   for (const m of [gold, inkM]) { m.side = THREE.DoubleSide; m.polygonOffset = true; m.polygonOffsetFactor = -4; m.polygonOffsetUnits = -4; }
   const chev = [];
   for (let i = 0; i < 7; i++) {

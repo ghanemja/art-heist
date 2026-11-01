@@ -146,11 +146,11 @@ function mats() {
   // lines (−5, never on flagstones). Each also rides a few mm higher than the one it covers. Where
   // two pieces of the SAME surface overlap (a lane running into its forecourt, a path into its paved
   // ring, a flagstone cross) their textures are laid in the same metres (planar), so the overlap is invisible
-  const flat = (o, tier = -3) => { const m = paint(0xffffff, { hatch: 0, side: THREE.DoubleSide, ...o }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = tier; return m; };
+  const flat = (o, tier = -3) => { const m = paint(0xffffff, { hatch: 0, side: THREE.DoubleSide, unique: true, ...o }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = tier; return m; };
   _M = {
     line: flat({ map: lineTex }, -5),
     gravel: flat({ map: gravelTex }), flag: flat({ map: flagTex }, -5), cobble: flat({ map: cobbleTex }), bed: flat({ map: bedTex }),
-    edge: (() => { const m = paint(0xb9ad95, { hatch: 0, side: THREE.DoubleSide }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -2; return m; })(),
+    edge: (() => { const m = paint(0xb9ad95, { hatch: 0, side: THREE.DoubleSide, unique: true }); m.polygonOffset = true; m.polygonOffsetFactor = m.polygonOffsetUnits = -2; return m; })(),
     stone: paint(0xd6cbb4), stoneD: paint(0xb3a68c), soil: paint(0x8a6a52, { hatch: 0 }), mulch: paint(0x7a5640, { map: mulchTex }),
     hedge: paint(0x5f8a4e), hedgeD: paint(0x4f7a44), water: paint(PAL.water, { hatch: 0 }),
     dark: paint(PAL.ink, { hatch: 0 }), glow: paint(0xfff1c8, { emissive: 0xffd98a, hatch: 0 }),
