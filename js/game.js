@@ -29,6 +29,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const G = {
     state: 'title', t0: 0, found: new Set(), met: new Set(), talked: new Set(), solved: false, act: 1,
     ui: null, talkIdx: 0, talkWho: null, pickSus: null, pickClues: new Set(),
+    engaged: null, rested: new Set(),          // (the thing a card or conversation is open on; ones just finished: see scan)
   };
   const items = buildCase(scene, town);
   // painted portraits + clue sketches for the UI, rendered once from the real models
@@ -218,6 +219,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
         if (it.knocked) continue;                    // can't chat to someone mid-air
         const lim = it.reach ?? (it.kind === 'person' ? 2.4 : 2.1);
         const d = arc(here, it.dir);
+        // a conversation (or a clue) that has just ended stays ended: no prompt for it until she
+        // steps away — else the next E or Space opened it again from the top, round and round
+        if (G.rested.has(it)) { if (d > lim + 0.6) G.rested.delete(it); else continue; }
         if (d < lim && d < best) { best = d; nearest = it; }
       }
       const dj = arc(here, jeepDir);
@@ -239,8 +243,20 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     show(pr);
   }
   $('prompt').onclick = () => act();
+  // Space moves the text on, like clicking its button: the next line of a conversation, a card's
+  // "ok", the cold open's "skip", the end card. (Not at the driving range, where Space swings:
+  // club.js; and not while typing into anything.)
   addEventListener('keydown', (e) => {
-    if (e.code === 'KeyE') act();
+    if (e.code !== 'Space' || e.repeat || /INPUT|TEXTAREA/.test(document.activeElement?.tagName)) return;
+    const btn = G.state === 'cold' ? $('skip')
+      : G.ui === 'talk' ? $('tNext') : G.ui === 'card' ? $('cardOk')
+      : !$('endcard')?.classList.contains('hide') && $('endOk') ? $('endOk') : null;
+    if (!btn) return;
+    e.preventDefault(); document.activeElement?.blur?.();     // (a focused button would click a second time on keyup)
+    btn.click();
+  });
+  addEventListener('keydown', (e) => {
+    if (e.code === 'KeyE' && (!e.repeat || G.ui === 'activity')) act();   // (held down, E doesn't repeat — except to wind up a swing)
     if (e.code === 'Escape') closeUI();
     if (e.code === 'KeyN' && G.state === 'play') toggleNotebook();
     if (e.code === 'KeyH' && G.state === 'play') { keysOn = !keysOn; showKeys(); }
@@ -292,12 +308,15 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     if (G.uiClose) { const f = G.uiClose; G.uiClose = null; f(); }   // an activity's own way out (the telescope)
     show($({ card: 'card', talk: 'talk', nb: 'nb', proj: 'card', scope: 'scopeView' }[G.ui]), false);
     const was = G.ui;
+    if (G.engaged && (was === 'talk' || was === 'card')) G.rested.add(G.engaged);   // (see scan)
+    G.engaged = null;
     G.ui = null; player.st.enabled = true;
     if (was === 'nb' && G.solved && G.act === 1) startGetaway();
   }
 
   // ── a found thing ──
   function openClue(it) {
+    G.engaged = it;
     const c = CLUES.find(c => c.id === it.id);
     const isNew = !G.found.has(c.id);
     audio.knock();
@@ -385,6 +404,9 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       if (o.userData.noInk && _bs.radius > 6 || _bs.center.distanceTo(mid) > reach + _bs.radius) return;
       if (o.isInstancedMesh) { near.push(o); return; }
       const pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      // (a mesh whose arrays were let go once on the GPU — a streamed-in citizen's merged parts,
+      // gpuOnly's hulls — can't be read here: it threw, and the conversation never opened)
+      if (!pos?.array || idx && !idx.array) return;
       for (let i = 0; i < n; i += 3) {
         a3.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(o.matrixWorld);
         b3.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(o.matrixWorld);
@@ -442,6 +464,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     'And you can\'t stop it — the count\'s already running. Ta-ra!'] };
   const REX_CAUGHT = { id: 'rex', name: 'Rex, framer', lines: ['I\'m not coming down.', '…Is there such a thing as a lawyer on the far side?'] };
   function openTalk(id) {
+    G.engaged = items.find(i => i.id === id) || null;
     G.talkWho = id === 'rex' && G.act === 2 ? REX_CAPE : id === 'rex' && G.act >= 4 ? REX_CAUGHT : PEOPLE.find(p => p.id === id); G.talkIdx = 0;
     audio.knock();
     startConvo(items.find(i => i.id === id));
