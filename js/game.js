@@ -38,9 +38,19 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   const mus = town.museum.group;
   const ML = (x, y, z) => mus.localToWorld(new THREE.Vector3(x, y, z));
 
+  // (a copy of one of her rides. clone() copies userData through JSON, and the car's holds its
+  // wheels: each was written out whole, every vertex as a plain number — ~13 MB kept for nothing.
+  // Its things are pointed at the copy's own parts instead)
+  const cloneBody = (b) => {
+    const ud = b.userData; b.userData = {};
+    const c = b.clone(true); b.userData = ud;
+    const twin = (o) => { const path = []; for (let q = o; q && q !== b; q = q.parent) path.unshift(q.parent ? q.parent.children.indexOf(q) : -1); let r = c; for (const i of path) r = r?.children[i]; return r || null; };
+    for (const [k, v] of Object.entries(ud)) c.userData[k] = v?.isObject3D ? twin(v) : Array.isArray(v) && v.some(w => w?.isObject3D) ? v.map(w => (w?.isObject3D ? twin(w) : w)) : JSON.parse(JSON.stringify(v ?? null));
+    return c;
+  };
   // ── a parked jeep you can walk up to ──
   // (a level frame on the planet, with the car inside it pitched/rolled onto its four tyres)
-  const parked = new THREE.Group(), parkedBody = player.bodies.jeep.clone(true);
+  const parked = new THREE.Group(), parkedBody = cloneBody(player.bodies.jeep);
   parked.add(parkedBody); parkedBody.visible = true;
   const seatParked = () => { parked.position.setLength(standAt(parked.position.clone().normalize())); parkedBody.position.y = 0; parkedBody.rotation.set(0, 0, 0); player.fitToGround(parkedBody, parked); };
   // beside the plaza, in view when you start — not behind you where the camera sits —
@@ -63,7 +73,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
   let jeepDir = jeepSpot.clone();
 
   // ── the little boat at the harbour: moored by the pier, yours to take out for fun ──
-  const moored = new THREE.Group(), mooredBody = player.bodies.boat.clone(true);
+  const moored = new THREE.Group(), mooredBody = cloneBody(player.bodies.boat);
   moored.add(mooredBody); mooredBody.visible = true;
   moored.userData.noGround = true;
   let boatDir = town.harbour.boat.clone();
@@ -365,7 +375,7 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
     scene.traverse(o => {
       if (!o.isMesh || o.isSkinnedMesh || !o.visible || o.userData.isInk || o.name === 'planet' || o.name === 'sea' || o.userData.noInk && o.material?.transparent) return;
       for (let q = o; q; q = q.parent) { if (skip.has(q) || people.has(q) || !q.visible) return; }
-      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+      const g = o.geometry.userData.lodOf || o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();   // (its whole shape, not the distance LOD's)
       _bs.copy(o.isInstancedMesh ? (o.boundingSphere || (o.computeBoundingSphere(), o.boundingSphere)) : g.boundingSphere).applyMatrix4(o.matrixWorld);
       if (o.userData.noInk && _bs.radius > 6 || _bs.center.distanceTo(mid) > reach + _bs.radius) return;
       if (o.isInstancedMesh) { near.push(o); return; }

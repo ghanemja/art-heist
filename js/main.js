@@ -6,7 +6,7 @@ import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
 import { createGame } from './game.js';
 import { createCitizens } from './citizens.js';
-import { createCuller } from './cull.js';
+import { createCuller, lodPrepare } from './cull.js';
 import { createPlaza } from './plaza.js';
 import { createPark } from './park.js';
 import { createShopInteriors, shopDoorway } from './shopinterior.js';
@@ -91,9 +91,10 @@ game.doors.push({ dir: doorCop.dir, r: 1.6, label: 'go inside the museum', act: 
 const telescope = createTelescope({ town, game, player, camera });   // the Summit Overlook's telescope: E for a look at the town
 // compile every shader up front, so nothing hitches the first time it comes into view
 try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
+lodPrepare(scene);                // (the distance LOD holds on to what it needs from the arrays gpuOnly lets go)
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
-const culler = createCuller(scene, camera);
+const culler = createCuller(scene, camera, { avatar: player.root, renderer });
 window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS };
 window.__v2.meadow = meadow;
 window.__v2.shopInside = shopInside;

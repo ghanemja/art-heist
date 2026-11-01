@@ -45,20 +45,31 @@ export function sculpt(shape, wSeg, hSeg, { mask = null, inflate = () => 1, colo
   const g = new THREE.SphereGeometry(1, wSeg, hSeg);
   const p = g.attributes.position, v = new THREE.Vector3(), o = new THREE.Vector3();
   const col = color ? new Float32Array(p.count * 3) : null, c = new THREE.Color();
+  // (a vertex masked fully out sinks to 0.9 of the head, inside it: a triangle of three such is
+  // never seen — not even its hull, which the head's own outline covers — so it isn't kept)
+  const sunk = mask && !post ? new Float32Array(p.count) : null;
   for (let i = 0; i < p.count; i++) {
     if (col) { v.fromBufferAttribute(p, i).normalize(); color(v, c); col.set([c.r, c.g, c.b], i * 3); }
     v.fromBufferAttribute(p, i).normalize();
     shape(v, o);
     // mask(d) is a signed field (> 0 inside the hair); blend across the edge so the
     // hairline is a smooth curve, not the sphere's grid stepping
-    const k = mask ? THREE.MathUtils.lerp(0.9, inflate(v), ss(mask(v), -0.07, 0.07)) : inflate(v);
+    const mk = mask ? ss(mask(v), -0.07, 0.07) : 1;
+    if (sunk) sunk[i] = mk === 0 ? 1 : 0;
+    const k = mask ? THREE.MathUtils.lerp(0.9, inflate(v), mk) : inflate(v);
     o.sub(HC).multiplyScalar(k).add(HC);
     if (post) post(o, v);
     p.setXYZ(i, o.x, o.y, o.z);
   }
   if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (sunk) g.setAttribute('sunk', new THREE.BufferAttribute(sunk, 1));
   g.deleteAttribute('normal'); g.deleteAttribute('uv');
   const w = mergeVertices(g, 1e-6); w.computeVertexNormals();
+  if (sunk) {
+    const S = w.attributes.sunk.array, I = w.index.array, keep = [];
+    for (let t = 0; t < I.length; t += 3) if (!(S[I[t]] && S[I[t + 1]] && S[I[t + 2]])) keep.push(I[t], I[t + 1], I[t + 2]);
+    w.setIndex(keep); w.deleteAttribute('sunk');
+  }
   return w;
 }
 

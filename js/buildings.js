@@ -1684,6 +1684,7 @@ function bake(g, roots = [g]) {
     if (noGround) m.userData.noGround = true;
     out.add(m);
   }
+  buckets.clear();                    // (its parts' copies are merged: nothing should keep them alive)
   return out;
 }
 // lay every vertex onto the ground under it: on level ground that is the
@@ -1697,6 +1698,35 @@ const _tess = new TessellateModifier(1.6, 6);
 // (landscaping laid on the drawn ground: fine enough that its paving bends with every facet of the
 // planet mesh — ~0.75 between vertices — or the ground pokes up through a long flat triangle)
 const _tessFine = new TessellateModifier(0.35, 12);
+// weldTess(g): the tessellator hands back every triangle's corners as vertices of their own (each
+// corner ~6 times over); vertices equal in every attribute (to well under a micron) are joined
+// into one, and the triangles index them. Nothing drawn changes — only the copies go.
+function weldTess(g) {
+  if (g.index) return g;
+  const A = Object.values(g.attributes), n = g.attributes.position.count;
+  if (!n || A.some(a => a.isInterleavedBufferAttribute || !(a.array instanceof Float32Array) || a.count !== n)) return g;
+  const q = A.map(a => (a === g.attributes.position ? 1e6 : 1e5));
+  const size = 1 << Math.ceil(Math.log2(n * 2 + 2)), mask = size - 1, table = new Int32Array(size).fill(-1);
+  const first = new Int32Array(n), idx = new Uint32Array(n); let m = 0;
+  const same = (i, j) => { for (let k = 0; k < A.length; k++) { const a = A[k].array, s = A[k].itemSize, Q = q[k]; for (let c = 0; c < s; c++) if (Math.round(a[i * s + c] * Q) !== Math.round(a[j * s + c] * Q)) return false; } return true; };
+  for (let i = 0; i < n; i++) {
+    let h = 0;
+    for (let k = 0; k < A.length; k++) { const a = A[k].array, s = A[k].itemSize, Q = q[k]; for (let c = 0; c < s; c++) h = Math.imul(h ^ Math.round(a[i * s + c] * Q), 0x9e3779b1) >>> 0; }
+    let j = h & mask, hit = -1;
+    while (table[j] >= 0) { if (same(first[table[j]], i)) { hit = table[j]; break; } j = (j + 1) & mask; }
+    if (hit < 0) { hit = m++; first[hit] = i; table[j] = hit; }
+    idx[i] = hit;
+  }
+  if (m > n * 0.8) return g;
+  const out = new THREE.BufferGeometry();
+  for (const [name, a] of Object.entries(g.attributes)) {
+    const s = a.itemSize, src = a.array, dst = new Float32Array(m * s);
+    for (let v = 0; v < m; v++) for (let c = 0; c < s; c++) dst[v * s + c] = src[first[v] * s + c];
+    out.setAttribute(name, new THREE.BufferAttribute(dst, s));
+  }
+  out.setIndex(new THREE.BufferAttribute(m > 65535 ? idx : Uint16Array.from(idx), 1));
+  return out;
+}
 function conform(g, sink, groundAt = radiusAt) {
   if (groundAt !== radiusAt) return bend(g, sink, groundAt);
   g.updateMatrixWorld(true);
@@ -1728,7 +1758,7 @@ function conform(g, sink, groundAt = radiusAt) {
   };
   g.userData.lift = (x, z) => at(x, z) - sink;     // (the height it laid a point at: the roof-trim check reads it)
   for (const m of g.children) {
-    m.geometry = (exact ? _tessFine : _tess).modify(m.geometry);
+    m.geometry = weldTess((exact ? _tessFine : _tess).modify(m.geometry));
     const p = m.geometry.attributes.position;
     for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) + at(p.getX(i), p.getZ(i)) - sink);
     p.needsUpdate = true;

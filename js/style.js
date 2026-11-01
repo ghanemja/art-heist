@@ -130,7 +130,7 @@ function fadeInk(weight) {
 // geometry (no copy), so the cost is one extra draw per inked mesh.
 const NO_RAY = () => {};                     // a shared no-op raycast (a closure would keep its maker's scope alive)
 // gpuOnly(scene): once the world is built, the JS copies of what only the GPU reads — normals,
-// uvs, vertex colours, an ink hull's index — are let go as soon as they're uploaded (the heap
+// uvs, vertex colours, the planting's breeze weights, a merged ink hull's index — are let go as soon as they're uploaded (the heap
 // held them all twice over: ~60% of every static mesh). The ground rays and the talk camera
 // read positions + indices only: each mesh raycasts through a proxy geometry that shares
 // exactly those. Skinned people, instanced and animated (point) meshes, the planet and the
@@ -147,6 +147,9 @@ export function gpuOnly(root, renderer, camera) {
   // builder caches that later people, and the critic streaming in, are cloned from)
   const people = new Set(root.children.filter(t => { let sk = false; t.traverse(q => { if (q.isSkinnedMesh) sk = true; }); return sk || t.userData.human; }));
   const skip = (o) => { for (let q = o; q; q = q.parent) if (people.has(q)) return true; return false; };
+  // (a hull with a geometry of its own — merged, nothing draws or reads it but the GPU — lets
+  // go of its index too; one drawn from its part's geometry keeps it: the part's rays read it)
+  const filled = new Set(); root.traverse(o => { if (o.isMesh && !o.userData.isInk) filled.add(o.geometry); });
   root.traverse(o => {
     if (o.isMesh && skip(o)) return;
     if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.name === 'planet' || o.name === 'sea') return;
@@ -159,7 +162,8 @@ export function gpuOnly(root, renderer, camera) {
     }
     if (done.has(g)) return; done.add(g);
     if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
-    for (const k of ['normal', 'uv', 'color']) { const a = g.attributes[k]; if (a) a.onUpload(_freeArr); }
+    for (const k of ['normal', 'uv', 'color', 'sway', 'aRoot']) { const a = g.attributes[k]; if (a) a.onUpload(_freeArr); }   // (sway, aRoot: the planting's breeze and the meadow's stomp, read by their shaders alone)
+    if (o.userData.isInk && g.index && !filled.has(g)) g.index.onUpload(_freeArr);
   });
   // upload it all now, while loading (one tiny off-screen frame with nothing culled): a thing
   // first seen much later would otherwise keep its copies until then
