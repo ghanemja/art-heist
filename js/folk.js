@@ -103,7 +103,7 @@ function makeHand(s, skin) {
   // (a capsule from this joint to the next; small enough on screen that 6–7 sides read round,
   // keeping the whole hand under the old five-piece hand's ~2k triangles)
   const seg = (b, len, r, tip, sides = 6) => {
-    const c = new THREE.CapsuleGeometry(r, Math.max(0.001, tip ? len - r : len), 2, sides).translate(0, tip ? -(len - r) / 2 : -len / 2, 0);
+    const c = new THREE.CapsuleGeometry(r, Math.max(0.001, tip ? len - r : len), tip ? 2 : 1, sides).translate(0, tip ? -(len - r) / 2 : -len / 2, 0);
     b.updateMatrixWorld(true);
     parts.push([c.applyMatrix4(b.matrixWorld), bones.indexOf(b)]);
   };
@@ -446,7 +446,7 @@ export function makeFolk(spec) {
     const edge = (d) => d.y - lineAt(d, ...HAT_LINE);
     const rimK = (d) => 1 - ssm(edge(d), 0.025, 0.075);
     const yel = new THREE.Color(S.hatColor ?? 0xe0b445), drk = new THREE.Color(0x2a2230);
-    const g = sculpt(sh, 88, 66, { mask: edge, inflate: (d) => 1.17 - 0.022 * vent(d),
+    const g = sculpt(sh, 64, 66, { mask: edge, inflate: (d) => 1.17 - 0.022 * vent(d),
       color: (d, c) => c.copy(yel).lerp(drk, Math.max(vent(d), rimK(d))) });
     J.head.add(new THREE.Mesh(g, paint(0xffffff, { vertexColors: true })));
     for (const sx of [-1, 1]) {

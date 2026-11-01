@@ -164,7 +164,7 @@ export function noseGeo(type, k) {
   for (const s of path.slice(1)) sh.quadraticCurveTo(s[1], s[2], s[3], s[4]);
   const top = path[0][1], bottom = Math.min(...path.slice(1).map(s => s[4]));
   sh.lineTo(-0.01, bottom); sh.lineTo(...path[0]);
-  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.007, bevelSize: 0.006, bevelSegments: 4, curveSegments: 10 });
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.007, bevelSize: 0.006, bevelSegments: 3, curveSegments: 6 });
   g.translate(0, 0, -0.007).rotateY(-Math.PI / 2);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) { const t = THREE.MathUtils.clamp((top - p.getY(i)) / (top - bottom), 0, 1); p.setX(i, p.getX(i) * (0.5 + 0.9 * t)); }
