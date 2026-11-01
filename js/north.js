@@ -687,22 +687,23 @@ export function buildNorth(scene, { add, solid, boulevard }) {
       const g = placeOnPlanet(houseLot(i), d, yawToFace(d, cd), { inked: false });
       feet(g); lots.push(g);
     }
-    // the green in the middle: a tree, a swing set and three benches, each on its own ground.
+    // the green in the middle: a tree, and a swing set with a bench either side of it.
     // The island's grass runs to ~3.1 (loop 4.0 − the road's 0.62 − the kerb's 0.28); everything
     // keeps inside 2.6 of its middle. Local +z points to the entrance (the green is yawed to the
     // junction below). (They used to sit on fixed rings: the swing frame stood over one bench and
     // the benches hugged the trunk)
     const K = kit(); { const t = tree({ s: 1.1 }); t.position.set(-1.1, 0, -1.1); K.g.add(t); K.foot(-1.1, -1.1, 0.35); }
     { const S = K.sub(0.8, 0, 1.0, 0), red = paint(PAL.accent);        // the swing set, near the road: beam across, swinging toward it
-      for (const s of [-1, 1]) for (const t of [-1, 1]) { const p = S.box(0.05, 1.3, 0.05, red, s * 0.55, 0.62, t * 0.32, 0.015); p.rotation.x = -t * 0.24; }
-      S.box(1.2, 0.05, 0.05, red, 0, 1.25, 0, 0.015);
+      // each end an A: the two legs splay from feet 0.34 out to meet under the beam (they used to
+      // stop short of each other, either side of it, with daylight at the joint)
+      for (const s of [-1, 1]) for (const t of [-1, 1]) { const p = S.box(0.05, 1.36, 0.05, red, s * 0.55, 0.625, t * 0.17, 0.015); p.rotation.x = -t * Math.atan2(0.34, 1.25); }
+      S.box(1.26, 0.06, 0.06, red, 0, 1.25, 0, 0.015);
       S.box(0.36, 0.04, 0.16, paint(0xe1b95c), 0, 0.42, 0, 0.012);
       for (const s of [-1, 1]) S.box(0.012, 0.82, 0.012, DARK(), s * 0.16, 0.84, 0, 0.004);
       K.foot(0.8, 1.0, 0.6); }
-    // benches (a bench's front is its local +z), all watching the swings: one behind them (so
-    // it faces the road too), one beside them across the grass, one in the tree's shade, each
-    // clear of the trunk and of the swings' arc
-    for (const [x, z] of [[1.0, -1.0], [-1.3, 0.9], [-2.1, -0.2]]) {
+    // two benches (a bench's front is its local +z), one either side of the swing set, turned in
+    // to watch it, clear of its feet and of the swings' arc (which runs toward the road)
+    for (const [x, z] of [[2.05, 0.8], [-0.45, 0.8]]) {
       const b = bench(), ry = Math.atan2(0.8 - x, 1.0 - z);                   // facing the swing set
       b.position.set(x, 0, z); b.rotation.y = ry; K.g.add(b); K.foot(x, z, 0.4);
     }
