@@ -32,7 +32,7 @@ const _c = new THREE.Vector3(), _box = new THREE.Box3(), _s = new THREE.Sphere()
 // nearest point, is under LOD_TOL pixels (√3 × grid: the furthest a vertex can move)
 const LOD_CELLS = [0.003, 0.0065, 0.014, 0.03, 0.065, 0.14];
 const LOD_TOL = 1.0;                  // px (device pixels): a vertex moved less than this (the worst case) can't be seen
-const LOD_NOW = /[?&]lodnow=1/.test(globalThis.location?.search || '');   // (dev: ?lodnow=1 rebuilds a patched mesh the moment it changes, to compare)
+let LOD_NOW = /[?&]lodnow=1/.test(globalThis.location?.search || '');     // (dev: ?lodnow=1, or culler.lodNow = true, rebuilds a patched mesh the moment it changes — to compare)
 const LOD_MIN_TRIS = 240;             // a mesh smaller than this isn't worth simplifying
 const LOD_KEEP = 0.8;                 // a version is kept only if it's at most this share of the last one
 const LOD_KEEP_PATCHED = 0.7;         // (a patched mesh keeps every version in the JS heap — it rebuilds from them: fewer, further apart)
@@ -41,6 +41,8 @@ const _lod = new WeakMap();           // geometry → [{ cw, geo }] its simpler 
 const _scale = new WeakMap();         // geometry → world units per geometry unit (the first mesh seen drawing it)
 const _queue = [];                    // geometries waiting for their versions
 const _freeArr = function () { this.array = null; };
+const PRIME = 30;                     // the layer prime() draws on
+const _primeMat = new THREE.ShaderMaterial({ vertexShader: 'void main() { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }', fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }' });
 function _rayHi(raycaster, hits) {
   const g = this.geometry; this.geometry = g.userData.lodOf || g;
   try { THREE.Mesh.prototype.raycast.call(this, raycaster, hits); } finally { this.geometry = g; }
@@ -304,7 +306,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       L.cc = new Int8Array(n).fill(-9); L.built = new Int8Array(n).fill(-2);
       const dyn = new THREE.BufferGeometry();
       for (const [name, a] of Object.entries(L.hi.attributes)) dyn.setAttribute(name, a);
-      dyn.setIndex(new THREE.BufferAttribute(new ch.hi.constructor(ch.hi.length), 1).setUsage(THREE.DynamicDrawUsage));
+      dyn.setIndex(new THREE.BufferAttribute(new ch.hi.constructor(ch.hi.length), 1).setUsage(THREE.DynamicDrawUsage));   // (full size from the start: the GPU buffer is made to it)
       dyn.boundingSphere = L.hi.boundingSphere; dyn.boundingBox = L.hi.boundingBox; dyn.userData.lodOf = L.hi;
       L.dyn = dyn; m.geometry = dyn;
       if (m.raycast === THREE.Mesh.prototype.raycast) m.raycast = _rayHi;   // (its rays read its whole shape: the patches' index comes and goes)
@@ -333,7 +335,13 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
   function rebuild(L, ch) {
     const cc = L.cc, lv = ch.lv, n = ch.n;
     L.queued = false; L.built.set(cc);
-    const ia = L.dyn.index, out = new ch.hi.constructor(ch.hi.length); let w = 0;
+    const ia = L.dyn.index;
+    let any = false; for (let c = 0; c < n && !any; c++) if (cc[c] !== -2) any = true;
+    // (nothing of it in view: no new index — it'd wait in the heap till drawn — and not drawn at
+    // all, not even as an empty call)
+    if (!any) { L.dyn.setDrawRange(0, 0); if (!L.off) { L.off = true; if (L.m.userData._lay == null) L.m.userData._lay = L.m.layers.mask; L.m.layers.mask = 1 << HIDE; } return; }
+    if (L.off) { L.off = false; L.m.layers.mask = L.m.userData._lay; }
+    const out = new ch.hi.constructor(ch.hi.length); let w = 0;
     for (let c = 0; c < n; c++) {
       const k = cc[c]; if (k === -2) continue;
       const src = k < 0 ? ch.hi : lv[k].arr, of = k < 0 ? ch.off : lv[k].off;
@@ -390,21 +398,23 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
   let primeK = -1;
   function prime() {
     if (!renderer || primeK < 0) return;
-    const k = primeK++, swapped = [], culled = [], mats = new Set();
+    const k = primeK++, swapped = [];
     for (const st of roots.values()) for (const L of st.lods) {
       const lv = L.levels || _lod.get(L.hi);
       if (L.dead || !lv || lv.chunked || !(lv.length > k)) continue;
-      swapped.push([L.m, L.m.geometry]); L.m.geometry = lv[k].geo;
+      const ix = lv[k].geo.index; if (!ix.array || ix.onUploadCallback !== _freeArr) continue;
+      swapped.push([L.m, L.m.geometry, L.m.layers.mask, L.m.frustumCulled]);
+      L.m.geometry = lv[k].geo; L.m.layers.set(PRIME); L.m.frustumCulled = false;
     }
     if (!swapped.length) { primeK = -1; return; }
-    const lay = camera.layers.mask; camera.layers.enableAll();
-    scene.traverse(o => { if (!o.isMesh) return; if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
-      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m?.visible) mats.add(m); });
-    for (const m of mats) m.visible = false;
+    // (an index is only sent up when it's drawn: these are, with a shader that puts every vertex
+    // outside the view — nothing reaches the screen — and nothing else on the camera's layer)
+    const lay = camera.layers.mask, over = scene.overrideMaterial;
+    camera.layers.set(PRIME); scene.overrideMaterial = _primeMat;
     try { renderer.render(scene, camera); }
     finally {
-      for (const m of mats) m.visible = true; for (const o of culled) o.frustumCulled = true;
-      camera.layers.mask = lay; for (const [m, g] of swapped) m.geometry = g;
+      scene.overrideMaterial = over; camera.layers.mask = lay;
+      for (const [m, g, l, fc] of swapped) { m.geometry = g; m.layers.mask = l; m.frustumCulled = fc; }
     }
   }
   return {
@@ -448,6 +458,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       work();
       prime();
     },
+    set lodNow(v) { LOD_NOW = !!v; },
     get lodPending() { return _queue.length + (primeK >= 0 ? 1 : 0); },
     get hiddenCount() { let k = 0; for (const s of roots.values()) if (s.hidden) k++; return k; },
     roots,
