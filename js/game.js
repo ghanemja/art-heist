@@ -15,6 +15,7 @@ import { buildWalkers, tickWalkers, walkerHome, WALKERS } from './crowd.js';
 import { createBumps } from './bump.js';
 import { CLUES, PEOPLE, SUSPECTS, PLACES, CULPRIT, judge, buildCase, sketchProp } from './story.js';
 import { paintPeople, paintThings } from './portraits.js';
+import { ticketCard } from './ticket.js';
 import { LOOKS } from './human.js';
 import { pose } from './human.js';
 import { poseFolk } from './folk.js';
@@ -309,7 +310,10 @@ export function createGame({ scene, camera, town, player, atmosphere, renderer }
       if (c.id === 'ticket') phone.addItem('ticket');
       if (G.found.size === 4) setTimeout(() => phone.push('Editor', 'When you\'re sure, take it to Vivi — the police will listen to her. Name a name, show two things.'), 2500);
     }
-    $('card').innerHTML = `<div class="ic">${sketch(c.id)}</div><h3>${c.title}</h3><p>${c.text}</p>
+    // (the cargo ticket: the slip itself, crumpled and ripped, dropped on the page)
+    if (c.id === 'ticket') $('card').innerHTML = `${ticketCard()}<h3>${c.title}</h3><p>Dropped by the freight door, crumpled, its stub torn off.</p>
+      <div class="note">${isNew ? 'noted in your notebook' : 'already in your notebook'}</div><button class="sk" id="cardOk">ok</button>`;
+    else $('card').innerHTML = `<div class="ic">${sketch(c.id)}</div><h3>${c.title}</h3><p>${c.text}</p>
       <div class="note">${isNew ? 'noted in your notebook' : 'already in your notebook'}</div><button class="sk" id="cardOk">ok</button>`;
     show($('card')); G.ui = 'card'; player.st.enabled = false;
     $('cardOk').onclick = closeUI;

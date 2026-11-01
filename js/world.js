@@ -97,7 +97,10 @@ function waterDist(w, d) {                                       // world units 
 
 export function surfH(d) {
   // rolling hills: three soft, incommensurate waves
-  let h = LAND + T.hills * (
+  // (the hills are waves over the planet's directions: on a smaller planet the same waves span fewer
+  // world units, so they're scaled down with it — the same grades as the radius-40 plan, not
+  // steeper ones that tipped the road sheet's kerbs into slivers)
+  let h = LAND + T.hills * (R / R_PLAN) * (
     Math.sin(d.x * 2.1 + 0.7) * Math.sin(d.y * 1.7 + 2.2) * 0.9 +
     Math.sin(d.z * 3.3 + 1.1) * Math.sin(d.x * 2.9 + 0.4) * 0.6 +
     Math.sin(d.y * 4.6 + 0.9) * 0.35);
@@ -471,6 +474,7 @@ const roadMat = paint(0xffffff, { hatch: 0, vertexColors: true, side: THREE.Doub
 const dashMat = paint(PAL.dash, { hatch: 0, side: THREE.DoubleSide, unique: true });
 // the sheet draws in front of any paving it meets flush (a car park's bell-mouth), the dashes in front of the sheet
 roadMat.polygonOffset = true; roadMat.polygonOffsetFactor = -2; roadMat.polygonOffsetUnits = -2;
+const skirtMat = paint(0xffffff, { hatch: 0, vertexColors: true, side: THREE.FrontSide, unique: true });   // (no depth bias: see the road sheet's skirt)
 dashMat.polygonOffset = true; dashMat.polygonOffsetFactor = -3; dashMat.polygonOffsetUnits = -3;
 export const JUNCTIONS = [];
 // PADS: paved rectangles drawn into the same sheet (a car park and its apron): centre c (unit
@@ -925,16 +929,41 @@ export function buildRoadSurface(scene) {
     const a = gv(f, i, j), b = gv(f, i + 1, j), cc = gv(f, i + 1, j + 1), d = gv(f, i, j + 1);
     tri(a, b, cc); tri(a, cc, d);
   }
+  // the kerb's outer edge, smoothed: along a side-slope its points' heights zigzag (each grid point
+  // takes the highest ground near it), and wherever one dipped the kerb's triangles hung down into
+  // the skirt as pale slivers. Each edge point is lifted to its neighbours' mean along the edge —
+  // never lowered, so nothing sinks under the ground — and its kerb vertex moved with it
+  { const E = new Map(), at = (X) => { let e = E.get(X.key); if (!e) E.set(X.key, e = { X, h: X.h, n: new Set() }); return e; };
+    for (let k = 0; k < skirt.length; k += 2) { const a = at(skirt[k]), b = at(skirt[k + 1]); a.n.add(b); b.n.add(a); }
+    for (let it = 0; it < 3; it++) {
+      const next = new Map();
+      for (const [key, e] of E) { if (!e.n.size) continue; let m = 0; for (const o of e.n) m += o.h; next.set(key, Math.max(e.h, m / e.n.size)); }
+      for (const [key, h] of next) E.get(key).h = h;
+    }
+    for (const [key, e] of E) {
+      if (e.h <= e.X.h + 1e-5) continue;
+      const id = vmap.get(key + '|1'), r = e.h + lift(e.X.s, 1);
+      if (id !== undefined) { pos[id * 3] = e.X.d.x * r; pos[id * 3 + 1] = e.X.d.y * r; pos[id * 3 + 2] = e.X.d.z * r; }
+    }
+    for (let k = 0; k < skirt.length; k++) { const e = E.get(skirt[k].key); if (e && e.h > skirt[k].h) skirt[k] = { ...skirt[k], h: e.h }; }
+  }
   // the skirt: from the kerb's outer edge down into the ground, so the sheet never shows a gap under its edge
+  const skirt0 = pos.length / 3;
   for (let k = 0; k < skirt.length; k += 2) {
     const P = skirt[k], Q = skirt[k + 1], base = pos.length / 3;
-    for (const X of [P, Q]) { const top = X.h + lift(KERB, 1), bot = Math.min(X.g, X.h) - 0.06; pos.push(X.d.x * top, X.d.y * top, X.d.z * top, X.d.x * bot, X.d.y * bot, X.d.z * bot); }
+    // (down to the ground as DRAWN: the planet mesh cuts under the exact terrain between its
+    // vertices, and a skirt reaching only under the exact terrain hung out over it in pale slivers
+    // all along a steep bank)
+    for (const X of [P, Q]) { const top = X.h + lift(KERB, 1), bot = Math.min(X.g, X.h, drawnGroundAt(X.d)) - 0.06; pos.push(X.d.x * top, X.d.y * top, X.d.z * top, X.d.x * bot, X.d.y * bot, X.d.z * bot); }
     for (let q = 0; q < 4; q++) col.push(C_SIDE.r, C_SIDE.g, C_SIDE.b);
-    idx.push(base, base + 1, base + 2, base + 2, base + 1, base + 3); part.push(0, 0);
+    // (both windings, drawn front faces only: a vertical quad has no 'up' to wind toward, and as one
+    // double-sided face half its triangles came out back-facing — shaded the other way, as teeth)
+    idx.push(base, base + 1, base + 2, base + 2, base + 1, base + 3, base, base + 2, base + 1, base + 2, base + 3, base + 1); part.push(0, 0, 0, 0);
   }
   // every triangle wound to face up (out from the planet): the sheet is double-sided, and a
   // back-facing triangle has its normal turned over in the shader — drawn dark
   for (let t = 0; t < idx.length; t += 3) {
+    if (part[t / 3] === 0) continue;                                 // (the skirt: wound both ways already)
     const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
     const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
     const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
@@ -945,6 +974,8 @@ export function buildRoadSurface(scene) {
   const all = new THREE.BufferGeometry();
   all.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); all.setIndex(idx); all.computeVertexNormals();
   const nor = all.attributes.normal.array;
+  // (the skirt is lit as the ground beside it is — facing out from the planet — on both its faces)
+  for (let v = skirt0; v < skirt0 + skirt.length * 2; v++) { const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2], l = Math.hypot(x, y, z) || 1; nor[v * 3] = x / l; nor[v * 3 + 1] = y / l; nor[v * 3 + 2] = z / l; }
   // split into ~16-unit chunks, so the culler can skip what is over the horizon
   const CH = 16, chunks = new Map();
   for (let t = 0; t < idx.length; t += 3) {
@@ -953,7 +984,16 @@ export function buildRoadSurface(scene) {
     let L = chunks.get(k); if (!L) chunks.set(k, L = { v: [], p: [] }); L.v.push(a, b, c); L.p.push(part[t / 3]);
   }
   const meshes = [];
-  for (const { v: L, p: parts } of chunks.values()) {
+  // (each chunk's skirt is its own mesh, drawn without the sheet's depth bias: the bias grows with
+  // how steeply a face is seen, and on the near-vertical skirt it pulled the skirt out in front of
+  // a steep bank beside the road — pale slivers all along the bank)
+  const split = [];
+  for (const { v, p } of chunks.values()) {
+    const A = { v: [], p: [] }, S = { v: [], p: [], skirt: true };
+    for (let k = 0; k < p.length; k++) { const T = p[k] === 0 ? S : A; T.v.push(v[k * 3], v[k * 3 + 1], v[k * 3 + 2]); T.p.push(p[k]); }
+    if (A.p.length) split.push(A); if (S.p.length) split.push(S);
+  }
+  for (const { v: L, p: parts, skirt: isSkirt } of split) {
     const remap = new Map(), P = [], Nn = [], Cc = [], I = [];
     for (const v of L) {
       let id = remap.get(v);
@@ -965,7 +1005,7 @@ export function buildRoadSurface(scene) {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
     g.setIndex(I); g.computeBoundingSphere();
-    const m = new THREE.Mesh(g, roadMat);
+    const m = new THREE.Mesh(g, isSkirt ? skirtMat : roadMat);
     m.name = 'roads'; m.userData.noInk = true; m.userData.roadPart = 'sheet'; m.userData.triPart = Uint8Array.from(parts);
     scene.add(m); meshes.push(m);
   }
