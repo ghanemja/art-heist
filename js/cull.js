@@ -35,7 +35,9 @@ const LOD_CELLS = [0.003, 0.0065, 0.014, 0.03, 0.065, 0.14, 0.3];
 const _q = new URLSearchParams(globalThis.location?.search || ""); const LOD_TOL_Q = +_q.get("tol") || 0, LOD_TOL_INK_Q = +_q.get("tolink") || 0;
 const LOD_TOL = LOD_TOL_Q || 1.5;                  // px (device pixels): a solid thing's surface moved less than this, as measured (see lodLevels), isn't seen
 const LOD_TOL_INK = LOD_TOL_INK_Q || 2.0;              // px: the same for its ink hull (a stroke ~1.4–2.3 px wide, re-traced as it boils)
+let LOD_OLD = false;                  // (dev: culler.lodOld = true picks every version by the worst case at 1 px, as before measured errors — to compare)
 let LOD_NOW = /[?&]lodnow=1/.test(globalThis.location?.search || '');     // (dev: ?lodnow=1, or culler.lodNow = true, rebuilds a patched mesh the moment it changes — to compare)
+const LOD_DCOL = 0.04;               // a vertex collapsing onto one whose colour differs by more than this (per channel, 0–1) counts as the worst case
 const LOD_MIN_TRIS = 240;             // a mesh smaller than this isn't worth simplifying
 const LOD_KEEP = 0.8;                 // a version is kept only if it's at most this share of the last one
 const LOD_KEEP_PATCHED = 0.7;         // (a patched mesh keeps every version in the JS heap — it rebuilds from them: fewer, further apart)
@@ -74,7 +76,8 @@ function capture(g) {
   const N = g.attributes.normal, C = g.attributes.color;
   const NA = N && !N.isInterleavedBufferAttribute && N.itemSize === 3 && N.array instanceof Float32Array ? N.array : null;
   const CA = C && !C.isInterleavedBufferAttribute && C.itemSize >= 3 && C.array ? C.array : null;
-  _cap.set(g, { P: P.array, I: I ? I.array : null, n, SI: SI ? SI.array : null, SW: SW ? SW.array : null, RT: RT?.array || null, RS: RT?.itemSize || 0, N: NA, C: CA, CS: CA ? C.itemSize : 0 });
+  _cap.set(g, { P: P.array, I: I ? I.array : null, n, SI: SI ? SI.array : null, SW: SW ? SW.array : null, RT: RT?.array || null, RS: RT?.itemSize || 0, N: NA, C: CA, CS: CA ? C.itemSize : 0,
+    CD: LOD_DCOL / (CA && C.normalized ? (CA instanceof Uint8Array ? 1 / 255 : CA instanceof Uint16Array ? 1 / 65535 : 1) : 1) });
   _lod.set(g, null);                  // (pending)
   _queue.push(g);
 }
@@ -103,7 +106,7 @@ function lodLevels(g) {
   const c = _cap.get(g); _cap.delete(g);
   if (!c) return [];
   const scale = _scale.get(g) || 1;
-  const { P, I, n, SI, SW, RT, RS, N, C, CS } = c;
+  const { P, I, n, SI, SW, RT, RS, N, C, CS, CD } = c;
   const ni = I ? I.length : n, at = I ? (k) => I[k] : (k) => k;
   const used = new Uint8Array(n); for (let k = 0; k < ni; k++) used[at(k)] = 1;
   let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
@@ -114,7 +117,6 @@ function lodLevels(g) {
   const grp = new Uint32Array(n);
   if (SI) for (let i = 0; i < n; i++) { let b = 0, w = -1; for (let k = 0; k < 4; k++) if (SW[i * 4 + k] > w) { w = SW[i * 4 + k]; b = SI[i * 4 + k]; } grp[i] = b + 1; }
   else if (RT) for (let i = 0; i < n; i++) { let h = 0; for (let k = 0; k < RS; k++) h = (h * 31 + Math.round(RT[i * RS + k] * 400)) | 0; grp[i] = (h >>> 0) % 4093 + 1; }
-  if (C && !_q.get('nocg')) for (let i = 0; i < n; i++) { let h = grp[i]; for (let k = 0; k < 3; k++) h = (Math.imul(h, 31) + Math.round(C[i * CS + k] * 255)) | 0; grp[i] = h; }
   const levels = [], cl = new Int32Array(n), rep = new Int32Array(n), ev = new Float32Array(n);
   // the vertices on an edge only one triangle uses — the rim of an open part, or a seam where the
   // shape was split (a hard edge, a change of paint): one of those sliding across its rim, even
@@ -144,8 +146,12 @@ function lodLevels(g) {
       const dx = P[i * 3] - P[j * 3], dy = P[i * 3 + 1] - P[j * 3 + 1], dz = P[i * 3 + 2] - P[j * 3 + 2];
       const tx = rim[i * 3], ty = rim[i * 3 + 1], tz = rim[i * 3 + 2];
       // (a rim vertex: its move across its rim — along it, the outline stays where it was)
-      if (tx === tx) { ev[i] = tx || ty || tz ? Math.hypot(dy * tz - dz * ty, dz * tx - dx * tz, dx * ty - dy * tx) : Math.hypot(dx, dy, dz); continue; }
-      ev[i] = Math.max(Math.abs(dx * N[i * 3] + dy * N[i * 3 + 1] + dz * N[i * 3 + 2]), Math.abs(dx * N[j * 3] + dy * N[j * 3 + 1] + dz * N[j * 3 + 2])); }
+      if (tx === tx) ev[i] = tx || ty || tz ? Math.hypot(dy * tz - dz * ty, dz * tx - dx * tz, dx * ty - dy * tx) : Math.hypot(dx, dy, dz);
+      else ev[i] = Math.max(Math.abs(dx * N[i * 3] + dy * N[i * 3 + 1] + dz * N[i * 3 + 2]), Math.abs(dx * N[j * 3] + dy * N[j * 3 + 1] + dz * N[j * 3 + 2]));
+      // (a vertex taking another colour smears paint across the face — a lawn's shading, a painted
+      // stripe — however flat it lies: that counts as the worst case. Grouping vertices by colour
+      // instead left a smoothly shaded lawn half collapsed: long overlapping slivers, as spikes)
+      if (C && Math.max(Math.abs(C[i * CS] - C[j * CS]), Math.abs(C[i * CS + 1] - C[j * CS + 1]), Math.abs(C[i * CS + 2] - C[j * CS + 2])) > CD) ev[i] = Infinity; }
     const out = new IDX(ni); let k = 0;
     const off = ch ? new Uint32Array(ch.n + 1) : null, err = ch ? new Float32Array(ch.n) : null;
     let emax = 0;
@@ -214,7 +220,7 @@ function cellIds(P, used, n, x0, y0, z0, cell, grp, cl) {
   let nc = 0;
   for (let i = 0; i < n; i++) {
     if (!used[i]) continue;
-    const a = Math.floor((P[i * 3] - x0) / cell), b = Math.floor((P[i * 3 + 1] - y0) / cell), c = Math.floor((P[i * 3 + 2] - z0) / cell), g = grp[i];
+    const a = Math.floor((P[i * 3] - x0) / cell), b = Math.floor((P[i * 3 + 1] - y0) / cell), c = Math.floor((P[i * 3 + 2] - z0) / cell), g = grp[i] | 0;
     let j = (Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791) ^ Math.imul(g, 40503)) & mask;
     for (;;) {
       const v = hv[j];
@@ -370,7 +376,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       L.dyn = dyn; m.geometry = dyn;
       if (m.raycast === THREE.Mesh.prototype.raycast) m.raycast = _rayHi;   // (its rays read its whole shape: the patches' index comes and goes)
     }
-    const W = L.wc, cc = L.cc, lv = ch.lv; let dirty = false, urgent = cc[0] === -9 || LOD_NOW || hz.jump;
+    const W = L.wc, cc = L.cc, lv = ch.lv, tol = LOD_OLD ? 1.0 : L.tol; let dirty = false, urgent = cc[0] === -9 || LOD_NOW || hz.jump;
     for (let c = 0; c < n; c++) {
       _w.set(W[c * 4] - eye.x, W[c * 4 + 1] - eye.y, W[c * 4 + 2] - eye.z);
       const d = Math.max(1e-3, _w.length()), r = W[c * 4 + 3];
@@ -380,7 +386,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       else if (!(cc[c] === -2 ? hz.near : hz.wide).intersectsSphere(_s)) k = -2;    // out of view (shown a little before it comes in, kept a little after)
       else {
         const px = L.u * fd / Math.max(d - r, 0.05); k = -1;          // (px per geometry unit of error, at the patch's nearest point)
-        for (let i = lv.length - 1; i >= 0; i--) if ((L.measured ? lv[i].err[c] : 1.7320508 * lv[i].cw / L.u) * px <= (i > cc[c] ? L.tol / 1.15 : L.tol)) { k = i; break; }
+        for (let i = lv.length - 1; i >= 0; i--) if ((L.measured && !LOD_OLD ? lv[i].err[c] : 1.7320508 * lv[i].cw / L.u) * px <= (i > cc[c] ? tol / 1.15 : tol)) { k = i; break; }
       }
       if (k !== cc[c]) { cc[c] = k; dirty = true; }
       // (a patch in the view itself that the index doesn't hold yet can't wait; everything else —
@@ -421,9 +427,9 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       let dn;
       if (L.skin) dn = dRoot - st.r;
       else { const bs = L.hi.boundingSphere; _w.copy(bs.center).applyMatrix4(m.matrixWorld); dn = _w.distanceTo(eye) - bs.radius * L.ws; }
-      const px = L.u * fd / Math.max(dn, 0.05);                       // px per geometry unit of error
+      const px = L.u * fd / Math.max(dn, 0.05), tol = LOD_OLD ? 1.0 : L.tol;   // px per geometry unit of error
       let k = -1;
-      for (let i = levels.length - 1; i >= 0; i--) if ((L.measured ? levels[i].err : 1.7320508 * levels[i].cw / L.u) * px <= (i > L.cur ? L.tol / 1.15 : L.tol)) { k = i; break; }
+      for (let i = levels.length - 1; i >= 0; i--) if ((L.measured && !LOD_OLD ? levels[i].err : 1.7320508 * levels[i].cw / L.u) * px <= (i > L.cur ? tol / 1.15 : tol)) { k = i; break; }
       if (k !== L.cur) { L.cur = k; m.geometry = k < 0 ? L.hi : levels[k].geo; }
     }
   }
@@ -521,6 +527,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       prime();
     },
     set lodNow(v) { LOD_NOW = !!v; },
+    set lodOld(v) { LOD_OLD = !!v; },
     get lodPending() { return _queue.length + (primeK >= 0 ? 1 : 0); },
     get hiddenCount() { let k = 0; for (const s of roots.values()) if (s.hidden) k++; return k; },
     roots,

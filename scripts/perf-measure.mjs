@@ -4,7 +4,7 @@
 //   python3 -m http.server 8123 &            (from the repo root; PORT=<n> for another checkout)
 //   (cd /tmp && npm pack three@0.160.0 && tar xzf three-0.160.0.tgz)   → THREE_DIR=/tmp/package serves three locally
 //   node scripts/perf-measure.mjs <label> ["&tol=2"]    → out/<label>.json + out/shots/<label>-<spot>.png
-// Env: SHOTS=0 (no screenshots), CLOSE=0 (skip close-ups), ONLY=1 (park close-up only), PROBE=<file.js> (evaluated at each spot).
+// Env: OLD=1 (each spot again with culler.lodOld: before/after in the same view), SHOTS=0 (no screenshots), CLOSE=0 (skip close-ups), ONLY=1 (park close-up only), PROBE=<file.js> (evaluated at each spot).
 // Per spot: fill/ink triangles and draws per frame (tallied in renderBufferDirect), ms/frame, the culler's ms/frame while turning.
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -26,7 +26,7 @@ const errs = [], logs = [];
 page.on('pageerror', (e) => errs.push(String(e)));
 page.on('console', (m) => { const t = m.text(); if (m.type() === 'error') errs.push(t); if (/ReadPixels|stall|perf:/i.test(t)) logs.push(m.type() + ': ' + t); });
 const t0 = Date.now();
-await page.goto(`http://localhost:${process.env.PORT || 8123}/index.html?dpr=1${extra}`);
+await page.goto(`http://localhost:${process.env.PORT || 8123}/index.html?dpr=1${extra}`, { timeout: 180000 });
 await page.waitForFunction(() => window.__v2?.culler, null, { timeout: 180000 });
 const loadS = (Date.now() - t0) / 1000;
 // play state, title hidden
@@ -61,7 +61,7 @@ async function at(name, fn) {
   await page.waitForFunction(() => window.__v2.culler.lodPending === 0, null, { timeout: 240000 }).catch(() => {});
   await page.waitForTimeout(2500);
   const pr = process.env.PROBE ? await page.evaluate(fs.readFileSync(process.env.PROBE, 'utf8')) : undefined;
-  const m = await page.evaluate(async () => {
+  const count = () => page.evaluate(async () => {
     const T = window.__tally; T.fill = T.ink = T.fd = T.id = 0; T.by = {};
     T.on = true; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); T.on = false;
     // (two frames counted: halve)
@@ -76,8 +76,20 @@ async function at(name, fn) {
     st.heading.copy(h0); st.camFwd.copy(h0);
     return { turnMs, fill: Math.round(T.fill / 2), ink: Math.round(T.ink / 2), fillDraws: T.fd / 2, inkDraws: T.id / 2, tris: info.triangles, calls: info.calls, ms: +((performance.now() - t1) / 20).toFixed(1), top };
   });
+  const m = await count();
   m.probe = pr;
   if (shots) await page.screenshot({ path: `${SP}/shots/${label}-${name}.png` });
+  // OLD=1: the same view again with the culler picking versions as before measured errors
+  // (culler.lodOld: the worst case at 1 px) — the same traffic and people, a before/after pair
+  if (process.env.OLD) {
+    await page.evaluate(() => { const C = window.__v2.culler; C.lodOld = true; C.lodNow = true; });
+    await page.evaluate(() => new Promise((r) => { let n = 0; const f = () => (++n < 4 ? requestAnimationFrame(f) : r()); requestAnimationFrame(f); }));
+    if (shots) await page.screenshot({ path: `${SP}/shots/${label}-${name}-old.png` });
+    m.old = await count(); delete m.old.top;
+    await page.evaluate(() => { const C = window.__v2.culler; C.lodOld = false; });
+    await page.evaluate(() => new Promise((r) => { let n = 0; const f = () => (++n < 4 ? requestAnimationFrame(f) : r()); requestAnimationFrame(f); }));
+    await page.evaluate(() => { window.__v2.culler.lodNow = false; });
+  }
   return m;
 }
 fs.mkdirSync(SP + '/shots', { recursive: true });
