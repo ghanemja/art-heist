@@ -43,7 +43,7 @@ function viewBoard(text) {
 }
 
 // spurs: [{ key, pts }] from town.js; boulevard: its centre-line points; townC: the town's centre
-export function dressRoads(scene, { add, solid, spurs, boulevard, townC, ringR, sites, colliders = [] }) {
+export function dressRoads(scene, { add, solid, spurs, boulevard, townC, ringR, sites, colliders = [], roundabout = null }) {
   const out = { trees: 0, lamps: 0, lanes: [], blocked: [] };
   // ── country lanes: the town's roads used to be all spokes, each a dead end at its one place.
   // A lane joins two spokes where they come close, so you can drive a loop through the country:
@@ -67,7 +67,11 @@ export function dressRoads(scene, { add, solid, spurs, boulevard, townC, ringR, 
     const yarn = spurs.find(sp => sp.key === 'lm:yarnflow');
     // the bridge's south approach: the open road that starts at the boulevard and ends on the bridge deck
     const bridgeRoad = ROADS.find(r => !r.closed && r.pts.length > 8 && r.half > 0.9 && r.half < 1.0 && arc(r.pts[0], townC) < ringR + 1.5 && arc(r.pts[r.pts.length - 1], townC) > ringR + 4);
-    if (yarn && bridgeRoad) {
+    // (where the roundabout joins them — YarnFlow's road and the bridge road both arms of it — the
+    // lane is the long way round between two roads that already meet: it curled round the grass
+    // the roundabout now fills)
+    const viaRbt = roundabout && yarn && arc(yarn.pts[0], roundabout.c) < roundabout.r + 0.5;
+    if (yarn && bridgeRoad && !viaRbt) {
       const Y = yarn.pts, A = Y[Math.max(1, Y.length - 7)];                  // off YarnFlow's road, short of its yard
       const Bp = bridgeRoad.pts, B = Bp[Math.min(Bp.length - 2, nearestOn(Bp, A) + 2)];
       lane(A, B, -0.18);
