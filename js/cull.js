@@ -31,13 +31,9 @@ const _c = new THREE.Vector3(), _box = new THREE.Box3(), _s = new THREE.Sphere()
 // ── distance LOD ──
 // grid sizes (world units) of the simpler versions: each is used once its grid, seen at the mesh's
 // nearest point, is under LOD_TOL pixels (√3 × grid: the furthest a vertex can move)
-const LOD_CELLS = [0.003, 0.0065, 0.014, 0.03, 0.065, 0.14, 0.3];
-const _q = new URLSearchParams(globalThis.location?.search || ""); const LOD_TOL_Q = +_q.get("tol") || 0, LOD_TOL_INK_Q = +_q.get("tolink") || 0;
-const LOD_TOL = LOD_TOL_Q || 1.5;                  // px (device pixels): a solid thing's surface moved less than this, as measured (see lodLevels), isn't seen
-const LOD_TOL_INK = LOD_TOL_INK_Q || 2.0;              // px: the same for its ink hull (a stroke ~1.4–2.3 px wide, re-traced as it boils)
-let LOD_OLD = false;                  // (dev: culler.lodOld = true picks every version by the worst case at 1 px, as before measured errors — to compare)
+const LOD_CELLS = [0.003, 0.0065, 0.014, 0.03, 0.065, 0.14];
+const LOD_TOL = 1.0;                  // px (device pixels): a vertex moved less than this (the worst case) can't be seen
 let LOD_NOW = /[?&]lodnow=1/.test(globalThis.location?.search || '');     // (dev: ?lodnow=1, or culler.lodNow = true, rebuilds a patched mesh the moment it changes — to compare)
-const LOD_DCOL = 0.04;               // a vertex collapsing onto one whose colour differs by more than this (per channel, 0–1) counts as the worst case
 const LOD_MIN_TRIS = 240;             // a mesh smaller than this isn't worth simplifying
 const LOD_KEEP = 0.8;                 // a version is kept only if it's at most this share of the last one
 const LOD_KEEP_PATCHED = 0.7;         // (a patched mesh keeps every version in the JS heap — it rebuilds from them: fewer, further apart)
@@ -71,13 +67,7 @@ function capture(g) {
   if (RT && (!RT.array || RT.isInterleavedBufferAttribute)) return;
   if (!g.boundingSphere) g.computeBoundingSphere();
   if (!g.boundingBox) g.computeBoundingBox();
-  // (normals: each version's real error is measured along them; colours: a vertex only ever
-  // collapses onto one of its own colour, so painted parts that share a plane don't smear)
-  const N = g.attributes.normal, C = g.attributes.color;
-  const NA = N && !N.isInterleavedBufferAttribute && N.itemSize === 3 && N.array instanceof Float32Array ? N.array : null;
-  const CA = C && !C.isInterleavedBufferAttribute && C.itemSize >= 3 && C.array ? C.array : null;
-  _cap.set(g, { P: P.array, I: I ? I.array : null, n, SI: SI ? SI.array : null, SW: SW ? SW.array : null, RT: RT?.array || null, RS: RT?.itemSize || 0, N: NA, C: CA, CS: CA ? C.itemSize : 0,
-    CD: LOD_DCOL / (CA && C.normalized ? (CA instanceof Uint8Array ? 1 / 255 : CA instanceof Uint16Array ? 1 / 65535 : 1) : 1) });
+  _cap.set(g, { P: P.array, I: I ? I.array : null, n, SI: SI ? SI.array : null, SW: SW ? SW.array : null, RT: RT?.array || null, RS: RT?.itemSize || 0 });
   _lod.set(g, null);                  // (pending)
   _queue.push(g);
 }
@@ -106,7 +96,7 @@ function lodLevels(g) {
   const c = _cap.get(g); _cap.delete(g);
   if (!c) return [];
   const scale = _scale.get(g) || 1;
-  const { P, I, n, SI, SW, RT, RS, N, C, CS, CD } = c;
+  const { P, I, n, SI, SW, RT, RS } = c;
   const ni = I ? I.length : n, at = I ? (k) => I[k] : (k) => k;
   const used = new Uint8Array(n); for (let k = 0; k < ni; k++) used[at(k)] = 1;
   let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
@@ -117,16 +107,7 @@ function lodLevels(g) {
   const grp = new Uint32Array(n);
   if (SI) for (let i = 0; i < n; i++) { let b = 0, w = -1; for (let k = 0; k < 4; k++) if (SW[i * 4 + k] > w) { w = SW[i * 4 + k]; b = SI[i * 4 + k]; } grp[i] = b + 1; }
   else if (RT) for (let i = 0; i < n; i++) { let h = 0; for (let k = 0; k < RS; k++) h = (h * 31 + Math.round(RT[i * RS + k] * 400)) | 0; grp[i] = (h >>> 0) % 4093 + 1; }
-  // (and its part: vertices only collapse onto ones joined to them by triangles — two parts that
-  // touch, a paint over a wall, a lawn under its cobbles, a fill's parts under one hull, never smear
-  // into each other, and a hull simplifies exactly as its fills do. By colour instead left a
-  // smoothly shaded lawn half collapsed: long overlapping slivers, as spikes)
-  if (N) { const comp = partsOf(ni, n, at); for (let i = 0; i < n; i++) if (used[i]) grp[i] = (Math.imul(grp[i], 0x9e3779b1) + comp[i]) | 0; }
-  const levels = [], cl = new Int32Array(n), rep = new Int32Array(n), ev = new Float32Array(n);
-  // the vertices on an edge only one triangle uses — the rim of an open part, or a seam where the
-  // shape was split (a hard edge, a change of paint): one of those sliding across its rim, even
-  // within its own face, moves an outline
-  const rim = N ? edgeVerts(P, ni, n, at) : null;
+  const levels = [], cl = new Int32Array(n), rep = new Int32Array(n);
   let last = ni / 3;
   const IDX = n > 65535 ? Uint32Array : Uint16Array;
   // a big static thing (a street of shops, a garden's planting) is split into patches ~CHUNK across,
@@ -144,36 +125,18 @@ function lodLevels(g) {
       const d = (P[i * 3] - sum[q] / m) ** 2 + (P[i * 3 + 1] - sum[q + 1] / m) ** 2 + (P[i * 3 + 2] - sum[q + 2] / m) ** 2;
       if (d < best[j]) { best[j] = d; who[j] = i; } }
     for (let i = 0; i < n; i++) if (used[i]) rep[i] = who[cl[i]];
-    // how far each vertex's surface really moves: its offset to the vertex standing for it, along
-    // either one's normal (a vertex slid across a flat face — the planet-laying tessellation —
-    // changes nothing; one pulled off a bevel or a corner does). Without normals: the worst case.
-    if (N) for (let i = 0; i < n; i++) { if (!used[i]) continue; const j = rep[i]; if (j === i) { ev[i] = 0; continue; }
-      const dx = P[i * 3] - P[j * 3], dy = P[i * 3 + 1] - P[j * 3 + 1], dz = P[i * 3 + 2] - P[j * 3 + 2];
-      const tx = rim[i * 3], ty = rim[i * 3 + 1], tz = rim[i * 3 + 2];
-      // (a rim vertex: its move across its rim — along it, the outline stays where it was)
-      if (tx === tx) ev[i] = tx || ty || tz ? Math.hypot(dy * tz - dz * ty, dz * tx - dx * tz, dx * ty - dy * tx) : Math.hypot(dx, dy, dz);
-      else ev[i] = Math.max(Math.abs(dx * N[i * 3] + dy * N[i * 3 + 1] + dz * N[i * 3 + 2]), Math.abs(dx * N[j * 3] + dy * N[j * 3 + 1] + dz * N[j * 3 + 2]));
-      // (a vertex taking another colour smears paint across its face — a painted stripe, a lawn's
-      // shading — however flat it lies: that counts as the worst case)
-      if (C && Math.max(Math.abs(C[i * CS] - C[j * CS]), Math.abs(C[i * CS + 1] - C[j * CS + 1]), Math.abs(C[i * CS + 2] - C[j * CS + 2])) > CD) ev[i] = Infinity; }
     const out = new IDX(ni); let k = 0;
-    const off = ch ? new Uint32Array(ch.n + 1) : null, err = ch ? new Float32Array(ch.n) : null;
-    let emax = 0;
+    const off = ch ? new Uint32Array(ch.n + 1) : null;
     for (let t = 0, c = 0; t < ni; t += 3) {
       if (ch) while (t >= ch.off[c + 1]) off[++c] = k;
-      const i0 = order(t), i1 = order(t + 1), i2 = order(t + 2);
-      const a = rep[i0], b = rep[i1], d = rep[i2];
+      const a = rep[order(t)], b = rep[order(t + 1)], d = rep[order(t + 2)];
       if (a !== b && b !== d && a !== d) { out[k++] = a; out[k++] = b; out[k++] = d; }
-      if (N) { const e = Math.max(ev[i0], ev[i1], ev[i2]); if (ch) { if (e > err[c]) err[c] = e; } else if (e > emax) emax = e; }
     }
-    // (a version's error, in geometry units: what it is measured to be, never more than the worst case)
-    const worst = 1.7320508 * cell;
-    if (!N) { emax = worst; if (err) err.fill(worst); } else if (err) { for (let j = 0; j < err.length; j++) err[j] = Math.min(err[j], worst); } else emax = Math.min(emax, worst);
     if (k / 3 > (ch ? LOD_KEEP_PATCHED : LOD_KEEP) * last) continue;
     if (ch) {
       for (let c = 0; c < ch.n; c++) if (ch.off[c + 1] >= ni) { for (let j = c + 1; j <= ch.n; j++) off[j] = k; break; }
       off[ch.n] = k;
-      ch.lv.push({ cw, arr: out.slice(0, k), off, err });
+      ch.lv.push({ cw, arr: out.slice(0, k), off });
       last = k / 3;
       if (last < 16) break;
       continue;
@@ -184,44 +147,12 @@ function lodLevels(g) {
     if (_rayless.has(g)) lo.index.onUpload(_freeArr);              // (nothing reads it but the GPU: see _rayless)
     lo.boundingSphere = g.boundingSphere; lo.boundingBox = g.boundingBox;
     lo.userData.lodOf = g;
-    levels.push({ cw, geo: lo, err: emax });
+    levels.push({ cw, geo: lo });
     last = k / 3;
     if (last < 16) break;
   }
   if (ch) return ch;                                                  // (even with no simpler version: its patches still drop out of view)
   return levels;
-}
-// partsOf: each vertex's connected part (union–find over the triangles), as its root vertex
-function partsOf(ni, n, at) {
-  const pa = new Int32Array(n); for (let i = 0; i < n; i++) pa[i] = i;
-  const find = (x) => { while (pa[x] !== x) { pa[x] = pa[pa[x]]; x = pa[x]; } return x; };
-  for (let t = 0; t < ni; t += 3) { const a = find(at(t)), b = find(at(t + 1)), c = find(at(t + 2)); pa[b] = a; pa[c === b ? a : c] = a; }
-  for (let i = 0; i < n; i++) pa[i] = find(i);
-  return pa;
-}
-// edgeVerts: the vertices of every edge just one triangle uses (each edge a sorted key; a key
-// that occurs once is a rim)
-function edgeVerts(P, ni, n, at) {
-  const keys = new Float64Array(ni);
-  for (let t = 0; t < ni; t += 3) for (let e = 0; e < 3; e++) {
-    const a = at(t + e), b = at(t + (e + 1) % 3);
-    keys[t + e] = a < b ? a * n + b : b * n + a;
-  }
-  keys.sort();
-  // (each rim vertex's direction along its rim: its rim edges summed, each turned to agree)
-  const out = new Float32Array(n * 3).fill(NaN);
-  const add = (v, x, y, z) => { const o = v * 3; if (out[o] !== out[o]) { out[o] = out[o + 1] = out[o + 2] = 0; }
-    if (out[o] * x + out[o + 1] * y + out[o + 2] * z < 0) { x = -x; y = -y; z = -z; } out[o] += x; out[o + 1] += y; out[o + 2] += z; };
-  for (let k = 0; k < ni;) {
-    let j = k + 1; while (j < ni && keys[j] === keys[k]) j++;
-    if (j - k === 1) { const a = Math.floor(keys[k] / n), b = keys[k] - a * n;
-      let x = P[b * 3] - P[a * 3], y = P[b * 3 + 1] - P[a * 3 + 1], z = P[b * 3 + 2] - P[a * 3 + 2]; const l = Math.hypot(x, y, z) || 1;
-      x /= l; y /= l; z /= l; add(a, x, y, z); add(b, x, y, z); }
-    k = j;
-  }
-  for (let v = 0; v < n; v++) { const o = v * 3; if (out[o] !== out[o]) continue; const l = Math.hypot(out[o], out[o + 1], out[o + 2]);
-    if (l > 1e-6) { out[o] /= l; out[o + 1] /= l; out[o + 2] /= l; } else out[o] = out[o + 1] = out[o + 2] = 0; }
-  return out;
 }
 // cellIds: each used vertex's cell (+ group) → a dense id in cl[]; returns how many cells
 let _hk = new Int32Array(0), _hv = new Int32Array(0);
@@ -232,7 +163,7 @@ function cellIds(P, used, n, x0, y0, z0, cell, grp, cl) {
   let nc = 0;
   for (let i = 0; i < n; i++) {
     if (!used[i]) continue;
-    const a = Math.floor((P[i * 3] - x0) / cell), b = Math.floor((P[i * 3 + 1] - y0) / cell), c = Math.floor((P[i * 3 + 2] - z0) / cell), g = grp[i] | 0;
+    const a = Math.floor((P[i * 3] - x0) / cell), b = Math.floor((P[i * 3 + 1] - y0) / cell), c = Math.floor((P[i * 3 + 2] - z0) / cell), g = grp[i];
     let j = (Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791) ^ Math.imul(g, 40503)) & mask;
     for (;;) {
       const v = hv[j];
@@ -344,14 +275,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         if (huge) _wide.add(q.geometry);
         if (huge && !_chunky.has(q.geometry)) return;
         if (_lod.get(q.geometry) === null) { if (q.raycast !== THREE.Mesh.prototype.raycast || o.userData.noGround) _rayless.add(q.geometry); else _rayless.delete(q.geometry); }
-        // (measured error only for solid inked things — buildings, props, planting, their hulls.
-        // Ground layers lie ~0.01 over each other — lawn under cobbles, verge under road: a chord
-        // there that's under a pixel still lets the layer below poke through — and people bend:
-        // those keep the worst case)
-        const g = q.geometry, solid = !q.isSkinnedMesh &&
-          (q.userData.isInk || (q.parent?.children || []).some(h => h !== q && h.userData.isInk && h.geometry?.attributes?.position === g.attributes.position) || q.children.some(h => h.userData.isInk));
-        lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person,
-          u: _scale.get(q.geometry), tol: !solid ? 1.0 : q.userData.isInk ? LOD_TOL_INK : LOD_TOL, measured: solid });
+        lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person });
       });
       roots.set(o, { r, off, person, skinned, huge, detail: new Set(detail), hidden: false, lod: false, lods });
     }
@@ -388,7 +312,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       L.dyn = dyn; m.geometry = dyn;
       if (m.raycast === THREE.Mesh.prototype.raycast) m.raycast = _rayHi;   // (its rays read its whole shape: the patches' index comes and goes)
     }
-    const W = L.wc, cc = L.cc, lv = ch.lv, tol = LOD_OLD ? 1.0 : L.tol; let dirty = false, urgent = cc[0] === -9 || LOD_NOW || hz.jump;
+    const W = L.wc, cc = L.cc, lv = ch.lv; let dirty = false, urgent = cc[0] === -9 || LOD_NOW || hz.jump;
     for (let c = 0; c < n; c++) {
       _w.set(W[c * 4] - eye.x, W[c * 4 + 1] - eye.y, W[c * 4 + 2] - eye.z);
       const d = Math.max(1e-3, _w.length()), r = W[c * 4 + 3];
@@ -397,8 +321,8 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       if (hz.ok && d > hz.tang + r && Math.acos(THREE.MathUtils.clamp(-_w.dot(eye) / (d * hz.el), -1, 1)) + Math.asin(Math.min(1, r / d)) < hz.alpha) k = -2;   // behind the planet
       else if (!(cc[c] === -2 ? hz.near : hz.wide).intersectsSphere(_s)) k = -2;    // out of view (shown a little before it comes in, kept a little after)
       else {
-        const px = L.u * fd / Math.max(d - r, 0.05); k = -1;          // (px per geometry unit of error, at the patch's nearest point)
-        for (let i = lv.length - 1; i >= 0; i--) if ((L.measured && !LOD_OLD ? lv[i].err[c] : 1.7320508 * lv[i].cw / L.u) * px <= (i > cc[c] ? tol / 1.15 : tol)) { k = i; break; }
+        const px = 1.7320508 * fd / Math.max(d - r, 0.05); k = -1;
+        for (let i = lv.length - 1; i >= 0; i--) if (lv[i].cw * px <= (i > cc[c] ? LOD_TOL / 1.15 : LOD_TOL)) { k = i; break; }
       }
       if (k !== cc[c]) { cc[c] = k; dirty = true; }
       // (a patch in the view itself that the index doesn't hold yet can't wait; everything else —
@@ -439,9 +363,9 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       let dn;
       if (L.skin) dn = dRoot - st.r;
       else { const bs = L.hi.boundingSphere; _w.copy(bs.center).applyMatrix4(m.matrixWorld); dn = _w.distanceTo(eye) - bs.radius * L.ws; }
-      const px = L.u * fd / Math.max(dn, 0.05), tol = LOD_OLD ? 1.0 : L.tol;   // px per geometry unit of error
+      const px = 1.7320508 * fd / Math.max(dn, 0.05);                 // px per world unit of grid
       let k = -1;
-      for (let i = levels.length - 1; i >= 0; i--) if ((L.measured && !LOD_OLD ? levels[i].err : 1.7320508 * levels[i].cw / L.u) * px <= (i > L.cur ? tol / 1.15 : tol)) { k = i; break; }
+      for (let i = levels.length - 1; i >= 0; i--) if (levels[i].cw * px <= (i > L.cur ? LOD_TOL / 1.15 : LOD_TOL)) { k = i; break; }
       if (k !== L.cur) { L.cur = k; m.geometry = k < 0 ? L.hi : levels[k].geo; }
     }
   }
@@ -539,7 +463,6 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       prime();
     },
     set lodNow(v) { LOD_NOW = !!v; },
-    set lodOld(v) { LOD_OLD = !!v; },
     get lodPending() { return _queue.length + (primeK >= 0 ? 1 : 0); },
     get hiddenCount() { let k = 0; for (const s of roots.values()) if (s.hidden) k++; return k; },
     roots,

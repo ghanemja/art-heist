@@ -4,7 +4,7 @@
 //   python3 -m http.server 8123 &            (from the repo root; PORT=<n> for another checkout)
 //   (cd /tmp && npm pack three@0.160.0 && tar xzf three-0.160.0.tgz)   → THREE_DIR=/tmp/package serves three locally
 //   node scripts/perf-measure.mjs <label> ["&tol=2"]    → out/<label>.json + out/shots/<label>-<spot>.png
-// Env: OLD=1 (each spot again with culler.lodOld: before/after in the same view), SHOTS=0 (no screenshots), CLOSE=0 (skip close-ups), ONLY=1 (park close-up only), PROBE=<file.js> (evaluated at each spot).
+// Env: SHOTS=0 (no screenshots), CLOSE=0 (skip close-ups), ONLY=1 (park close-up only), PROBE=<file.js> (evaluated at each spot).
 // Per spot: fill/ink triangles and draws per frame (tallied in renderBufferDirect), ms/frame, the culler's ms/frame while turning.
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -75,19 +75,6 @@ async function at(name, fn) {
   if (shots) await page.screenshot({ path: `${SP}/shots/${label}-${name}.png` });
   const m = await count();
   m.probe = pr;
-  // OLD=1: the same view again with the culler picking versions as before measured errors
-  // (culler.lodOld: the worst case at 1 px) — the same traffic and people, a before/after pair
-  if (process.env.OLD) {
-    await page.evaluate(() => { const C = window.__v2.culler; C.lodOld = true; C.lodNow = true; });
-    await frames(4);
-    if (shots) await page.screenshot({ path: `${SP}/shots/${label}-${name}-old.png` });
-    m.old = await count(); delete m.old.top;
-    await page.evaluate(() => { window.__v2.culler.lodNow = false; });
-    m.old.turnMs = await turn();
-    await page.evaluate(() => { const C = window.__v2.culler; C.lodOld = false; C.lodNow = true; });
-    await frames(4);
-    await page.evaluate(() => { window.__v2.culler.lodNow = false; });
-  }
   m.turnMs = await turn();
   return m;
 }
