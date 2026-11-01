@@ -31,7 +31,7 @@ detectQuality(renderer.getContext());
 const DPR_PIN = +new URLSearchParams(location.search).get('dpr') || 0;
 const dprCaps = (low) => {
   const max = DPR_PIN || Math.min(devicePixelRatio, low ? 1.0 : matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75);
-  return { max, min: DPR_PIN || Math.min(max, low ? 0.7 : Math.max(0.8, max * 0.6)) };
+  return { max, min: DPR_PIN || Math.min(max, low ? 0.8 : Math.max(0.8, max * 0.6)) };
 };
 let { max: DPR_MAX, min: DPR_MIN } = dprCaps(QUALITY.low);
 renderer.setPixelRatio(DPR_MAX);
