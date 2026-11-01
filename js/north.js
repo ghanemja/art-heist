@@ -306,7 +306,7 @@ const POOL_VS = /* glsl */`
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }`;
 const POOL_FS = /* glsl */`
-  uniform float uTime, uLight, uSwimOn, uMos, uS, uMeOn, uMeK; uniform vec2 uAB; uniform vec3 uCam, uSwim, uSwimH, uSwimF, uMeA, uMeB;
+  uniform float uTime, uLight, uSwimOn, uMos, uS, uMeOn, uMeK; uniform vec2 uAB; uniform vec3 uCam, uSwim, uSwimH, uSwimF, uMeA, uMeH, uMeLH, uMeLF, uMeRH, uMeRF;
   uniform sampler2D tMos;
   uniform vec3 cDeep, cTint, cFoam, cTop, cSkin, cMeTop, cMeBottom, cMeSkin;
   varying vec3 vP;
@@ -374,10 +374,16 @@ const POOL_FS = /* glsl */`
       float tl = capsule(ro, r, uSwimH, uSwimF, 0.065);
       if (tl > 0.0 && tl < t) { col = cSkin * 0.92; t = tl; }
     }
-    if (uMeOn > 0.5) {                              // the critic, swimming: her body under the surface, from her shoulders (A) back to her feet (B)
-      float tb = capsule(ro, r, uMeA, uMeB, 0.085);
-      if (tb > 0.0 && tb < t) { vec3 q = ro + r * tb; float u = clamp(dot(q - uMeA, uMeB - uMeA) / dot(uMeB - uMeA, uMeB - uMeA), 0.0, 1.0);
-        col = (u < 0.42 ? cMeTop : u < 0.9 ? cMeBottom : cMeSkin) * 0.92; t = tb; }
+    if (uMeOn > 0.5) {                              // the critic, swimming: her torso (shoulders A → hips H) and each leg on its own (hip → foot)
+      float tb = capsule(ro, r, uMeA, uMeH, 0.085);
+      if (tb > 0.0 && tb < t) { vec3 q = ro + r * tb; float u = clamp(dot(q - uMeA, uMeH - uMeA) / dot(uMeH - uMeA, uMeH - uMeA), 0.0, 1.0);
+        col = (u < 0.42 ? cMeTop : cMeBottom) * 0.92; t = tb; }
+      float tlL = capsule(ro, r, uMeLH, uMeLF, 0.075);
+      if (tlL > 0.0 && tlL < t) { vec3 q = ro + r * tlL; float u = clamp(dot(q - uMeLH, uMeLF - uMeLH) / dot(uMeLF - uMeLH, uMeLF - uMeLH), 0.0, 1.0);
+        col = (u < 0.8 ? cMeBottom : cMeSkin) * 0.92; t = tlL; }
+      float tlR = capsule(ro, r, uMeRH, uMeRF, 0.075);
+      if (tlR > 0.0 && tlR < t) { vec3 q = ro + r * tlR; float u = clamp(dot(q - uMeRH, uMeRF - uMeRH) / dot(uMeRF - uMeRH, uMeRF - uMeRH), 0.0, 1.0);
+        col = (u < 0.8 ? cMeBottom : cMeSkin) * 0.92; t = tlR; }
     }
     float fres = pow(1.0 - abs(rd.y), 3.0);
     col = mix(col, cDeep, clamp(t * -r.y / 1.4, 0.0, 0.45));        // deeper water, bluer
@@ -401,7 +407,8 @@ function poolWater() {
     vertexShader: POOL_VS, fragmentShader: POOL_FS,
     uniforms: {
       uTime: { value: 0 }, uLight: { value: 1 }, uSwimOn: { value: 0 }, uMos: { value: MOS }, uS: { value: POOL_S },
-      uMeOn: { value: 0 }, uMeK: { value: 0 }, uMeA: { value: new THREE.Vector3() }, uMeB: { value: new THREE.Vector3() },
+      uMeOn: { value: 0 }, uMeK: { value: 0 }, uMeA: { value: new THREE.Vector3() }, uMeH: { value: new THREE.Vector3() },
+      uMeLH: { value: new THREE.Vector3() }, uMeLF: { value: new THREE.Vector3() }, uMeRH: { value: new THREE.Vector3() }, uMeRF: { value: new THREE.Vector3() },
       uAB: { value: new THREE.Vector2(POOL_A, POOL_B) }, uCam: { value: new THREE.Vector3() }, uSwim: { value: new THREE.Vector3(0, -0.05, 0) },
       uSwimH: { value: new THREE.Vector3(0.3, -0.2, 0) }, uSwimF: { value: new THREE.Vector3(0.7, -0.4, 0) },
       tMos: { value: mosaicTexture() },

@@ -161,7 +161,8 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
   // her shoulders → feet, for the pool's shader (its body-under-the-surface and rings)
   const _j1 = new THREE.Vector3(), _j2 = new THREE.Vector3();
   const shoulderMid = (out) => { const b = critic().bones; return out.copy(b.upperarmL.getWorldPosition(_j1)).add(b.upperarmR.getWorldPosition(_j2)).multiplyScalar(0.5); };
-  const feetMid = (out) => { const b = critic().bones; return out.copy(b.footL.getWorldPosition(_j1)).add(b.footR.getWorldPosition(_j2)).multiplyScalar(0.5); };
+  // a joint's position in the pool's local frame (for the shader's body and separate legs)
+  const jointOut = (name, out) => water.worldToLocal(critic().bones[name].getWorldPosition(out));
   const keyDown = (...c) => c.some(k => st.keys.has(k));
   function updateSwim(dt, t) {
     const inst = critic(); if (!inst?.bones?.head) return;
@@ -227,8 +228,12 @@ export function createClubPlay({ scene, game, player, club, range, poolIn, poolE
     // the pool's shader: her body under the surface, the rings
     if (U) {
       U.uMeOn.value = 1;
-      water.worldToLocal(shoulderMid(U.uMeA.value)); water.worldToLocal(feetMid(U.uMeB.value));
-      U.uMeA.value.y = Math.min(U.uMeA.value.y, -0.04); U.uMeB.value.y = Math.min(U.uMeB.value.y, -0.04);
+      // her torso (shoulders → hips) and each leg on its own (hip joint → foot), so the legs read as legs
+      water.worldToLocal(shoulderMid(U.uMeA.value));
+      jointOut('hips', U.uMeH.value);
+      jointOut('upperlegL', U.uMeLH.value); jointOut('footL', U.uMeLF.value);
+      jointOut('upperlegR', U.uMeRH.value); jointOut('footR', U.uMeRF.value);
+      for (const u of [U.uMeA, U.uMeH, U.uMeLH, U.uMeLF, U.uMeRH, U.uMeRF]) u.value.y = Math.min(u.value.y, -0.04);
       U.uMeK.value = swim.k * (0.5 + 0.5 * Math.max(0, Math.sin((swim.c - 0.55) * Math.PI * 2))) * tr + 0.25 * (1 - swim.k) * tr;
     }
     // a soft splash with each kick
