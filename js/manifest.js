@@ -21,6 +21,9 @@ export default {
     plateau: { at: [12, 4], r: 21 },          // downtown + boulevard sit on level ground
     sea: { at: [-62, 14], r: 15, depth: 1.8 }, // the southern sea (r 30 on the radius-40 planet)
     bay: { at: [-30, 8], r: 9, depth: 1.5 },   // an inlet of the sea, up to the harbour
+    // the strait from the bay out to the open sea: on the smaller planet a bar of land had closed
+    // it off, and the boat couldn't get from the harbour to Gull Island
+    strait: { half: 2.6, depth: 1.5 },
     mountain: { at: [52, -42], r: 10, height: 3.6 },
     island: { at: [-64, 18], r: 6.5, height: 0.5, name: 'Gull Island' },   // out in the sea: a lighthouse (farm.js)
     hills: 0.32,                              // rolling amplitude everywhere else
