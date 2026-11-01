@@ -35,32 +35,28 @@ function build(geo) {
   x0 -= pad; y0 -= pad; z0 -= pad;
   const nx = Math.max(1, Math.ceil((ex[0] + 2 * pad) / s)), ny = Math.max(1, Math.ceil((ex[1] + 2 * pad) / s)), nz = Math.max(1, Math.ceil((ex[2] + 2 * pad) / s));
   const NC = nx * ny * nz, inv = 1 / s;
-  const cl = (v, m) => (v < 0 ? 0 : v >= m ? m - 1 : v);
-  const tri = (t, k) => (I ? I[t * 3 + k] : t * 3 + k);
-  const range = (t, out) => {
-    let ax = Infinity, ay = Infinity, az = Infinity, bx = -Infinity, by = -Infinity, bz = -Infinity;
-    for (let k = 0; k < 3; k++) {
-      const v = tri(t, k) * 3, x = P[v], y = P[v + 1], z = P[v + 2];
-      if (x < ax) ax = x; if (x > bx) bx = x; if (y < ay) ay = y; if (y > by) by = y; if (z < az) az = z; if (z > bz) bz = z;
-    }
-    out[0] = cl(Math.floor((ax - pad - x0) * inv), nx); out[1] = cl(Math.floor((bx + pad - x0) * inv), nx);
-    out[2] = cl(Math.floor((ay - pad - y0) * inv), ny); out[3] = cl(Math.floor((by + pad - y0) * inv), ny);
-    out[4] = cl(Math.floor((az - pad - z0) * inv), nz); out[5] = cl(Math.floor((bz + pad - z0) * inv), nz);
-    return (out[1] - out[0] + 1) * (out[3] - out[2] + 1) * (out[5] - out[4] + 1);
-  };
-  // (a triangle spanning a great many cells goes on a list every ray tests instead)
-  const r = new Int32Array(6), count = new Int32Array(NC + 1), always = [];
-  const wide = new Uint8Array(nt);
+  // each triangle's cell range, once (a triangle spanning a great many cells goes on a list
+  // every ray tests instead)
+  const RG = new Int32Array(nt * 6), count = new Int32Array(NC + 1), always = [];
   for (let t = 0; t < nt; t++) {
-    if (range(t, r) > 64) { wide[t] = 1; always.push(t); continue; }
-    for (let i = r[0]; i <= r[1]; i++) for (let j = r[2]; j <= r[3]; j++) for (let k = r[4]; k <= r[5]; k++) count[(i * ny + j) * nz + k + 1]++;
+    const i0 = I ? I[t * 3] * 3 : t * 9, i1 = I ? I[t * 3 + 1] * 3 : t * 9 + 3, i2 = I ? I[t * 3 + 2] * 3 : t * 9 + 6;
+    const ax = Math.min(P[i0], P[i1], P[i2]), bx = Math.max(P[i0], P[i1], P[i2]);
+    const ay = Math.min(P[i0 + 1], P[i1 + 1], P[i2 + 1]), by = Math.max(P[i0 + 1], P[i1 + 1], P[i2 + 1]);
+    const az = Math.min(P[i0 + 2], P[i1 + 2], P[i2 + 2]), bz = Math.max(P[i0 + 2], P[i1 + 2], P[i2 + 2]);
+    let c0 = Math.floor((ax - pad - x0) * inv), c1 = Math.floor((bx + pad - x0) * inv);
+    let c2 = Math.floor((ay - pad - y0) * inv), c3 = Math.floor((by + pad - y0) * inv);
+    let c4 = Math.floor((az - pad - z0) * inv), c5 = Math.floor((bz + pad - z0) * inv);
+    if (c0 < 0) c0 = 0; if (c1 >= nx) c1 = nx - 1; if (c2 < 0) c2 = 0; if (c3 >= ny) c3 = ny - 1; if (c4 < 0) c4 = 0; if (c5 >= nz) c5 = nz - 1;
+    const o = t * 6;
+    if ((c1 - c0 + 1) * (c3 - c2 + 1) * (c5 - c4 + 1) > 64) { RG[o] = -1; always.push(t); continue; }
+    RG[o] = c0; RG[o + 1] = c1; RG[o + 2] = c2; RG[o + 3] = c3; RG[o + 4] = c4; RG[o + 5] = c5;
+    for (let i = c0; i <= c1; i++) for (let j = c2; j <= c3; j++) for (let k = c4; k <= c5; k++) count[(i * ny + j) * nz + k + 1]++;
   }
   for (let c = 0; c < NC; c++) count[c + 1] += count[c];
   const list = new Int32Array(count[NC]), fill = count.slice(0, NC);
   for (let t = 0; t < nt; t++) {
-    if (wide[t]) continue;
-    range(t, r);
-    for (let i = r[0]; i <= r[1]; i++) for (let j = r[2]; j <= r[3]; j++) for (let k = r[4]; k <= r[5]; k++) list[fill[(i * ny + j) * nz + k]++] = t;
+    const o = t * 6; if (RG[o] < 0) continue;
+    for (let i = RG[o]; i <= RG[o + 1]; i++) for (let j = RG[o + 2]; j <= RG[o + 3]; j++) for (let k = RG[o + 4]; k <= RG[o + 5]; k++) list[fill[(i * ny + j) * nz + k]++] = t;
   }
   return {
     pos: geo.attributes.position, pv: geo.attributes.position.version, idx: geo.index, iv: geo.index ? geo.index.version : -1,
@@ -69,10 +65,21 @@ function build(geo) {
   };
 }
 
+// (a geometry whose buffers keep changing — something animated — is left to three's loop: a grid
+// rebuilt for every ray would cost more than it saves)
+const CHANGING = new WeakSet();
+// (and only for a geometry rays keep reaching: building one costs about as much as ~20 rays
+// through three's loop, which gives the same answer)
+const RAYS = new WeakMap(), WARM = 6;
+export const raygridStats = { builds: 0, ms: 0, tris: 0 };
 function gridOf(geo) {
   let G = GRIDS.get(geo);
+  if (!G) { const n = (RAYS.get(geo) || 0) + 1; RAYS.set(geo, n); if (n < WARM) return null; }
   if (!G || G.pos !== geo.attributes.position || G.pv !== geo.attributes.position.version || G.idx !== geo.index || G.iv !== (geo.index ? geo.index.version : -1)) {
-    G = build(geo); GRIDS.set(geo, G);
+    if (G && (G.rebuilt = (G.rebuilt || 0) + 1) > 2) { CHANGING.add(geo); GRIDS.delete(geo); return null; }
+    const t = performance.now(), was = G?.rebuilt || 0;
+    G = build(geo); G.rebuilt = was; GRIDS.set(geo, G);
+    raygridStats.builds++; raygridStats.ms += performance.now() - t; raygridStats.tris += G.nt;
   }
   return G;
 }
@@ -154,8 +161,9 @@ function eligible(mesh) {
 }
 
 THREE.Mesh.prototype._computeIntersections = function (raycaster, intersects, rayLocal) {
-  if (!eligible(this)) return base.call(this, raycaster, intersects, rayLocal);
+  if (!eligible(this) || CHANGING.has(this.geometry)) return base.call(this, raycaster, intersects, rayLocal);
   const G = gridOf(this.geometry), geo = this.geometry;
+  if (!G) return base.call(this, raycaster, intersects, rayLocal);
   // the segment [near, far] of the world ray, in the local ray's parameter
   _inv.copy(this.matrixWorld).invert();
   const O = rayLocal.origin, D = rayLocal.direction;
@@ -174,4 +182,5 @@ THREE.Mesh.prototype._computeIntersections = function (raycaster, intersects, ra
 };
 // (dev: ?raygrid=0 turns it off for a comparison)
 if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('raygrid') === '0') THREE.Mesh.prototype._computeIntersections = base;
-THREE.Mesh.prototype._computeIntersections.base = base;   // (for a check against three's own)
+THREE.Mesh.prototype._computeIntersections.base = base;
+if (typeof window !== 'undefined') window.__raygrid = raygridStats;   // (for a check against three's own)
