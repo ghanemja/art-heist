@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import { R, buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, paintRoadMarkings, buildRoadSurface, LAMPS, collectLamps } from './world.js';
+import { R, buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, groundAt, isWater, nearestRoad, paintRoadMarkings, buildRoadSurface, LAMPS, collectLamps } from './world.js';
 import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
@@ -11,12 +11,14 @@ import { createPlaza } from './plaza.js';
 import { createPark } from './park.js';
 import { createShopInteriors, shopDoorway } from './shopinterior.js';
 import { createRooms, ROOM_STYLES } from './rooms.js';
-import { createCarParks } from './carparks.js';
+import { createCarParks, layLotsOnSheet } from './carparks.js';
 import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
 import { createMeadow } from './meadow.js';
+import { buildFootpaths } from './footpaths.js';
 import { createDoorCop } from './doorcop.js';
 import { createMinimap } from './minimap.js';
+import { audio } from './audio.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 // phones: fewer pixels, cooler GPU. That's the most it draws at: a machine that can't keep up is
@@ -40,6 +42,8 @@ const lights = buildLights(scene);
 const clouds = buildClouds(scene);
 const town = buildTown(scene);
 buildRoadSurface(scene);          // every road is laid: draw the network as one sheet (kerb returns at every junction)
+layLotsOnSheet(town);             // the shops' car-park markings down onto that asphalt as drawn
+buildFootpaths(scene, town);      // Lantern Park's cobbles out to the kerbs and through the meadow to the rose arbour (needs the sheet)
 collectLamps([scene, ...town.shops.map(sp => sp.root)]);   // every lamp's spot, before the props are baked (the shops' own are in their frames)
 // the town's loose props (trees, lamps, benches, planters…), each baked down in place to a fill
 // and a hull — before anything reads the ground, so the walk rays index the baked meshes
@@ -126,6 +130,33 @@ function adaptRes() {
   if (to !== res.dpr) { res.dpr = +to.toFixed(2); renderer.setPixelRatio(res.dpr); }
 }
 
+// what the sound needs to know about where she is: what's underfoot, how near the water.
+// (sampled a few times a second — the road and water lookups aren't free)
+const ear = { t: 0, surface: 'grass', water: 0 };
+const _eu = new THREE.Vector3(), _ea = new THREE.Vector3(), _eb = new THREE.Vector3(), _ed = new THREE.Vector3();
+function listen(dt) {
+  const st = player.st;
+  if ((ear.t -= dt) <= 0) {
+    ear.t = 0.2;
+    const d = st.dir;
+    if (rooms.inside) ear.surface = 'wood';
+    else {
+      const nr = nearestRoad(d);
+      ear.surface = nr && nr.dist < nr.half + 0.15 ? 'hard' : standAt(d) > groundAt(d) + 0.03 ? 'wood' : 'grass';
+    }
+    // the sea (or a river, a lake): the share of a ring of points round her that's water, nearer counting more
+    _eu.copy(d).normalize(); _ea.set(0, 1, 0).cross(_eu); if (_ea.lengthSq() < 1e-4) _ea.set(1, 0, 0).cross(_eu); _ea.normalize(); _eb.crossVectors(_eu, _ea);
+    let wsum = 0, n = 0;
+    for (const [r, k] of [[2.5, 1], [5, 0.6], [8, 0.3]]) for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2 + r;
+      _ed.copy(_eu).addScaledVector(_ea, Math.cos(a) * r / R).addScaledVector(_eb, Math.sin(a) * r / R).normalize();
+      if (isWater(_ed)) wsum += k; n += k;
+    }
+    ear.water = Math.min(1, 1.6 * wsum / n);
+  }
+  audio.tick(dt, { night: atm.k, mode: st.mode, speed: st.speed, wc: player.critic.inst?.wc, surface: ear.surface, water: ear.water, inside: rooms.inside });
+}
+
 const clock = new THREE.Clock();
 function loop() {
   requestAnimationFrame(loop);
@@ -142,11 +173,14 @@ function loop() {
   telescope?.update(dt);
   doorCop.update(dt);
   if (!game.update(dt, t)) { if (!rooms.update(dt, t)) player.update(dt, t); }
+  listen(dt);                                    // the world's sounds: footsteps, engine, birds, the sea
   town.tickShops(player.st.dir);                 // inside a project shop: its upper walls lift away
   // inside a carriage of the parked train: its roof lifts off and the camera rises to look in
   if (town.train) {
     const st = player.st, inT = st.mode === 'walk' && town.train.inside(st.dir);
     for (const r of town.train.roofs) r.visible = !inT;
+    // …and the platform canopy over it (and over you on the platform): it hid her from the camera
+    if (town.stationCanopy) { const under = st.mode === 'walk' && (inT || town.stationCanopy.inside(st.dir)); for (const m of town.stationCanopy.meshes) m.visible = !under; }
     if (inT) { if (st.prePitch == null) st.prePitch = st.camPitch; st.camPitch += (0.85 - st.camPitch) * (1 - Math.exp(-3 * dt)); }
     else if (st.prePitch != null) { st.camPitch += (st.prePitch - st.camPitch) * (1 - Math.exp(-3 * dt)); if (Math.abs(st.camPitch - st.prePitch) < 0.01) st.prePitch = null; }
   }

@@ -3,6 +3,7 @@
 // and your notebook records what you SAW. People tell you what THEY saw. When
 // you think you know, you name someone and back it with two things you found.
 import * as THREE from 'three';
+import { crumpledTicket } from './ticket.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { HARBOUR } from './harbour.js';
 import { R, arc, settle, frame, yawToFace, radiusAt, groundAt, standAt, onRoad, nearestRoad } from './world.js';
@@ -312,12 +313,8 @@ function booth() {
   g.add(blobShadow(0.9));
   return ink(g, 'mid');
 }
-function ticket() {
-  const g = new THREE.Group();
-  const t = new THREE.Mesh(rbox(0.5, 0.02, 0.28, 0.01), paint(0xf4e6b8));
-  t.position.y = 0.03; t.rotation.y = 0.4; g.add(t);
-  return ink(g, 'fine');
-}
+// (the cargo ticket: a crumpled printed slip, ticket.js)
+const ticket = () => crumpledTicket();
 function cafe() {
   // two bistro tables on the pavement under the café's awning (left of the shop's A-board,
   // which stands at +0.72: the right-hand table used to stand in it)
@@ -376,7 +373,10 @@ export function buildCase(scene, W) {
     c.updateWorldMatrix(true, true);
     items.push({ kind: 'clue', id: 'crates', dir: d, obj: c, glintAt: c.localToWorld(new THREE.Vector3(0, 2.5, 0.2)) });   // the sparkle over the stack, not inside it
     for (const x of [-0.85, 0.85]) W.solid(c.localToWorld(new THREE.Vector3(x, 0, 0)).normalize(), 0.75); }
-  { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); place(t, d); items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t }); }
+  // (laid ON the station's paving — standAt, not the terrain under it, where it was buried — and not
+  // baked: it keeps its printed face)
+  { const d = W.siteAt('station', [-2.6, 1.6]); const t = ticket(); settle(t, d, 0.3, 0, 0); t.position.setLength(standAt(d) + 0.004); scene.add(t);
+    items.push({ kind: 'clue', id: 'ticket', dir: d, obj: t, glintAt: d.clone().multiplyScalar(standAt(d) + 0.9) }); }
   // people
   const at = { vivi: mF(-1.4, 1.6), otto: mF(-5.1, 0.45), pia: W.townAt([W.cafeSpot[0] - 1.35, W.cafeSpot[1] - 0.25]), rex: null };
   // Rex waits on the street corner by his van, on the pavement in plain view

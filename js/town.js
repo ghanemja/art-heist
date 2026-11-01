@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked, addPad, addCamBlock, addRiver } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked, addPad, addCamBlock, ZONES } from './world.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=17';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { buildFarm, buildIsland } from './farm.js';
-import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, shopLotPost, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { museumGrounds, shopApproach, APPROACH_STOP, APPROACH_Z1, MOUTH_LAP, makersRow, ROW_X, ROW, ROW_MOUTH_LAP } from './grounds.js';
 import { addKoi } from './pondwater.js';
@@ -146,10 +146,6 @@ const mDir = llv(PLAN.museum.at);
 const mF = frame(mDir, TOWN_C);                            // +y local = toward town
 export function planTown() {
   planNorth();                                            // the river and the north's ground (north.js)
-  // the strait: the bay and the open sea joined by a channel of water, so the harbour's boat can
-  // sail out to the island (on the smaller planet the sea no longer reaches the bay by itself)
-  { const B = llv(PLAN.terrain.bay.at), S = llv(PLAN.terrain.sea.at), n = 10;
-    addRiver(Array.from({ length: n + 1 }, (_, k) => slerpDir(B, S, k / n)), 2.8, 1.5); }
   reserve(mF(0, -0.3), 4.4, 'museum-plaza');
   reserve(mF(0, -7.0), 8.4, 'museum');
   // the museum stands on a true plane (tangent at its forecourt, so the forecourt is level);
@@ -353,7 +349,7 @@ export function buildTown(scene) {
       const rest = arc(w, target), n = Math.max(6, Math.round(rest / 1.5));
       for (let k = 0; k <= n; k++) pts.push(slerpDir(w, target, (k / n) * (1 - stopShort / rest)));
     }
-    const mine = z => z.key === key || z.key === key.replace('lm:', 'lot:');     // its own shop and car park
+    const mine = z => z.key === key || z.key === key.replace('lm:', 'lot:') || (key === 'site:harbour' && z.key === 'shore');   // its own shop and car park (the harbour: its shore)
     deflect(pts, { keep: i => i === 0 || i >= lock || i === pts.length - 1, except: mine, clear: 1.8 });
     // smoothing rounds corners back INTO reserved ground: push the smoothed line out again
     const sm = smooth(pts, 2);
@@ -364,6 +360,11 @@ export function buildTown(scene) {
     return built;
   };
   out.spurs = [];
+  // (while the spurs are laid the sea's and the bay's shores count as reserved ground: a road along
+  // the bank ran on a steep side-slope down to the water, its kerb a tall wall of slivers. Only the
+  // harbour's own road goes down to the water. They're let go once the spurs are down)
+  const shoreZones = [PLAN.terrain.sea, PLAN.terrain.bay].map(w => ({ dir: llv(w.at), r: w.r + 1.5, key: 'shore' }));
+  ZONES.push(...shoreZones);
   // every spur is laid NOW, with the rest of the roads, so the onRoad() checks of
   // everything built after (blocks, lamps, the verge trees and bushes) see them —
   // laid later, a spur ran straight over the verge planting it crossed
@@ -392,6 +393,7 @@ export function buildTown(scene) {
   { const pts = spur(rowPlace().toDir(0, ROW.z1 - ROW_MOUTH_LAP), 0, 'lm:row');
     if (pts) spurEnds.row = pts[pts.length - 1].clone(); }
 
+  for (const z of shoreZones) ZONES.splice(ZONES.indexOf(z), 1);
   // ── 3. BUILD ───────────────────────────────────────────────────────────────
   // the museum: the scene of the crime, restyled into the drawn world
   {
@@ -679,6 +681,14 @@ export function buildTown(scene) {
           const c = F.toDir(s * cx, cz), ex = F.toDir(s * cx + 1, cz).sub(c), ez = F.toDir(s * cx, cz + 1).sub(c);
           addPad(c, ex.projectOnPlane(c), ez.projectOnPlane(c), hx, hz, r);
         }
+        // its lamp and P sign, each upright on the ground beside the kerb (not bent in with the
+        // markings: laid on vertex by vertex where the ground falls off the lot they leaned and
+        // hovered). None stands in water (YarnFlow's lot corner hangs over its river)
+        for (const [kind, [x, z]] of Object.entries(SHOP_LOT.posts)) {
+          const pd = F.toDir(s * x, z);
+          if (isWater(pd, 0)) continue;
+          feet(add(placeOnPlanet(shopLotPost(kind), pd, yawToFace(pd, F.toDir(s * x, z + 5)), { weight: 'fine', upright: true })));
+        }
         lm.lot = { side: s, root: g };
       }
       out.landmarks.push(lm);
@@ -744,6 +754,11 @@ export function buildTown(scene) {
     }
     if (k === 'station') {
       const g = add(placeOnPlanet(station(), d, yawToFace(d, TOWN_C)));
+      { // the platform canopy: lifted away while you're on the platform or in the train under it
+        const A = g.userData.canopyArea, cm = g.userData.canopyMats || [], inv = g.matrixWorld.clone().invert(), _l = new THREE.Vector3();
+        out.stationCanopy = { meshes: [], inside: (dir) => { _l.copy(dir).multiplyScalar(R).applyMatrix4(inv); return _l.x > A.x0 && _l.x < A.x1 && _l.z > A.z0 && _l.z < A.z1; } };
+        g.traverse(o => { if (o.isMesh && cm.includes(o.material)) out.stationCanopy.meshes.push(o); });
+      }
       addFloor(g, g.userData.floor); feet(g);
       // the station's footprint is in its own local frame (x is mirrored in the site frame)
       for (const [[x, z], r] of g.userData.solids) solid(out.sites[k].frame(-x, z), r);

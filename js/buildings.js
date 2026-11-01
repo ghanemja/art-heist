@@ -17,7 +17,6 @@ import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { settle, radiusAt, drawnGroundAt, pruneDeco } from './world.js';
 import { windowWall, pick, rnd, tree, lamp } from './props.js';
-import { cobbleSlab } from './grounds.js';
 
 // ── geometry kit ─────────────────────────────────────────────────────────────
 // bevel resolution follows size; a glazing bar or rail is too thin for a bevel to read
@@ -1325,19 +1324,27 @@ export function mallDrive(edgeZ, lotEnd) {
 // stepped outline where it met the road). The lot and its apron are two rounded rectangles
 // (SHOP_LOT.pads, shop frame) drawn into the road sheet (world.js addPad, town.js): flush on
 // the ground, one kerb band, curved kerb returns where the apron meets the spur. Here: the
-// painted bays, wheel stops, a lamp and a P sign.
-export const SHOP_LOT = { x0: 3.15, x1: 8.3, z0: -2.1, z1: 7.6, aisle: 5.15, apron: [5.45, 7.6], bays: [-0.9, 1.3, 3.5], bayW: 2.2 };   // (the apron's wide enough to turn in off the spur)
+// painted bays, wheel stops and the aisle arrow. They're built at SHOP_LOT.top over the ground,
+// but the sheet drapes its own way (over the highest ground near, not the terrain under each
+// point), so once it's laid carparks.js layLotsOnSheet sets them down onto the asphalt itself —
+// laid on the terrain they hovered over it, a whole unit where a lot's corner hangs over a bank.
+// The lamp and the P sign are shopLotPost: each placed on its own, upright, on the ground beside.
+export const SHOP_LOT = { x0: 3.15, x1: 8.3, z0: -2.1, z1: 7.6, aisle: 5.15, apron: [5.45, 7.6], bays: [-0.9, 1.3, 3.5], bayW: 2.2, top: 0.09 };   // (the apron's wide enough to turn in off the spur)
 // the two paved rectangles (side +1; x mirrors with s): [cx, cz, hx, hz, corner r]
 SHOP_LOT.pads = [
   [(SHOP_LOT.x0 + SHOP_LOT.x1) / 2, (SHOP_LOT.z0 + SHOP_LOT.z1) / 2, (SHOP_LOT.x1 - SHOP_LOT.x0) / 2, (SHOP_LOT.z1 - SHOP_LOT.z0) / 2, 0.6],
   [(SHOP_LOT.x0 + 1.2) / 2, (SHOP_LOT.apron[0] + SHOP_LOT.apron[1]) / 2, (SHOP_LOT.x0 - 1.2) / 2 + 0.6, (SHOP_LOT.apron[1] - SHOP_LOT.apron[0]) / 2, 0.3],
 ];
+// the lamp and the P sign, shop frame (side +1): [x, z]
+SHOP_LOT.posts = { lamp: [SHOP_LOT.x1 + 0.34, SHOP_LOT.z0 + 0.3], sign: [SHOP_LOT.x1 + 0.4, SHOP_LOT.z1 - 0.6] };
 export function shopLot(s) {
   const K = kit(), L = SHOP_LOT, line = paint(0xf6eedb, { hatch: 0 }), kerb = paint(PAL.kerb);
-  const TOP = 0.09;                                           // just over the sheet (it lies 0.06 over the ground, on the highest ground near)
-  // the bays: lines between them, a wheel stop at the head of each
+  const TOP = L.top;
+  // the bays: lines between them, a wheel stop at the head of each. (No line along the first
+  // bay's outer side: the lot's kerb is right there, and its rounded corner cut the line's end
+  // off the asphalt, up onto the kerb)
   const bx0 = L.aisle, bx1 = L.x1 - 0.2, bayD = bx1 - bx0;
-  for (let k = 0; k <= L.bays.length; k++) {
+  for (let k = 1; k <= L.bays.length; k++) {
     const z = L.bays[0] - L.bayW / 2 + k * L.bayW;
     K.box(bayD, 0.012, 0.06, line, s * (bx0 + bayD / 2), TOP + 0.004, z, 0.004).userData.noInk = true;
   }
@@ -1347,14 +1354,18 @@ export function shopLot(s) {
   ar.moveTo(-0.09, -0.45); ar.lineTo(0.09, -0.45); ar.lineTo(0.09, 0.1); ar.lineTo(0.22, 0.1); ar.lineTo(0, 0.42); ar.lineTo(-0.22, 0.1); ar.lineTo(-0.09, 0.1); ar.closePath();
   K.put(new THREE.ShapeGeometry(ar), line, s * (L.x0 + L.aisle) / 2, TOP + 0.006, 1.6, [-Math.PI / 2, 0, 0]).userData.noInk = true;
   // (the kerb is the sheet's own kerb band, round the lot and apron as round every road)
-  // a lamp just outside the far corner's kerb (it stood inside the end bay, in front of a parked
-  // car's nose), and a P sign at the apron
-  lampPost(K, s * (L.x1 + 0.34), L.z0 + 0.3, 2.3);
-  const sg = K.sub(s * (L.x1 + 0.4), 0, L.z1 - 0.6, 0);
-  sg.foot(0, 0, 0.1);
-  sg.box(0.06, 1.5, 0.06, DARK(), 0, 0.75, 0, 0.02);
-  sg.box(0.46, 0.46, 0.05, paint(0x3f6fb0), 0, 1.6, 0, 0.04);
-  sg.flat(0.38, 0.38, signMat('P', { bg: '#3f6fb0', fg: '#f6eedb', w: 128, h: 128, font: '700 $px ' + HAND }), 0, 1.6, 0.027);
+  return K.g;
+}
+// the lot's lamp (just outside the far corner's kerb — it stood inside the end bay, in front of a
+// parked car's nose) or its P sign (at the apron), at its own origin: placed upright beside the
+// kerb by town.js. The sign's post runs on down into the ground, so it never shows a gap under it
+export function shopLotPost(kind) {
+  const K = kit();
+  if (kind === 'lamp') { lampPost(K, 0, 0, 2.3); return K.g; }
+  K.foot(0, 0, 0.1);
+  K.box(0.06, 1.8, 0.06, DARK(), 0, 0.6, 0, 0.02);
+  K.box(0.46, 0.46, 0.05, paint(0x3f6fb0), 0, 1.6, 0, 0.04);
+  K.flat(0.38, 0.38, signMat('P', { bg: '#3f6fb0', fg: '#f6eedb', w: 128, h: 128, font: '700 $px ' + HAND }), 0, 1.6, 0.027);
   return K.g;
 }
 
@@ -1453,12 +1464,17 @@ export function station() {
   K.box(PL, 0.06, 0.18, paint(0xf0d060), 0, PH + 0.005, pz0 - PD + 0.12, 0.01).userData.noInk = true;
   for (const s of [-1, 1]) K.put(wedge(1.2, PH, PD), paint(PAL.kerb), s * (PL / 2 + 0.6), 0, pz0 - PD / 2, [0, s > 0 ? 0 : Math.PI, 0]);
   const CH = 2.45, cz = pz0 - PD + 0.4;
-  K.box(PL - 0.6, 0.1, PD - 0.1, paint(0xe8ddc6), 0, PH + CH, pz0 - (PD - 0.1) / 2, 0.03, [-0.05, 0, 0]);
+  // (the canopy and its valance have their own materials, so they stay their own meshes when
+  // baked: they lift away while you're under them or in the train beside them, see main.js)
+  const canopyM = paint(0xe8ddc6, { unique: true }), fretM = paint(0xfffaf0, { unique: true });
+  K.box(PL - 0.6, 0.1, PD - 0.1, canopyM, 0, PH + CH, pz0 - (PD - 0.1) / 2, 0.03, [-0.05, 0, 0]);
   const fret = new THREE.Shape(); const fw = PL - 0.6, nT = Math.round(fw / 0.16);
   fret.moveTo(-fw / 2, 0); fret.lineTo(fw / 2, 0); fret.lineTo(fw / 2, -0.06);
   for (let k = 0; k < nT; k++) { const x0 = fw / 2 - k * fw / nT; fret.lineTo(x0 - fw / nT / 2, -0.24); fret.lineTo(x0 - fw / nT, -0.06); }
   fret.lineTo(-fw / 2, 0);
-  K.put(extrude(fret, 0.02, 0.006, 4), trim, 0, PH + CH - 0.07, pz0 - PD + 0.02);
+  K.put(extrude(fret, 0.02, 0.006, 4), fretM, 0, PH + CH - 0.07, pz0 - PD + 0.02);
+  K.g.userData.roofMats = K.g.userData.canopyMats = [canopyM, fretM];   // (roofMats: bake keeps them apart, their outlines with them)
+  K.g.userData.canopyArea = { x0: -PL / 2 - 0.6, x1: PL / 2 + 0.6, z0: STATION_TRACK.z - 1.6, z1: pz0 + 0.15 };   // (platform + the train beside it, station-local)
   for (let k = 0; k < 6; k++) {
     const x = -5.0 + k * 2.0;
     K.put(lathe([[0.001, 0], [0.1, 0], [0.1, 0.1], [0.05, 0.16], [0.04, CH - 0.25], [0.07, CH - 0.18], [0.08, CH - 0.1], [0.001, CH - 0.1]], 12), iron, x, PH, cz);
@@ -1887,22 +1903,9 @@ export function parkGarden() {
   const basin = paint(0x9fb3a6), pad = paint(0x6f9a5a, { hatch: 0 });
   const flat = (geo, mat, y) => { geo.rotateX(-Math.PI / 2); const m = K.put(geo, mat, 0, y, 0); m.userData.noInk = true; return m; };
   flat(new THREE.CircleGeometry(PR + 0.1, 72, 0, Math.PI * 2), lawn, PARK.LAWN_Y);   // (a touch wider than the paths: their ends lie on it)
-  // the cobbles: the ring round the pond and four paths out to the edge (N, E, S, W) traced as
-  // ONE outline (the ring's inside a hole), so where they meet there's a single surface — no two
-  // layers fighting at the joins
-  {
-    const w = PATH / 2, Ro = RING + w, Ri = RING - w, dO = Math.asin(w / Ro), dP = Math.asin(w / PR);
-    const P = (r, t) => new THREE.Vector2(Math.sin(t) * r, -Math.cos(t) * r);   // (shapes are drawn in (x, −z): see lay())
-    const pts = [];
-    for (let k = 0; k < 4; k++) {
-      const a = k * Math.PI / 2;
-      for (let i = 0; i <= 4; i++) pts.push(P(PR, a - dP + 2 * dP * i / 4));
-      for (let i = 0; i <= 18; i++) pts.push(P(Ro, a + dO + (Math.PI / 2 - 2 * dO) * i / 18));
-    }
-    const sh = new THREE.Shape(pts), hole = new THREE.Path(Array.from({ length: 72 }, (_, i) => P(Ri, -i / 72 * Math.PI * 2)));
-    sh.holes.push(hole);
-    cobbleSlab(K, sh, 12, { border: 0 }).position.y = PARK.PATH_Y;   // (no border course: it traces the outer outline only, and this one has a hole)
-  }
+  // the cobbles (the ring round the pond and the four paths out) are NOT drawn here: they are one
+  // surface with the footpaths that carry on out of the park to the road and the meadow
+  // (footpaths.js), meshed once with filleted joins. onParkPath still says where they lie in here
   // the pond: a raised stone rim round a basin with a pale floor (coins on it); the water itself
   // (see-through, gently moving) is laid in by park.js at WATER_Y, under the rim's lip
   K.put(lathe([[POND - 0.02, 0], [POND + 0.2, 0], [POND + 0.22, 0.2], [POND + 0.12, 0.26], [POND - 0.04, 0.24], [POND - 0.05, 0.05]], 48), stone, 0, 0, 0);
@@ -1976,8 +1979,8 @@ export function parkGarden() {
     K.foot(Math.sin(a) * r, Math.cos(a) * r, 0.42);
     benches.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, a });
   }
-  for (const a of [0.13, Math.PI + 0.13]) {                           // at two of the path entrances
-    const r = RING + PATH / 2 + 0.2, l = lamp(); l.position.set(Math.sin(a) * r, 0, Math.cos(a) * r); K.g.add(l);
+  for (const a of [0.2, Math.PI + 0.2]) {                             // at two of the path entrances (clear of the joins' fillets)
+    const r = RING + PATH / 2 + 0.45, l = lamp(); l.position.set(Math.sin(a) * r, 0, Math.cos(a) * r); K.g.add(l);
     K.foot(Math.sin(a) * r, Math.cos(a) * r, 0.15);
   }
   K.g.userData.park = { ring: RING, benches, pond: { r: POND - 0.035, y: PARK.WATER_Y, floor: PARK.FLOOR_Y }, seatY: PARK.SEAT_Y, lawnY: PARK.LAWN_Y };
@@ -1986,7 +1989,7 @@ export function parkGarden() {
 // a park bench sized for the town's people (the seat at their knee height, so someone sitting has
 // their thighs on the slats and their feet flat on the ground): three seat slats and two back
 // slats of timber on curved cast-iron ends with armrests. Its frame: the sitter faces +z
-function parkSeat(K, x, z, ry) {
+export function parkSeat(K, x, z, ry) {
   const s = K.sub(x, 0, z, ry), wood = paint(PAL.bark), iron = paint(PAL.ink, { hatch: 0 }), Y = PARK.SEAT_Y;
   for (const zz of [0.1, 0, -0.1]) s.put(rb(1.12, 0.035, 0.09, 0.014, 2), wood, 0, Y - 0.0175, zz);
   for (const [yy, zz] of [[Y + 0.15, -0.175], [Y + 0.27, -0.19]]) s.put(rb(1.12, 0.09, 0.03, 0.012, 2), wood, 0, yy, zz, [-0.14, 0, 0]);
@@ -1998,6 +2001,88 @@ function parkSeat(K, x, z, ry) {
     tube([[Y - 0.03, 0.12], [Y + 0.12, 0.14], [Y + 0.165, 0.08], [Y + 0.16, -0.17]], 0.018); // the armrest, curling back
     for (const [py, pz] of [[Y + 0.34, -0.215], [0, 0.13], [0, -0.15]]) s.put(new THREE.SphereGeometry(0.026, 10, 8), iron, sx, py, pz);   // (capped ends: feet and a knob)
   }
+}
+
+// ── the rose arbour: where the meadow trail goes (footpaths.js) ──
+// A round open pavilion of six timber posts on stone footings, a ring beam on them, six rafters
+// curving up to a crown with a finial and a lantern hung under it, roses climbing every post and
+// spilling along the beam, and two park benches inside facing each other across the path. Its
+// frame: the trail runs along z through the middle, between two pairs of posts (they stand at
+// 30° + k·60° round from +z, so none is in the way). Lies within r 1.35; y 0 is the ground.
+export const ARBOUR = { R: 1.15, POSTS: 6, BEAM_Y: 2.02, SEAT_X: 0.74 };
+export function roseArbour() {
+  const K = kit(), Rn = rng(5501), { R: AR, BEAM_Y } = ARBOUR;
+  const wood = paint(0xe9dcc4), stone = paint(0xcfc4ae), iron = paint(PAL.ink, { hatch: 0 });
+  const leaf = paint(0x5f8a4e), leafL = paint(0x7da35e);
+  const blooms = [paint(0xe0607a, { hatch: 0 }), paint(0xf4b8c4, { hatch: 0 }), paint(0xf6eedb, { hatch: 0 })];
+  const glow = paint(0xfff1c8, { emissive: 0xffd98a, hatch: 0 });
+  const posts = [];
+  for (let k = 0; k < ARBOUR.POSTS; k++) {
+    const a = Math.PI / 6 + k * Math.PI / 3, x = Math.sin(a) * AR, z = Math.cos(a) * AR;
+    posts.push([x, z, a]);
+    K.put(lathe([[0.001, 0], [0.13, 0], [0.13, 0.05], [0.1, 0.09], [0.075, 0.12], [0.001, 0.12]], 16), stone, x, -0.01, z);   // the footing
+    K.box(0.1, BEAM_Y - 0.08, 0.1, wood, x, 0.08 + (BEAM_Y - 0.08) / 2, z, 0.025, [0, -a, 0]);
+    K.box(0.14, 0.05, 0.14, wood, x, BEAM_Y - 0.03, z, 0.02, [0, -a, 0]);                       // the post's cap under the beam
+    K.foot(x, z, 0.12);
+  }
+  // the ring beam and a thinner rail under it
+  const ring = (r, tube, y) => { const g = new THREE.TorusGeometry(r, tube, 8, 60); g.rotateX(Math.PI / 2); return K.put(g, wood, 0, y, 0); };
+  ring(AR, 0.055, BEAM_Y + 0.03); ring(AR, 0.025, BEAM_Y - 0.22);
+  // rafters: from each post's head, curving up and in to the crown
+  const CROWN = BEAM_Y + 0.62;
+  for (const [x, z] of posts) {
+    const pts = [[1, BEAM_Y + 0.06], [0.72, BEAM_Y + 0.36], [0.38, BEAM_Y + 0.56], [0.08, CROWN]].map(([f, y]) => new THREE.Vector3(x * f, y, z * f));
+    K.put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.032, 6, false), wood);
+  }
+  K.put(lathe([[0.001, CROWN - 0.1], [0.11, CROWN - 0.08], [0.12, CROWN + 0.02], [0.06, CROWN + 0.08], [0.035, CROWN + 0.2], [0.07, CROWN + 0.26], [0.001, CROWN + 0.36]], 16), wood);
+  // the lantern, hung on a short chain from the crown
+  K.put(new THREE.CylinderGeometry(0.008, 0.008, 0.36, 5), iron, 0, CROWN - 0.28, 0);
+  K.put(lathe([[0.001, 0.2], [0.07, 0.19], [0.1, 0.15], [0.02, 0.12], [0.02, 0.1], [0.001, 0.1]], 12), iron, 0, CROWN - 0.66, 0);
+  K.put(new THREE.SphereGeometry(0.075, 14, 10), glow, 0, CROWN - 0.6, 0).userData.noInk = true;
+  K.put(lathe([[0.001, 0], [0.04, 0], [0.05, 0.03], [0.001, 0.05]], 10), iron, 0, CROWN - 0.7, 0);
+  // the roses: leafy clumps spiralling up each post and along the beam, flowers dotted over them
+  const leafG = [[], []], flowerG = [[], [], []];
+  const clump = (x, y, z, r) => {
+    leafG[Rn() < 0.6 ? 0 : 1].push(new THREE.IcosahedronGeometry(1, 1).scale(r, r * 0.85, r).translate(x, y, z));
+    const n = 1 + Math.floor(Rn() * 3);
+    for (let i = 0; i < n; i++) {
+      const th = Rn() * Math.PI * 2, ph = (Rn() - 0.3) * 1.2, fr = 0.03 + Rn() * 0.018;
+      const fx = x + Math.cos(th) * Math.cos(ph) * r * 0.95, fy = y + Math.sin(ph) * r * 0.85, fz = z + Math.sin(th) * Math.cos(ph) * r * 0.95;
+      flowerG[Math.floor(Rn() * 3)].push(new THREE.IcosahedronGeometry(fr, 0).scale(1, 0.7, 1).translate(fx, fy, fz));   // (tiny: the low ball reads the same)
+    }
+  };
+  for (const [x, z, a] of posts) {
+    const tx = Math.cos(a), tz = -Math.sin(a);                        // round the post
+    for (let y = 0.25 + Rn() * 0.2; y < BEAM_Y; y += 0.26 + Rn() * 0.08) {
+      const s = Math.sin(y * 4.3 + a * 3) * 0.07;
+      clump(x + tx * s + Math.sin(a) * 0.02, y, z + tz * s + Math.cos(a) * 0.02, 0.085 + Rn() * 0.04);
+    }
+  }
+  for (let k = 0; k < 30; k++) {                                       // along the beam, a few trailing down
+    const a = k / 30 * Math.PI * 2 + Rn() * 0.08, r = AR + (Rn() - 0.5) * 0.08;
+    clump(Math.sin(a) * r, BEAM_Y + 0.06 + Rn() * 0.06, Math.cos(a) * r, 0.1 + Rn() * 0.05);
+    if (Rn() < 0.35 && Math.abs(Math.cos(a)) < 0.8) clump(Math.sin(a) * r, BEAM_Y - 0.14 - Rn() * 0.12, Math.cos(a) * r, 0.065);
+  }
+  const merge = (gs) => mergeGeometries(gs.map(g => { g.deleteAttribute('uv'); return g; }));
+  leafG.forEach((gs, i) => gs.length && K.put(merge(gs), i ? leafL : leaf));
+  flowerG.forEach((gs, i) => { if (gs.length) K.put(merge(gs), blooms[i]).userData.noInk = true; });
+  // two benches inside, either side of the path, facing each other
+  for (const sx of [-1, 1]) {
+    parkSeat(K, sx * ARBOUR.SEAT_X, 0, -sx * Math.PI / 2);
+    for (const fz of [-0.3, 0.3]) K.foot(sx * (ARBOUR.SEAT_X + 0.06), fz, 0.2);
+  }
+  return K.g;
+}
+
+// a bench nook: where Lantern Park's east path ends (footpaths.js lays the paving). A park bench
+// facing +z (back toward the pond) with a shade tree behind it. y 0 is the ground.
+export function benchNook() {
+  const K = kit();
+  parkSeat(K, 0, 0, 0);
+  K.foot(-0.3, -0.02, 0.22); K.foot(0.3, -0.02, 0.22);
+  const t = tree({ s: 1.0 }); t.position.set(0.25, 0, -1.35); t.rotation.y = 0.7; K.g.add(t);
+  K.foot(0.25, -1.35, 0.3);
+  return K.g;
 }
 
 // ── The Library (Janelle's bookshelf project): the building IS a bookcase. A brick
