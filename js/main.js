@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import { buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, paintRoadMarkings, buildRoadSurface, LAMPS, collectLamps } from './world.js';
+import { R, buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, paintRoadMarkings, buildRoadSurface, LAMPS, collectLamps } from './world.js';
 import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
 import { createPlayer } from './player.js';
@@ -101,6 +101,7 @@ lodPrepare(scene);                // (the distance LOD holds on to what it needs
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera, { avatar: player.root, renderer });
+window.__R = R;
 window.__v2 = { res, culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS, northLife };
 window.__v2.meadow = meadow;
 window.__v2.shopInside = shopInside;

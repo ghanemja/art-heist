@@ -125,7 +125,8 @@ function planMuseumGarden() {
   const W = (x, z) => mF(-x, z);                       // museum-local → direction (museum +x is the frame's −x)
   const shops = PLAN.projects.filter(p => !ROW_KEYS.includes(p.key)).map(p => [PDIR[p.key], 5.6]);
   shops.push([ROWP.L(0, 4.2), 11.0]);
-  for (const [x, z] of [[4.2, -20.4], [-3.8, -20.0], [2.4, -21.4], [6.6, -19.9], [-1.0, -21.6], [-5.6, -19.2]]) {
+  for (const [x, z] of [[4.2, -20.4], [-3.8, -20.0], [2.4, -21.4], [6.6, -19.9], [-1.0, -21.6], [-5.6, -19.2],
+    [4.6, -22.2], [3.8, -22.8], [5.4, -23.4]]) {   // (the last few: further back, for a smaller planet, where the shops close in)
     const c = W(x, z);
     if (z > -13.0 - GARDEN_R - 1.5) continue;   // the terrace (and its easing) stays clear of the walk and the building
     if (shops.some(([d, r]) => arc(c, d) < r + GARDEN_R + 0.5)) continue;

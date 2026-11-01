@@ -37,9 +37,9 @@ export const NORTH = {
   half: 2.5, depth: 0.9,
   bridge: [51.2, 22], bridgeLen: 8.4, bridgeW: 2.3,
   junction: [65, 26],
-  club: { at: [70, 4], r: 5.4 },
+  club: { at: [67, -4], r: 5.4 },
   range: { at: [68.5, 58], r: 5.0 },
-  close: { at: [87, 120], loop: 4.0, ring: 6.4, r: 7.4, houses: 10 },
+  close: { at: [86, 195], loop: 4.0, ring: 6.4, r: 7.4, houses: 10 },
 };
 
 // ── 1. PLAN (inside planTown): the water, and the ground the club, range and Close need ──

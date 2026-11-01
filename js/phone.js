@@ -3,7 +3,7 @@
 // your press pass, and anything you pick up. The phone (P) has Messages (the
 // story arrives as texts — and Mum), a hand-drawn Map you can tap to follow a
 // place, a Camera that takes polaroids of whatever you're looking at, and Photos.
-import { ROADS, isWater, arc } from './world.js';
+import { R, ROADS, isWater, arc } from './world.js';
 import { audio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -229,7 +229,7 @@ export function createPhone({ town, player, camera, places, onTrack, openNoteboo
     if (car && player.st.mode === 'walk') { c.fillStyle = '#d9573f'; c.strokeStyle = '#2a2230'; c.lineWidth = 2; c.fillRect(car[0] - 7, car[1] - 4, 14, 8); c.strokeRect(car[0] - 7, car[1] - 4, 14, 8); }
     const me = toXY(player.st.dir);
     if (me) {
-      const ah = town.toTown(player.st.dir.clone().multiplyScalar(40).addScaledVector(player.st.heading, 2).normalize());
+      const ah = town.toTown(player.st.dir.clone().multiplyScalar(R).addScaledVector(player.st.heading, 2).normalize());
       const [mx, my] = town.toTown(player.st.dir), a = Math.atan2(-(ah[1] - my), -(ah[0] - mx));
       c.save(); c.translate(me[0], me[1]); c.rotate(a);
       c.fillStyle = '#e8604c'; c.strokeStyle = '#2a2230'; c.lineWidth = 3;
