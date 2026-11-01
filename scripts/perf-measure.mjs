@@ -61,24 +61,33 @@ async function at(name, fn) {
   await page.waitForFunction(() => window.__v2.culler.lodPending === 0, null, { timeout: 240000 }).catch(() => {});
   await page.waitForTimeout(2500);
   const pr = process.env.PROBE ? await page.evaluate(fs.readFileSync(process.env.PROBE, 'utf8')) : undefined;
-  const m = await page.evaluate(async () => {
+  const frames = (k) => page.evaluate((k) => new Promise((r) => { let n = 0; const f = () => (++n < k ? requestAnimationFrame(f) : r()); requestAnimationFrame(f); }), k);
+  // the triangles and draws of two frames (halved), and the frame time over the next 20
+  const count = () => page.evaluate(async () => {
     const T = window.__tally; T.fill = T.ink = T.fd = T.id = 0; T.by = {};
     T.on = true; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); T.on = false;
-    // (two frames counted: halve)
     const info = window.__v2.renderer.info.render;
     const top = Object.entries(T.by).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => k + ' ' + Math.round(v / 2000) + 'k');
     const t1 = performance.now(); let n = 0; await new Promise((res) => { const f = () => { if (++n < 20) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
-    // a turn on the spot: the culler's own time per frame (its patch rebuilds) while the view swings
+    return { fill: Math.round(T.fill / 2), ink: Math.round(T.ink / 2), fillDraws: T.fd / 2, inkDraws: T.id / 2, tris: info.triangles, calls: info.calls, ms: +((performance.now() - t1) / 20).toFixed(1), top };
+  });
+  // the screenshot first (the view as settled), then the count
+  if (shots) await page.screenshot({ path: `${SP}/shots/${label}-${name}.png` });
+  const m = await count();
+  m.probe = pr;
+  m.turnMs = await turn();
+  return m;
+}
+// a turn on the spot (last: it leaves the camera swinging back): the culler's own time per frame
+// (its patch rebuilds) while the view swings
+function turn() {
+  return page.evaluate(async () => {
     const C = window.__v2.culler, st = window.__v2.player.st; if (!C._t) { const u = C.update.bind(C); C._ms = 0; C.update = () => { const a = performance.now(); u(); C._ms += performance.now() - a; }; C._t = 1; }
     C._ms = 0; let nf = 0; const h0 = st.heading.clone();
     await new Promise((res) => { const f = () => { st.heading.applyAxisAngle(st.dir, 0.05); st.camFwd.copy(st.heading); if (++nf < 40) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
-    const turnMs = +(C._ms / 40).toFixed(2);
     st.heading.copy(h0); st.camFwd.copy(h0);
-    return { turnMs, fill: Math.round(T.fill / 2), ink: Math.round(T.ink / 2), fillDraws: T.fd / 2, inkDraws: T.id / 2, tris: info.triangles, calls: info.calls, ms: +((performance.now() - t1) / 20).toFixed(1), top };
+    return +(C._ms / 40).toFixed(2);
   });
-  m.probe = pr;
-  if (shots) await page.screenshot({ path: `${SP}/shots/${label}-${name}.png` });
-  return m;
 }
 fs.mkdirSync(SP + '/shots', { recursive: true });
 const place = (dirExpr, lookExpr) => `(() => { const V = window.__v2, st = V.player.st; const d = (${dirExpr}).clone().normalize(), L = (${lookExpr}).clone().normalize();
