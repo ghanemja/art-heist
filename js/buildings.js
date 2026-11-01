@@ -12,7 +12,8 @@
 // lies on the ground end to end instead of floating off a radius-40 world.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { PAL, paint, ink, blobShadow } from './style.js';
 import { settle, radiusAt, drawnGroundAt, pruneDeco } from './world.js';

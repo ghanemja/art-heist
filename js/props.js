@@ -4,7 +4,8 @@
 // returns a Group with its origin at ground level, +Z = front.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './weld.js';   // (three's, without its string keys)
 import { PAL, paint, ink, blobShadow, inkUniforms } from './style.js';
 
 let _seed = 7;
