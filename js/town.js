@@ -16,7 +16,8 @@ import { parkedTrain } from './train.js';
 import { museumGrounds, shopApproach, APPROACH_STOP, APPROACH_Z1, MOUTH_LAP, makersRow, ROW_X, ROW, ROW_MOUTH_LAP } from './grounds.js';
 import { addKoi } from './pondwater.js';
 import { growPlants } from './plants.js';
-import { railLoop, buildRailway, onRail } from './rail.js';
+import { railLoop, buildRailway, onRail, railBranch, RAIL } from './rail.js';
+import { createFreight } from './freight.js';
 import { planNorth, buildNorth } from './north.js';
 import { dressRoads } from './roadside.js';
 
@@ -722,6 +723,16 @@ export function buildTown(scene) {
       // the railway: the station's straight closes into a loop round the countryside
       railLoop(g, { tz: STATION_TRACK.z, half: STATION_TRACK.half });
       out.railway = buildRailway(scene);
+      // the farm's branch line: off the loop, across the country to a loading halt just outside the
+      // farm's ground on the side the line comes from; a goods train runs it (freight.js)
+      if (PLAN.sites.farm) {
+        const fd = llv(PLAN.sites.farm.at);
+        let near = RAIL.pts[0]; for (const p of RAIL.pts) if (arc(p, fd) < arc(near, fd)) near = p;
+        const end = slerpDir(fd, near, Math.min(0.9, (PLAN.sites.farm.r + 2.6) / arc(fd, near)));
+        const br = railBranch(end);
+        out.branch = buildRailway(scene, br);
+        out.freight = createFreight(scene, { branch: br, loopTop: out.railway.topR, add, solid });
+      }
       // the 7:40, waiting at the platform (placed with the station's own transform)
       const tr = add(placeOnPlanet(parkedTrain(), d, yawToFace(d, TOWN_C), { weight: 'fine' }));
       addFloor(tr, tr.userData.floor);
