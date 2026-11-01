@@ -40,6 +40,10 @@ const _lod = new WeakMap();           // geometry → [{ cw, geo }] its simpler 
 const _scale = new WeakMap();         // geometry → world units per geometry unit (the first mesh seen drawing it)
 const _queue = [];                    // geometries waiting for their versions
 const _freeArr = function () { this.array = null; };
+function _rayHi(raycaster, hits) {
+  const g = this.geometry; this.geometry = g.userData.lodOf || g;
+  try { THREE.Mesh.prototype.raycast.call(this, raycaster, hits); } finally { this.geometry = g; }
+}
 function lodable(o) {
   if (!o.isMesh || o.isInstancedMesh || o.isPoints || o.isLine || Array.isArray(o.material)) return false;
   const g = o.geometry; if (!g || g.groups?.length || g.drawRange.count !== Infinity || g.morphAttributes?.position) return false;
@@ -143,7 +147,7 @@ function lodLevels(g) {
     last = k / 3;
     if (last < 16) break;
   }
-  if (ch) return ch.lv.length ? ch : [];
+  if (ch) return ch;                                                  // (even with no simpler version: its patches still drop out of view)
   return levels;
 }
 // cellIds: each used vertex's cell (+ group) → a dense id in cl[]; returns how many cells
@@ -236,7 +240,10 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         const sc = o.getWorldScale(new THREE.Vector3());
         off.multiply(sc);
       }
-      if (!(r > 0) || r > 30) continue;                                // the planet, the sea, the sky: always drawn
+      if (!(r > 0) || r > 90) continue;                                // the sky: always drawn
+      // (the planet and the sea: always drawn, but by patches — most of the ground is round
+      // behind the horizon or out of view)
+      const huge = r > 30;
       r += 0.3;
       // a person's small parts, for the lighter version
       const detail = [];
@@ -255,13 +262,14 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         const ws = q.getWorldScale(new THREE.Vector3());
         // (a big thing that never moves: by patches. Its index is rebuilt now and then, so only one
         // whose ground rays go through their own copy — gpuOnly's — or that takes none)
-        const big = !q.isSkinnedMesh && !person && !o.userData.noGround && q.raycast !== THREE.Mesh.prototype.raycast && _lod.get(q.geometry) === null &&
+        const big = !q.isSkinnedMesh && !person && !o.userData.noGround && _lod.get(q.geometry) === null &&
           q.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) > CHUNK * 0.9 && (q.geometry.index ? q.geometry.index.count : q.geometry.attributes.position.count) >= 3000;
         if (big) _chunky.add(q.geometry);
+        if (huge && !_chunky.has(q.geometry)) return;
         if (_lod.get(q.geometry) === null) { if (q.raycast !== THREE.Mesh.prototype.raycast || o.userData.noGround) _rayless.add(q.geometry); else _rayless.delete(q.geometry); }
         lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person });
       });
-      roots.set(o, { r, off, person, skinned, detail: new Set(detail), hidden: false, lod: false, lods });
+      roots.set(o, { r, off, person, skinned, huge, detail: new Set(detail), hidden: false, lod: false, lods });
     }
     for (const o of roots.keys()) if (o.parent !== scene) roots.delete(o);
     n = scene.children.length;
@@ -294,6 +302,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       dyn.setIndex(new THREE.BufferAttribute(new ch.hi.constructor(ch.hi.length), 1).setUsage(THREE.DynamicDrawUsage));
       dyn.boundingSphere = L.hi.boundingSphere; dyn.boundingBox = L.hi.boundingBox; dyn.userData.lodOf = L.hi;
       L.dyn = dyn; m.geometry = dyn;
+      if (m.raycast === THREE.Mesh.prototype.raycast) m.raycast = _rayHi;   // (its rays read its whole shape: the patches' index comes and goes)
     }
     const W = L.wc, cc = L.cc, lv = ch.lv; let dirty = false;
     for (let c = 0; c < n; c++) {
@@ -399,6 +408,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       for (const [o, st] of roots) {
         _c.copy(st.off).applyQuaternion(o.quaternion).add(o.position).sub(e);          // (top-level: its own transform is its world one)
         const d = Math.max(1e-3, _c.length());
+        if (st.huge) { if (st.lods.length) pick(st, d, e, fd, hz); continue; }
         let hide = st.r / d * f < MIN_PX;                                // too small to see
         if (!hide && behindOK && d > tang + st.r) {                       // behind the planet
           const theta = Math.acos(THREE.MathUtils.clamp(-_c.dot(e) / (d * el), -1, 1));
