@@ -7,8 +7,6 @@ import { statSync } from 'node:fs';
 const REQUIRED = [
   // [path, minimum bytes]
   ['models/opt/mustang.glb', 100_000],
-  ['models/opt/picanto.glb', 100_000],
-  ['models/opt/tarraco.glb', 100_000],
   ['models/opt/simca.glb',   100_000],
   ['models/opt/escort.glb',  100_000],
   ['models/opt/skylark.glb', 100_000],

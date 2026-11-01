@@ -1,6 +1,6 @@
 // ─── THE VANISHING GALLERY (v2) — bootstrap + loop ──────────────────────────
 import * as THREE from 'three';
-import './raygrid.js';             // (raycasts against big meshes walk a grid of their triangles, not every one)
+import { raygridRelease, raygridStats } from './raygrid.js';   // (raycasts against big meshes walk a grid of their triangles, not every one)
 import { R, buildPlanet, buildSky, buildLights, buildClouds, ROADS, ZONES, JUNCTIONS, registerGround, standAt, groundAt, isWater, nearestRoad, paintRoadMarkings, buildRoadSurface, LAMPS, collectLamps } from './world.js';
 import { styleTick, gpuOnly, bakeScenery } from './style.js';
 import { planTown, buildTown } from './town.js';
@@ -113,6 +113,10 @@ window.__v2.shopInside = shopInside;
 // the corner mini map (and the big map behind it): where you are, and tap a place to travel there on foot
 const minimap = createMinimap({ town, player, game, rooms });
 window.__v2.minimap = minimap;
+// the world is built: the build's raycast grids go (~110 MB held for good); play rebuilds sparser
+// ones only for what its rays keep reaching
+raygridRelease();
+window.__v2.raygrid = raygridStats;
 
 // ── adaptive resolution: the frame rate is what you feel. Every ~second the median frame time
 // is checked; well short of 60 fps (a GPU struggling with the pixels) it draws at a lower pixel

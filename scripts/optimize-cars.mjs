@@ -21,8 +21,8 @@ const RAW = 'models/_raw';
 // tris. ev9 stays OUT of the scene fleet (43 material slots floor the simplifier).
 const JOBS = [
   [`${RAW}/1965_ford_mustang_coupe_289.glb`,                'mustang',   0.16],
-  [`${RAW}/2017_kia_picanto_gt-line.glb`,                   'picanto',   0.05],
-  [`${RAW}/2020_seat_tarraco_e-hybrid.glb`,                 'tarraco',   0.025],
+  // (dropped from the game: 31 materials) [`${RAW}/2017_kia_picanto_gt-line.glb`,                   'picanto',   0.05],
+  // (dropped: resists decimation) [`${RAW}/2020_seat_tarraco_e-hybrid.glb`,                 'tarraco',   0.025],
   [`${RAW}/simca_1000_1966.glb`,                            'simca',     0.02],
   [`${RAW}/ford_escort_xr3_i_cabriolet_convertible.glb`,    'escort',    0.024],
   [`${RAW}/orion_skylark_gt.glb`,                           'skylark',   0.03],
