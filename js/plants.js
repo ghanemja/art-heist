@@ -243,7 +243,6 @@ const SWAY = {
   tulip: 0.05, daisy: 0.045, cosmos: 0.08, spikes: 0.06, mound: 0.02, bloom: 0.022, grass: 0.1, trail: 0.03,
   cone: 0.008, spiral: 0.008, ballTop: 0.015, boxBall: 0.004, blossom: 0.05, birch: 0.07, maple: 0.05, cypress: 0.045, shade: 0.045,
 };
-export const TREE_KINDS = ['blossom', 'birch', 'maple', 'cypress', 'shade'];
 
 // ── grow a placed group's planting ──
 const NO_RAY = () => {};              // (module-level: a closure made in growPlants would hold its whole scope)

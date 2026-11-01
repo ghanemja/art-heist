@@ -27,11 +27,6 @@ function packDist(d) {
   const k = (Math.PI * R - 2 - PACK_NEAR) / (Math.PI * R_PLAN - PACK_NEAR);
   return PACK_NEAR + (d - PACK_NEAR) * k;
 }
-export function unpackDist(d) {                                     // (the inverse: for the layout tools)
-  if (d <= PACK_NEAR) return d;
-  const k = (Math.PI * R - 2 - PACK_NEAR) / (Math.PI * R_PLAN - PACK_NEAR);
-  return PACK_NEAR + (d - PACK_NEAR) / k;
-}
 export const ll = (lat, lon) => {
   const v = llRaw(lat, lon);
   if (R === R_PLAN) return v;
@@ -82,7 +77,6 @@ export function addRiver(pts, half = 2.4, depth = 0.9) {
   return P;
 }
 export function addLake(d, r, depth = 1.0) { WATERS.push({ kind: 'lake', c: d.clone().normalize(), r, depth, cosReach: Math.cos((r + 0.5) / R) }); }
-export const RIVERS = WATERS;
 // in a river's or lake's carve (its bed and banks)
 export function inFreshWater(d) {
   for (const w of WATERS) if (d.dot(w.c) >= w.cosReach && waterDist(w, d) < (w.kind === 'lake' ? w.r : w.half)) return true;

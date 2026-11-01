@@ -1,12 +1,13 @@
 [build]
   publish = "."
-  # Netlify deploys every push to main. Gate it: a missing/invalid critic.glb or real-model
-  # asset fails the build so it can't ship empty, and every js/ module must be in
-  # index.html's import map with main.js's cache token (scripts/check-modules.mjs). (Runs on git-connected builds and on
-  # `netlify deploy --build`; the manual path is guarded by ./deploy.sh.)
-  command = "node scripts/validate-critic.mjs && node scripts/validate-assets.mjs && node scripts/check-modules.mjs"
+  # Netlify deploys every push to main. Gate it: a missing/invalid critic.glb fails the build so
+  # it can't ship empty; every js/ module must parse, its imports resolve and every asset it
+  # names exist (scripts/check-code.mjs); and every js/ module must be in index.html's import
+  # map with main.js's cache token (scripts/check-modules.mjs). (Runs on git-connected builds
+  # and on `netlify deploy --build`; the manual path is guarded by ./deploy.sh.)
+  command = "node scripts/validate-critic.mjs && node --experimental-vm-modules scripts/check-code.mjs && node scripts/check-modules.mjs"
 
-# the game used to live at /v2/ — it's the main app at / now
+# the game used to live at /v2/ — it's the main app at / now; the classic planet game is retired
 [[redirects]]
   from = "/v2"
   to = "/"
@@ -18,14 +19,12 @@
   status = 301
 
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+  from = "/classic.html"
+  to = "/"
+  status = 301
 
-[[headers]]
-  for = "/*.jsx"
-  [headers.values]
-    Content-Type = "text/babel; charset=utf-8"
+# (no catch-all to index.html: it answered a missing model or script with the page itself, 200,
+# so a missing file showed up as a parse error instead of a 404)
 
 [[headers]]
   for = "/*.glb"

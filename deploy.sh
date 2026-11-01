@@ -8,8 +8,8 @@ cd "$(dirname "$0")"
 echo "→ validating main character…"
 node scripts/validate-critic.mjs
 
-echo "→ validating real-model assets…"
-node scripts/validate-assets.mjs
+echo "→ checking the code parses and every asset it names exists…"
+node --experimental-vm-modules scripts/check-code.mjs
 
 echo "→ checking the import map…"
 node scripts/check-modules.mjs

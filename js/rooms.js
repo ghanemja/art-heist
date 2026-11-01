@@ -15,7 +15,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { pose } from './human.js';
 import { makeFolk, poseFolk, ikArm, gripHand } from './folk.js';
-import { frameKit } from '../museum.js?v=13';
+import { frameKit } from './museum.js';
 import { audio } from './audio.js';
 import { SUSPECTS } from './story.js';
 
