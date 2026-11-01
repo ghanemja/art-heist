@@ -7,7 +7,12 @@ check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
 ## Session 2026-11-01 (people perf, branch wip-people)
 
-- ⏳ **"Make the people models lighter without any visible change up close."** Verify the harness's 84k–127k tris per person first, then slim what is over budget (tubes, limbs, hair, shared/cached geometry), checked with close-ups next to the critic. Numbers and steps below.
+- 🟡 **"Make the people models lighter without any visible change up close."** On `wip-people` (d47f360, 3f4cf4f), cb=270; not merged.
+  - **Measured first (main, built game, fill + ink):** Vivi 70.6k, Otto 73.0k, Pia 84.3k, Rex 94.2k, Ezra 93.6k; the 19 other folk 52.8k–108k. Skinned limbs + hands were 9.5k fill of each. Per part (fill, each inked part doubled by its hull): shoes 7.4k a pair, hair 5.7–7.1k (a 96×72 sphere), flat cap 7.6k (its hidden half never culled), helmet 6.8k, beard 3.9k, hands 3.7k, limbs 5.8k, skull 2.7k, torso 2.3k, neck 1.2k. Per frame, people were far more than the 50–70k thought: 77k+74k at the museum spot, 162k+153k at the park, 82k+76k at the Vivi close-up.
+  - **Done:** shoes 14→6 curve / 4→3 bevel steps; hair 96×48 (strands up the head) or 96×64 (swept to a bun/ponytail), beard 96×48, flat cap 72×40, helmet 64×66; `sculpt({ hide })` drops what an opaque shell covers (scalp under hair/beard, hair + scalp under a flat cap, helmet or beanie) and the flat cap's sunk half; profile rows limbs 40→28, torso 36→24, neck 30→16; inner finger joints one cap step (tips keep two); nose 6 curve / 3 bevel steps.
+  - **After:** Vivi 48.9k, Otto 48.9k, Pia 49.2k, Rex 48.5k, Ezra 48.1k (−31 to −49%); other folk 34.7k–70.3k. All people together 1.74M → 1.10M tris, 2.05M → 1.23M vertices. Per frame (people fill+ink): museum 151k→106k, park 315k→216k, Vivi 158k→108k, meadow close 116k→79k, park close 192k→128k. JS heap after GC 179.3 → 168.8 MB (both runs); load time unchanged (15.2–15.6 s headless, both).
+  - **Verified:** a studio page renders main and the branch with the same pose, camera and ink wobble (identical code diffs at 0%): face, profile, hair, both hands, low angle, shoe, full body beside the critic for seven people; plus in-game close-ups (`out/closeups/`). Tried and reverted: hair 72×54 (softer strands), helmet 88×44 (thinner rim), ponytail locks 16×7 (blocky), face strokes 12×5 (angular glasses bridge). smoke, check-code, check-modules pass.
+  - **Still over AGENTS.md's ~6k:** ~48k each (~25k fill + ~23k ink). Getting near 6k would need visibly coarser hair/hands/limbs or no ink hull. Left: the ink doubling, hair/helmet shells (3–4k fill), limbs 4.2k, hands ~2.5k, face strokes ~2k, the pool swimmer's fill drawn twice.
 
 ## Session 2026-10-31 (test harness)
 
