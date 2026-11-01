@@ -1993,13 +1993,16 @@ export function parkSeat(K, x, z, ry) {
   const s = K.sub(x, 0, z, ry), wood = paint(PAL.bark), iron = paint(PAL.ink, { hatch: 0 }), Y = PARK.SEAT_Y;
   for (const zz of [0.1, 0, -0.1]) s.put(rb(1.12, 0.035, 0.09, 0.014, 2), wood, 0, Y - 0.0175, zz);
   for (const [yy, zz] of [[Y + 0.15, -0.175], [Y + 0.27, -0.19]]) s.put(rb(1.12, 0.09, 0.03, 0.012, 2), wood, 0, yy, zz, [-0.14, 0, 0]);
+  // (the irons: segments along each tube as it bends — the rail is straight, the front leg all but
+  // straight, the back leg and the curling armrest need more — and 8 round, so they stay round
+  // up close: ~1.3k triangles a bench, were ~2.6k)
   for (const sx of [-0.5, 0.5]) {
-    const tube = (pts, r = 0.02) => s.put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([py, pz]) => new THREE.Vector3(sx, py, pz))), 14, r, 8, false), iron);
-    tube([[0, 0.13], [Y * 0.5, 0.125], [Y - 0.035, 0.12]]);                                  // front leg
-    tube([[0, -0.15], [Y * 0.6, -0.15], [Y + 0.1, -0.165], [Y + 0.34, -0.215]]);              // back leg, curving up behind the back slats
-    tube([[Y - 0.04, 0.14], [Y - 0.045, -0.16]]);                                              // the rail under the seat
-    tube([[Y - 0.03, 0.12], [Y + 0.12, 0.14], [Y + 0.165, 0.08], [Y + 0.16, -0.17]], 0.018); // the armrest, curling back
-    for (const [py, pz] of [[Y + 0.34, -0.215], [0, 0.13], [0, -0.15]]) s.put(new THREE.SphereGeometry(0.026, 10, 8), iron, sx, py, pz);   // (capped ends: feet and a knob)
+    const tube = (pts, seg, r = 0.02) => s.put(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([py, pz]) => new THREE.Vector3(sx, py, pz))), seg, r, 8, false), iron);
+    tube([[0, 0.13], [Y * 0.5, 0.125], [Y - 0.035, 0.12]], 2);                                  // front leg
+    tube([[0, -0.15], [Y * 0.6, -0.15], [Y + 0.1, -0.165], [Y + 0.34, -0.215]], 10);             // back leg, curving up behind the back slats
+    tube([[Y - 0.04, 0.14], [Y - 0.045, -0.16]], 1);                                              // the rail under the seat
+    tube([[Y - 0.03, 0.12], [Y + 0.12, 0.14], [Y + 0.165, 0.08], [Y + 0.16, -0.17]], 12, 0.018); // the armrest, curling back
+    for (const [py, pz] of [[Y + 0.34, -0.215], [0, 0.13], [0, -0.15]]) s.put(new THREE.SphereGeometry(0.026, 8, 6), iron, sx, py, pz);   // (capped ends: feet and a knob)
   }
 }
 
