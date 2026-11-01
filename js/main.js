@@ -94,7 +94,7 @@ try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
 lodPrepare(scene);                // (the distance LOD holds on to what it needs from the arrays gpuOnly lets go)
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
-const culler = createCuller(scene, camera, { avatar: player.root });
+const culler = createCuller(scene, camera, { avatar: player.root, renderer });
 window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, LAMPS };
 window.__v2.meadow = meadow;
 

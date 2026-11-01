@@ -31,9 +31,10 @@ const _c = new THREE.Vector3(), _box = new THREE.Box3(), _s = new THREE.Sphere()
 // grid sizes (world units) of the simpler versions: each is used once its grid, seen at the mesh's
 // nearest point, is under LOD_TOL pixels (√3 × grid: the furthest a vertex can move)
 const LOD_CELLS = [0.003, 0.0065, 0.014, 0.03, 0.065, 0.14];
-const LOD_TOL = 0.8;                  // px (device pixels): a vertex moved less than this (the worst case) can't be seen
+const LOD_TOL = 1.0;                  // px (device pixels): a vertex moved less than this (the worst case) can't be seen
 const LOD_MIN_TRIS = 240;             // a mesh smaller than this isn't worth simplifying
 const LOD_KEEP = 0.8;                 // a version is kept only if it's at most this share of the last one
+const LOD_KEEP_PATCHED = 0.7;         // (a patched mesh keeps every version in the JS heap — it rebuilds from them: fewer, further apart)
 const _cap = new WeakMap();           // geometry → its arrays, held from before they're let go (gpuOnly)
 const _lod = new WeakMap();           // geometry → [{ cw, geo }] its simpler versions, finest first ([]: none; null: pending)
 const _scale = new WeakMap();         // geometry → world units per geometry unit (the first mesh seen drawing it)
@@ -123,7 +124,7 @@ function lodLevels(g) {
       const a = rep[order(t)], b = rep[order(t + 1)], d = rep[order(t + 2)];
       if (a !== b && b !== d && a !== d) { out[k++] = a; out[k++] = b; out[k++] = d; }
     }
-    if (k / 3 > LOD_KEEP * last) continue;
+    if (k / 3 > (ch ? LOD_KEEP_PATCHED : LOD_KEEP) * last) continue;
     if (ch) {
       for (let c = 0; c < ch.n; c++) if (ch.off[c + 1] >= ni) { for (let j = c + 1; j <= ch.n; j++) off[j] = k; break; }
       off[ch.n] = k;
@@ -135,6 +136,7 @@ function lodLevels(g) {
     const lo = new THREE.BufferGeometry();
     for (const [name, a] of Object.entries(g.attributes)) lo.setAttribute(name, a);
     lo.setIndex(new THREE.BufferAttribute(out.slice(0, k), 1));
+    if (_rayless.has(g)) lo.index.onUpload(_freeArr);              // (nothing reads it but the GPU: see _rayless)
     lo.boundingSphere = g.boundingSphere; lo.boundingBox = g.boundingBox;
     lo.userData.lodOf = g;
     levels.push({ cw, geo: lo });
@@ -167,8 +169,12 @@ function cellIds(P, used, n, x0, y0, z0, cell, grp, cl) {
 // the patches of a big static mesh: its triangles sorted by the patch their middle falls in (the
 // index itself is reordered — the same triangles, so the ground rays that read it see no change),
 // with each patch's ball
-const CHUNK = 2.5;
-const _chunky = new WeakSet();        // geometries drawn by a big static mesh (set when it's collected)
+const CHUNK = 2.0;
+const _chunky = new WeakSet();
+// geometries whose meshes never raycast through what they draw (a hull, a static thing whose
+// ground rays go through gpuOnly's copy, people and cars — never ground, and the talk camera reads
+// the whole shape): their simpler versions' indices leave the JS heap once on the GPU (see prime)
+const _rayless = new WeakSet();        // geometries drawn by a big static mesh (set when it's collected)
 function chunksOf(g, P, I, ni, scale, IDX) {
   const cell = CHUNK / scale, nt = ni / 3, at = I ? (k) => I[k] : (k) => k;
   const ids = new Map(), tc = new Uint32Array(nt); let nch = 0;
@@ -199,7 +205,7 @@ function chunksOf(g, P, I, ni, scale, IDX) {
   return { chunked: true, n: nch, C, hi, off, lv: [] };
 }
 
-export function createCuller(scene, camera, { avatar = null } = {}) {
+export function createCuller(scene, camera, { avatar = null, renderer = null } = {}) {
   const roots = new Map();            // root → { r, off (local), person, detail, hidden, lod }
   let n = -1;
   function collect() {
@@ -249,10 +255,11 @@ export function createCuller(scene, camera, { avatar = null } = {}) {
         const ws = q.getWorldScale(new THREE.Vector3());
         // (a big thing that never moves: by patches. Its index is rebuilt now and then, so only one
         // whose ground rays go through their own copy — gpuOnly's — or that takes none)
-        const big = !skinned && !o.userData.noGround && q.raycast !== THREE.Mesh.prototype.raycast && _lod.get(q.geometry) === null &&
+        const big = !q.isSkinnedMesh && !person && !o.userData.noGround && q.raycast !== THREE.Mesh.prototype.raycast && _lod.get(q.geometry) === null &&
           q.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) > CHUNK * 0.9 && (q.geometry.index ? q.geometry.index.count : q.geometry.attributes.position.count) >= 3000;
         if (big) _chunky.add(q.geometry);
-        lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: skinned });
+        if (_lod.get(q.geometry) === null) { if (q.raycast !== THREE.Mesh.prototype.raycast || o.userData.noGround) _rayless.add(q.geometry); else _rayless.delete(q.geometry); }
+        lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person });
       });
       roots.set(o, { r, off, person, skinned, detail: new Set(detail), hidden: false, lod: false, lods });
     }
@@ -274,9 +281,13 @@ export function createCuller(scene, camera, { avatar = null } = {}) {
   // patch changes, its index is put together again from the patches' own runs
   function pickChunks(L, ch, eye, fd, hz) {
     const m = L.m, n = ch.n;
-    if (!L.dyn) {
-      L.wc = new Float32Array(n * 4); m.updateWorldMatrix(true, false);
+    // (each patch's ball in the world — again whenever the mesh has moved: the rocket lifts off)
+    if (!L.mw || !L.mw.equals(m.matrixWorld)) {
+      if (!L.wc) L.wc = new Float32Array(n * 4);
+      L.mw = (L.mw || new THREE.Matrix4()).copy(m.matrixWorld);
       for (let c = 0; c < n; c++) { _w.set(ch.C[c * 4], ch.C[c * 4 + 1], ch.C[c * 4 + 2]).applyMatrix4(m.matrixWorld); L.wc[c * 4] = _w.x; L.wc[c * 4 + 1] = _w.y; L.wc[c * 4 + 2] = _w.z; L.wc[c * 4 + 3] = ch.C[c * 4 + 3] * L.ws; }
+    }
+    if (!L.dyn) {
       L.cc = new Int8Array(n).fill(-9);
       const dyn = new THREE.BufferGeometry();
       for (const [name, a] of Object.entries(L.hi.attributes)) dyn.setAttribute(name, a);
@@ -343,9 +354,32 @@ export function createCuller(scene, camera, { avatar = null } = {}) {
         const g = _queue.shift();
         if (_scale.has(g)) _lod.set(g, lodLevels(g)); else { _cap.delete(g); _lod.set(g, []); }   // (nothing of ours draws it: the rooms)
       }
-      if (_queue.length) setTimeout(step, 0); else { busy = false; _hk = new Int32Array(0); _hv = new Int32Array(0); }
+      if (_queue.length) setTimeout(step, 0); else { busy = false; _hk = new Int32Array(0); _hv = new Int32Array(0); primeK = 0; }
     };
     setTimeout(step, 0);
+  }
+  // prime: once the versions are made, each is sent to the GPU now (one frame per version, with
+  // every material hidden: the renderer uploads what it gathers, draws nothing), so the ones
+  // whose indices only the GPU needs let go of them now, not whenever first drawn
+  let primeK = -1;
+  function prime() {
+    if (!renderer || primeK < 0) return;
+    const k = primeK++, swapped = [], culled = [], mats = new Set();
+    for (const st of roots.values()) for (const L of st.lods) {
+      const lv = L.levels || _lod.get(L.hi);
+      if (L.dead || !lv || lv.chunked || !(lv.length > k)) continue;
+      swapped.push([L.m, L.m.geometry]); L.m.geometry = lv[k].geo;
+    }
+    if (!swapped.length) { primeK = -1; return; }
+    const lay = camera.layers.mask; camera.layers.enableAll();
+    scene.traverse(o => { if (!o.isMesh) return; if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m?.visible) mats.add(m); });
+    for (const m of mats) m.visible = false;
+    try { renderer.render(scene, camera); }
+    finally {
+      for (const m of mats) m.visible = true; for (const o of culled) o.frustumCulled = true;
+      camera.layers.mask = lay; for (const [m, g] of swapped) m.geometry = g;
+    }
   }
   return {
     update() {
@@ -380,8 +414,9 @@ export function createCuller(scene, camera, { avatar = null } = {}) {
       }
       const now = performance.now(); if (lastT) frameMs += (Math.min(1000, now - lastT) - frameMs) * 0.2; lastT = now;
       work();
+      prime();
     },
-    get lodPending() { return _queue.length; },
+    get lodPending() { return _queue.length + (primeK >= 0 ? 1 : 0); },
     get hiddenCount() { let k = 0; for (const s of roots.values()) if (s.hidden) k++; return k; },
     roots,
   };
