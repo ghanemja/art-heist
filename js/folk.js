@@ -31,8 +31,10 @@ let _shoe = null;
 export function shoeGeo() {
   if (_shoe) return _shoe;
   const y0 = -ANK;
-  const ext = (sh, depth, bev) => {
-    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: bev * 0.8, bevelSegments: 4, curveSegments: 14 });
+  // (each quadratic of the outline spans a short arc: 6 steps keep it round even filling the
+  // screen; 3 bevel steps round the edge. Was 14 and 4: ~7.4k triangles a pair of shoes)
+  const ext = (sh, depth, bev, bs = 3) => {
+    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: bev * 0.8, bevelSegments: bs, curveSegments: 6 });
     g.translate(0, 0, -depth / 2).rotateY(-Math.PI / 2);          // silhouette x → +Z (forward), extrusion → X (width)
     g.deleteAttribute('uv');
     const p = g.attributes.position;
@@ -262,8 +264,11 @@ function smooth(pts, n = 28) {
 // a whole limb as ONE skinned tube (thigh→calf→ankle, or upper arm→forearm→wrist):
 // weights blend across the knee/elbow so it bends in a soft curve, not a hinge.
 // prof: [depth below the joint, radius] top to bottom; colAt(depth) → hex (sleeves, cuffs)
+// rows down each profile (a person's ~5k triangles go on silhouettes: these were 40, 36 and 30,
+// more rows than a bend or a curve shows even with the person filling the screen)
+const LIMB_ROWS = 28, TORSO_ROWS = 24, NECK_ROWS = 16;
 function limb(parent, x, y, bones, l1, l2, prof, colAt, { hem = null, inkFrom = 0.02, inkTo = 0.09, flat = null } = {}) {
-  let pts = smooth(prof.map(([d, r]) => [r, -d]).reverse(), 40);
+  let pts = smooth(prof.map(([d, r]) => [r, -d]).reverse(), LIMB_ROWS);
   if (hem != null) {
     // a sleeve hem: a tiny lip, and two rings 1mm apart so the colour changes crisply
     const rAt = (d) => { for (let i = 1; i < pts.length; i++) if (-pts[i][1] <= d) { const a = pts[i - 1], b = pts[i], k = (d + a[1]) / (a[1] - b[1]); return a[0] + (b[0] - a[0]) * k; } return pts[pts.length - 1][0]; };
@@ -345,7 +350,7 @@ export function makeFolk(spec) {
   J.spine = joint(J.hips, 0, 0.02, 0);
   // the shoulder line slopes from the neck into the arms (no bolt-on shoulder balls)
   const torso = new THREE.Mesh(lathe(smooth([[0.001, -0.01], [0.112, 0.0], [0.125, 0.1], [0.122, 0.17],
-    [0.132, 0.25], [0.134, 0.278], [0.12, 0.31], [0.088, 0.342], [0.05, 0.362], [0.001, 0.37]], 36), 32), top);
+    [0.132, 0.25], [0.134, 0.278], [0.12, 0.31], [0.088, 0.342], [0.05, 0.362], [0.001, 0.37]], TORSO_ROWS), 32), top);
   const TZ = 0.78 + 0.08 * S.belly;                  // torso depth
   torso.scale.set(B, 1, TZ);
   J.spine.add(torso);
@@ -361,7 +366,7 @@ export function makeFolk(spec) {
   // the neck flares into the shoulders below and tucks up under the jaw above; its outline
   // fades out at both ends so it grows out of the body and into the head, not stuck between them
   {
-    const g = lathe(smooth([[0.001, -0.035], [0.064, -0.03], [0.058, -0.008], [0.049, 0.014], [0.043, 0.035], [0.041, 0.065], [0.045, 0.095], [0.035, 0.115], [0.001, 0.12]], 30), 20);
+    const g = lathe(smooth([[0.001, -0.035], [0.064, -0.03], [0.058, -0.008], [0.049, 0.014], [0.043, 0.035], [0.041, 0.065], [0.045, 0.095], [0.035, 0.115], [0.001, 0.12]], NECK_ROWS), 20);
     const P = g.attributes.position, iw = new Float32Array(P.count);
     for (let i = 0; i < P.count; i++) { const y = P.getY(i); iw[i] = THREE.MathUtils.smoothstep(y, 0.0, 0.025) * (1 - THREE.MathUtils.smoothstep(y, 0.05, 0.075)); }
     g.setAttribute('inkW', new THREE.BufferAttribute(iw, 1));
@@ -381,7 +386,10 @@ export function makeFolk(spec) {
   }
   J.head = joint(J.neck, 0, 0.06, 0.016);
   // the head: its own shape, features, expression and hair (faces.js)
-  const head = buildHead(J, S, S.face || {}, { skin, hairM, dark });
+  // under a hat shell (its line, well past the blend at its edge) neither hair nor scalp shows
+  const HAT_LINE = { flat: [0.42, 0.22, 0.0], helmet: [0.3, 0.12, -0.12], beanie: [0.4, 0.2, -0.1] }[S.hat];
+  const under = HAT_LINE ? (d) => d.y - lineAt(d, ...HAT_LINE) > 0.15 : null;
+  const head = buildHead(J, S, S.face || {}, { skin, hairM, dark, under });
   const onSkull = (u, v, zs, out) => { const p = head.pt(u, v, zs); return p.add(p.clone().sub(HC).normalize().multiplyScalar(out)); };
   const hs = S.hairStyle;
   if (hs === 'bun') {                 // a twisted bun high at the back, with a band
@@ -420,7 +428,8 @@ export function makeFolk(spec) {
     const badge = ball(0.014, paint(0xe4b84f), 10, 8); badge.scale.z = 0.5; badge.position.set(0, 0.045, rz + 0.004); capG.add(badge);
   } else if (S.hat === 'flat') {  // a tweed flat cap: hugs the skull, a flat top sloping down to the front, a short brim
     const yTop = head.top + 0.01, zF = at3(0, 0.42, 1).z;
-    const g = sculpt(sh, 72, 54, { mask: (d) => d.y - lineAt(d, 0.42, 0.22, 0.0), inflate: () => 1.12,
+    // (cull: the post only flattens the top and puffs the front, never lifts the sunk part out)
+    const g = sculpt(sh, 72, 40, { mask: (d) => d.y - lineAt(d, ...HAT_LINE), inflate: () => 1.12, cull: true,
       post: (o, d) => {
         o.z += 0.035 * Math.max(0, d.z) * ssm(d.y, 0.2, 0.85);                       // the front puffs forward over the brim
         const plane = yTop + 0.022 - 0.16 * (o.z - HC.z);                              // a flat top above the hair, sloping down to the front
@@ -434,7 +443,7 @@ export function makeFolk(spec) {
   } else if (S.hat === 'helmet') { // a cycling helmet shell over the skull: vents, a dark rim, a chin strap
     // vents and the rim are blended, not switched, so their edges are smooth curves
     const vent = (d) => ssm(-Math.sin(d.x * 21), 0.35, 0.85) * ssm(d.y, 0.32, 0.5) * (1 - ssm(Math.abs(d.x), 0.4, 0.5));
-    const edge = (d) => d.y - lineAt(d, 0.3, 0.12, -0.12);
+    const edge = (d) => d.y - lineAt(d, ...HAT_LINE);
     const rimK = (d) => 1 - ssm(edge(d), 0.025, 0.075);
     const yel = new THREE.Color(S.hatColor ?? 0xe0b445), drk = new THREE.Color(0x2a2230);
     const g = sculpt(sh, 88, 66, { mask: edge, inflate: (d) => 1.17 - 0.022 * vent(d),
@@ -448,7 +457,7 @@ export function makeFolk(spec) {
     const g = sculpt(sh, 56, 42, { mask: (d) => d.y - lineAt(d, 0.5, 0.1, -0.3), inflate: () => 1.075 });
     J.head.add(new THREE.Mesh(g, hatM));
   } else if (S.hat === 'beanie') {
-    const g = sculpt(sh, 48, 36, { mask: (d) => d.y - lineAt(d, 0.4, 0.2, -0.1), inflate: () => 1.13 });
+    const g = sculpt(sh, 48, 36, { mask: (d) => d.y - lineAt(d, ...HAT_LINE), inflate: () => 1.13 });
     J.head.add(new THREE.Mesh(g, hatM));
     J.head.add(at(ball(0.032, hatM, 10, 8), 0, head.top + 0.025, -0.01));
   }

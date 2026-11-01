@@ -5,6 +5,10 @@ Append each new request here as it comes in (see the rule in CLAUDE.md). Format:
 `- [status] request — short note`. Status: ✅ done+verified · 🟡 done, needs live
 check · ⏳ in progress · 📦 asset staged, not wired · ❌ deferred.
 
+## Session 2026-11-01 (people perf, branch wip-people)
+
+- ⏳ **"Make the people models lighter without any visible change up close."** Verify the harness's 84k–127k tris per person first, then slim what is over budget (tubes, limbs, hair, shared/cached geometry), checked with close-ups next to the critic. Numbers and steps below.
+
 ## Session 2026-10-31 (test harness)
 
 - ✅ **"Add an MIT license to the harness and make sure the game has it too."** `LICENSE`: MIT for the game's code; the paintings in `artworks/` stay all rights reserved (Janelle Ghanem), the fonts keep the SIL OFL, and the 3D models keep their sources' terms. The harness repo is MIT too.
