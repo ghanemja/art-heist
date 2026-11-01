@@ -19,7 +19,13 @@ import { createDoorCop } from './doorcop.js';
 import { createMinimap } from './minimap.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
+// phones: fewer pixels, cooler GPU. That's the most it draws at: a machine that can't keep up is
+// given fewer (adaptive resolution, in the loop below); ?dpr=<n> pins it (screenshots, comparisons)
+const DPR_PIN = +new URLSearchParams(location.search).get('dpr') || 0;
+const DPR_MAX = DPR_PIN || Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75);
+const DPR_MIN = DPR_PIN || Math.min(DPR_MAX, Math.max(0.8, DPR_MAX * 0.6));
+renderer.setPixelRatio(DPR_MAX);
+const res = { dpr: DPR_MAX, ft: [], calm: 0, last: performance.now() };   // (the adaptive resolution's state: see adaptRes)
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping;          // gouache: colours as painted
@@ -95,16 +101,34 @@ lodPrepare(scene);                // (the distance LOD holds on to what it needs
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera, { avatar: player.root, renderer });
-window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS, northLife };
+window.__v2 = { res, culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS, northLife };
 window.__v2.meadow = meadow;
 window.__v2.shopInside = shopInside;
 // the corner mini map (and the big map behind it): where you are, and tap a place to travel there on foot
 const minimap = createMinimap({ town, player, game, rooms });
 window.__v2.minimap = minimap;
 
+// ── adaptive resolution: the frame rate is what you feel. Every ~second the median frame time
+// is checked; well short of 60 fps (a GPU struggling with the pixels) it draws at a lower pixel
+// ratio, a step at a time down to DPR_MIN; running smoothly for a while, it steps back up.
+// (Median, so a one-off hitch — a room building behind a fade — doesn't count. The distance LOD
+// reads the ratio too: fewer pixels, coarser far meshes.)
+function adaptRes() {
+  const now = performance.now(), ms = now - res.last; res.last = now;
+  if (DPR_PIN || document.hidden || ms > 250) return;              // (a background tab / a deliberate stall: not a measure)
+  res.ft.push(ms); if (res.ft.length < 60) return;
+  const med = res.ft.sort((a, b) => a - b)[30]; res.ft.length = 0;
+  let to = res.dpr;
+  if (med > 21 && res.dpr > DPR_MIN) { to = Math.max(DPR_MIN, res.dpr - 0.15); res.calm = -12; }   // (slow: down now; no stepping back up for ~12 s)
+  else if (med < 17.5) { if (++res.calm >= 6 && res.dpr < DPR_MAX) { to = Math.min(DPR_MAX, res.dpr + 0.1); res.calm = 0; } }
+  else res.calm = Math.min(res.calm, 0);
+  if (to !== res.dpr) { res.dpr = +to.toFixed(2); renderer.setPixelRatio(res.dpr); }
+}
+
 const clock = new THREE.Clock();
 function loop() {
   requestAnimationFrame(loop);
+  adaptRes();
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
   if (atm.dur > 0) {

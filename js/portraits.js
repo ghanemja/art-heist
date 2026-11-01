@@ -8,6 +8,9 @@ import { inkUniforms } from './style.js';
 import { makeFolk, poseFolk, FOLK_SCALE } from './folk.js';
 
 const SIZE = 256;
+// (the portraits' canvases are kept in main memory: a GPU-backed one would make toDataURL wait
+// for everything the GPU has queued — the very stall the async read-back avoids)
+const CPU2D = { willReadFrequently: true };
 let _rt = null, _scene = null;
 function stage() {
   if (_scene) return _scene;
@@ -19,8 +22,8 @@ function stage() {
   return _scene;
 }
 
-// render `obj` from `cam` into a canvas (transparent background)
-function snap(renderer, obj, cam) {
+// render `obj` from `cam` into the stage's target (left there to be read back)
+function draw(renderer, obj, cam) {
   const scene = stage();
   scene.add(obj);
   const prevRes = inkUniforms.uRes.value.clone(), prevRT = renderer.getRenderTarget(), prevClear = renderer.getClearAlpha();
@@ -28,16 +31,55 @@ function snap(renderer, obj, cam) {
   renderer.setRenderTarget(_rt);
   renderer.setClearColor(0x000000, 0); renderer.clear();
   renderer.render(scene, cam);
-  const px = new Uint8Array(SIZE * SIZE * 4);
-  renderer.readRenderTargetPixels(_rt, 0, 0, SIZE, SIZE, px);
-  renderer.setRenderTarget(prevRT); renderer.setClearAlpha(prevClear);
   inkUniforms.uRes.value.copy(prevRes);
   scene.remove(obj);
+  return () => { renderer.setRenderTarget(prevRT); renderer.setClearAlpha(prevClear); };
+}
+function toCanvas(px) {
   const cv = document.createElement('canvas'); cv.width = cv.height = SIZE;
-  const c = cv.getContext('2d'), img = c.createImageData(SIZE, SIZE);
+  const c = cv.getContext('2d', CPU2D), img = c.createImageData(SIZE, SIZE);
   for (let y = 0; y < SIZE; y++) img.data.set(px.subarray((SIZE - 1 - y) * SIZE * 4, (SIZE - y) * SIZE * 4), y * SIZE * 4);   // flip
   c.putImageData(img, 0, 0);
   return cv;
+}
+// render `obj` from `cam` into a canvas (transparent background), now. The read-back waits for
+// the GPU to finish everything queued — a hitch: only for a portrait the UI needs this moment.
+function snap(renderer, obj, cam) {
+  const restore = draw(renderer, obj, cam);
+  const px = new Uint8Array(SIZE * SIZE * 4);
+  renderer.readRenderTargetPixels(_rt, 0, 0, SIZE, SIZE, px);
+  restore();
+  return toCanvas(px);
+}
+// the same, without the wait: the pixels are copied into a buffer on the GPU's own time (WebGL2
+// pixel-pack buffer + fence), and picked up once the GPU says it's done — no frame is held up.
+function snapAsync(renderer, obj, cam) {
+  const gl = renderer.getContext();
+  if (!(typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext)) return Promise.resolve(snap(renderer, obj, cam));
+  const restore = draw(renderer, obj, cam), N = SIZE * SIZE * 4;
+  renderer.state.bindFramebuffer(gl.FRAMEBUFFER, renderer.properties.get(_rt).__webglFramebuffer);   // (the resolved, single-sample one)
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buf);
+  gl.bufferData(gl.PIXEL_PACK_BUFFER, N, gl.STREAM_READ);
+  gl.readPixels(0, 0, SIZE, SIZE, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  restore();
+  return new Promise((res) => {
+    const poll = () => {
+      if (gl.isContextLost()) { gl.deleteSync(sync); return res(null); }
+      if (gl.getSyncParameter(sync, gl.SYNC_STATUS) !== gl.SIGNALED) return setTimeout(poll, 16);
+      gl.deleteSync(sync);
+      const px = new Uint8Array(N);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buf);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, px);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      gl.deleteBuffer(buf);
+      res(toCanvas(px));
+    };
+    setTimeout(poll, 16);
+  });
 }
 
 // a seeded wobble so every frame is hand-made but stable
@@ -47,7 +89,7 @@ const rng = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed -
 function frame(fig, wash, seed) {
   const r = rng(seed * 97 + 13);
   const cv = document.createElement('canvas'); cv.width = cv.height = SIZE;
-  const c = cv.getContext('2d');
+  const c = cv.getContext('2d', CPU2D);
   const blob = (rad, jit) => {
     c.beginPath();
     for (let i = 0; i <= 40; i++) {
@@ -86,12 +128,17 @@ const WASH = {
 
 // painted when first asked for, not all at load (each is a render + a pixel read-back: together
 // they held the title up by a second or more). `lazy(make)` → an object whose [id] paints on use.
-// They're also painted one at a time in idle moments once the title is up, so opening the
-// notebook later doesn't hitch either.
+// They're also painted one at a time in idle moments once the title is up — with the read-back
+// left to the GPU's own time (`make(id, true)` → a promise), so the game never stalls for one —
+// and opening the notebook later doesn't hitch either.
 function lazy(ids, make) {
   const done = {};
   const queue = [...ids], idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 1500 }) : (f) => setTimeout(f, 200);
-  const next = () => { const id = queue.shift(); if (id == null) return; if (!(id in done)) done[id] = make(id); idle(next); };
+  const next = () => {
+    const id = queue.shift(); if (id == null) return;
+    if (id in done) return idle(next);
+    Promise.resolve().then(() => make(id, true)).then((url) => { if (url && !(id in done)) done[id] = url; }, () => {}).then(() => idle(next));
+  };
   setTimeout(() => idle(next), 4000);
   return new Proxy({}, {
     get: (_, id) => { if (typeof id !== 'string' || !ids.has(id)) return undefined; if (!(id in done)) done[id] = make(id); return done[id]; },
@@ -99,12 +146,16 @@ function lazy(ids, make) {
     ownKeys: () => [...ids], getOwnPropertyDescriptor: (_, id) => ids.has(id) ? { enumerable: true, configurable: true } : undefined,
   });
 }
+// (sync: the finished data URL. async: a promise of it — null if the context went away)
+const finish = (renderer, obj, cam, wash, seed, async) => async
+  ? snapAsync(renderer, obj, cam).then((fig) => fig && frame(fig, wash, seed))
+  : frame(snap(renderer, obj, cam), wash, seed);
 // people: build their own head fresh, pose it neutral, three-quarter view
 export function paintPeople(renderer, looks) {
   const ids = Object.keys(looks).filter(id => looks[id].folk), seeds = Object.fromEntries(ids.map((id, i) => [id, i + 1]));
-  return lazy(new Set(ids), (id) => paintPerson(renderer, id, looks[id], seeds[id]));
+  return lazy(new Set(ids), (id, async) => paintPerson(renderer, id, looks[id], seeds[id], async));
 }
-function paintPerson(renderer, id, look, seed) {
+function paintPerson(renderer, id, look, seed, async = false) {
   {
     const inst = makeFolk({ ...look, stance: null });
     poseFolk(inst, 0, 0, {});
@@ -118,16 +169,16 @@ function paintPerson(renderer, id, look, seed) {
     const at = head.clone().add(new THREE.Vector3(0, 0.1 * k, 0));
     cam.position.copy(at).add(new THREE.Vector3(0.3, 0.05, 0.74).multiplyScalar(k));
     cam.lookAt(at);
-    return frame(snap(renderer, inst.rig, cam), WASH[id] || WASH.clue, seed);
+    return finish(renderer, inst.rig, cam, WASH[id] || WASH.clue, seed, async);
   }
 }
 
 // clues: the prop itself, fitted and seen from a little above
 export function paintThings(renderer, things) {
   const ids = Object.keys(things).filter(id => things[id]), seeds = Object.fromEntries(ids.map((id, i) => [id, 40 + i]));
-  return lazy(new Set(ids), (id) => paintThing(renderer, things[id], seeds[id]));
+  return lazy(new Set(ids), (id, async) => paintThing(renderer, things[id], seeds[id], async));
 }
-function paintThing(renderer, obj, seed) {
+function paintThing(renderer, obj, seed, async = false) {
   {
     const o = obj.clone(true);
     o.traverse(m => { if (m.geometry?.userData.lodOf) m.geometry = m.geometry.userData.lodOf; });   // (its whole shape, whatever the distance LOD is drawing)
@@ -140,6 +191,6 @@ function paintThing(renderer, obj, seed) {
     const dir = new THREE.Vector3(0.75, 0.62, 1).normalize();
     cam.position.copy(sph.center).addScaledVector(dir, sph.radius / Math.sin(THREE.MathUtils.degToRad(15)) * 0.92);
     cam.lookAt(sph.center);
-    return frame(snap(renderer, o, cam), WASH.clue, seed);
+    return finish(renderer, o, cam, WASH.clue, seed, async);
   }
 }

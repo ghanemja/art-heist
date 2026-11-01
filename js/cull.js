@@ -347,16 +347,19 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
   function work() {
     if (busy || !_queue.length) return;
     busy = true;
-    const step = () => {
+    // (in the browser's idle time between frames, as much as it offers; if none comes within 0.1 s
+    // — a machine flat out drawing — a slice anyway, so the work still gets done)
+    const later = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 100 }) : (f) => setTimeout(f, 0);
+    const step = (dl) => {
       const t0 = performance.now();
-      const budget = Math.min(60, Math.max(6, 0.3 * frameMs));
+      const budget = dl && !dl.didTimeout ? Math.max(3, dl.timeRemaining()) : Math.min(60, Math.max(6, 0.3 * frameMs));
       while (_queue.length && performance.now() - t0 < budget) {
         const g = _queue.shift();
         if (_scale.has(g)) _lod.set(g, lodLevels(g)); else { _cap.delete(g); _lod.set(g, []); }   // (nothing of ours draws it: the rooms)
       }
-      if (_queue.length) setTimeout(step, 0); else { busy = false; _hk = new Int32Array(0); _hv = new Int32Array(0); primeK = 0; }
+      if (_queue.length) later(step); else { busy = false; _hk = new Int32Array(0); _hv = new Int32Array(0); primeK = 0; }
     };
-    setTimeout(step, 0);
+    later(step);
   }
   // prime: once the versions are made, each is sent to the GPU now (one frame per version, with
   // every material hidden: the renderer uploads what it gathers, draws nothing), so the ones
@@ -386,7 +389,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       if (scene.children.length !== n) collect();
       const e = camera.position, el = e.length();
       const f = (innerHeight / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
-      const fd = f * Math.min(devicePixelRatio || 1, 1.75);              // (in device pixels, as drawn)
+      const fd = f * (renderer ? renderer.getPixelRatio() : Math.min(devicePixelRatio || 1, 1.75));   // (in device pixels, as drawn: the adaptive resolution's)
       const behindOK = el > P + 0.01;
       const alpha = behindOK ? Math.asin(P / el) : 0, tang = behindOK ? Math.sqrt(el * el - P * P) : 0;
       hz.ok = behindOK; hz.alpha = alpha; hz.tang = tang; hz.el = el;
