@@ -52,6 +52,7 @@ const F = {
   sea: { d: llv(T.sea.at), r: T.sea.r, depth: T.sea.depth },
   bay: { d: llv(T.bay.at), r: T.bay.r, depth: T.bay.depth },
   mtn: { d: llv(T.mountain.at), r: T.mountain.r, h: T.mountain.height },
+  isl: T.island ? { d: llv(T.island.at), r: T.island.r, h: T.island.height } : null,
 };
 export const SEA = 0.0;                                         // sea level above R
 const LAND = 0.45;                                              // the plateau's level
@@ -124,6 +125,8 @@ export function surfH(d) {
     const dw = arc(d, w.d);
     if (dw < w.r) h += (-w.depth - h) * (1 - ss(w.r * 0.7, w.r, dw));
   }
+  // the island: a low mound back up out of the sea (sandy shore round it)
+  if (F.isl) { const di = arc(d, F.isl.d); if (di < F.isl.r) h += (F.isl.h - h) * (1 - ss(F.isl.r * 0.45, F.isl.r, di)); }
   for (const w of WATERS) {
     if (d.dot(w.c) < w.cosReach) continue;
     const dw = waterDist(w, d), r = w.kind === 'lake' ? w.r : w.half;

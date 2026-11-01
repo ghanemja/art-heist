@@ -5,11 +5,12 @@
 import * as THREE from 'three';
 import PLAN from './manifest.js';
 import { R, llv, arc, frame, slerpDir, reserve, zoneHit, deflect, smooth, buildRoad, ROADS, onRoad,
-  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked, addPad, addCamBlock } from './world.js';
+  settle, yawToFace, radiusAt, flatten, addFloor, isWater, alignToSurface, posOn, nearestRoad, surfH, decoBlocked, addPad, addCamBlock, addRiver } from './world.js';
 import { PAL, paint, ink, blobShadow, mergeStatic } from './style.js';
 import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './props.js';
 import { buildMuseum } from '../museum.js?v=17';
 import { planHarbour, buildHarbour } from './harbour.js';
+import { buildFarm, buildIsland } from './farm.js';
 import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { museumGrounds, shopApproach, APPROACH_STOP, APPROACH_Z1, MOUTH_LAP, makersRow, ROW_X, ROW, ROW_MOUTH_LAP } from './grounds.js';
@@ -143,6 +144,10 @@ const mDir = llv(PLAN.museum.at);
 const mF = frame(mDir, TOWN_C);                            // +y local = toward town
 export function planTown() {
   planNorth();                                            // the river and the north's ground (north.js)
+  // the strait: the bay and the open sea joined by a channel of water, so the harbour's boat can
+  // sail out to the island (on the smaller planet the sea no longer reaches the bay by itself)
+  { const B = llv(PLAN.terrain.bay.at), S = llv(PLAN.terrain.sea.at), n = 10;
+    addRiver(Array.from({ length: n + 1 }, (_, k) => slerpDir(B, S, k / n)), 2.8, 1.5); }
   reserve(mF(0, -0.3), 4.4, 'museum-plaza');
   reserve(mF(0, -7.0), 8.4, 'museum');
   // the museum stands on a true plane (tangent at its forecourt, so the forecourt is level);
@@ -737,11 +742,17 @@ export function buildTown(scene) {
       out.harbour = buildHarbour(d, TOWN_C, add, solid);
       continue;
     }
+    if (k === 'farm') {                                      // Hilltop Farm (farm.js): its animals move (main.js calls update)
+      out.farm = buildFarm(d, TOWN_C, add, solid, scene);
+      continue;
+    }
     const g = site(k, out.sites[k].frame);
     if (g) { settle(g, d, s.r * 0.8, 0.06, yawToFace(d, TOWN_C)); add(g);
       if (g.userData.floor) addFloor(g, g.userData.floor); for (const c of g.userData.solids || []) solid(out.sites[k].frame(...c[0]), c[1]); }
   }
   // the north: the river and its bridge, the country club, the driving range, Riverbend Close
+  // the island out in the sea, with its lighthouse (farm.js)
+  if (PLAN.terrain.island) out.island = buildIsland(llv(PLAN.terrain.island.at), TOWN_C, add, solid);
   out.north = buildNorth(scene, { add, solid, boulevard: out.boulevard });
   // the roads' verges: street trees out of town, a lamp where each road leaves the ring, a
   // turning circle and a viewpoint at the overlook (after the rail and the north: it sees them all)

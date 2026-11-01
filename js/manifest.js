@@ -22,6 +22,7 @@ export default {
     sea: { at: [-62, 14], r: 15, depth: 1.8 }, // the southern sea (r 30 on the radius-40 planet)
     bay: { at: [-30, 8], r: 9, depth: 1.5 },   // an inlet of the sea, up to the harbour
     mountain: { at: [52, -42], r: 10, height: 3.6 },
+    island: { at: [-64, 18], r: 6.5, height: 0.5, name: 'Gull Island' },   // out in the sea: a lighthouse (farm.js)
     hills: 0.32,                              // rolling amplitude everywhere else
   },
   town: {
@@ -41,6 +42,7 @@ export default {
     airport:   { at: [29, 99], r: 14, name: 'Airport' },
     launchpad: { at: [-8, -150], r: 7, stop: 6.2, name: 'Cape Far Side' },   // the finale: pad, gantry, rocket, crates
     overlook:  { at: [49, -40], r: 3.5, name: 'Summit Overlook' },
+    farm:      { at: [-48, 106.1], r: 8.0, name: 'Hilltop Farm' },   // barn, silo, paddock (cows, sheep), crops — farm.js
   },
   // a town park out past Maple Plaza (no road: you walk in across the grass). Splatform's
   // shop used to stand here with a spur road forking off to it; it moved round the planet
