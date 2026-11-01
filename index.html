@@ -127,6 +127,29 @@
   #minimapLab { font-size: 15px; line-height: 1.2; margin-top: 4px; color: var(--ink); }
   #minimapLab b { font-family: 'Caveat', cursive; font-size: 20px; }
   body.cine #minimapBox { opacity: 0 !important; }
+  /* the walking mini map (minimap.js): round, bottom-right; the driving map above takes the corner while it's up */
+  #mm { right: 16px; bottom: 16px; width: 172px; z-index: 11; transition: opacity .3s; }
+  #mmCv { width: 172px; height: 172px; display: block; border-radius: 50%; background: var(--paper); box-shadow: 3px 4px 0 rgba(42,34,48,0.85); cursor: pointer; touch-action: manipulation; }
+  #mm .mmb { position: absolute; top: 2px; width: 30px; height: 30px; border: 2px solid var(--ink); border-radius: 50%; background: var(--gold); color: var(--ink);
+    font: 700 20px/1 'Patrick Hand', cursive; padding: 0; cursor: pointer; box-shadow: 1px 2px 0 rgba(42,34,48,.6); display: flex; align-items: center; justify-content: center; }
+  #mm .mmb:hover { background: #f0c95e; }
+  #mmBigB { right: 0; } #mmMinB { left: 0; }
+  #mmNear { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%) rotate(-1deg); white-space: nowrap; font-size: 14px; line-height: 1.2; padding: 0 8px;
+    background: var(--paper); border: 2px solid var(--ink); border-radius: var(--sketch); pointer-events: none; }
+  #mmPill { right: 16px; bottom: 16px; padding: 5px 8px 1px; line-height: 0; z-index: 11; }
+  #mmBig { left: 50%; top: 50%; width: min(860px, 94vw); max-height: 88vh; max-height: 88dvh; overflow: auto; transform: translate(-50%, -50%) rotate(-0.4deg); padding: 14px 20px 10px; z-index: 25; }
+  #mmBig h2 { font-family: 'Caveat', cursive; font-size: 38px; margin: 0 0 6px; } #mmBig .x { float: right; font-size: 18px; padding: 2px 12px; }
+  #mmBig .mmWrap { display: flex; gap: 14px; align-items: flex-start; }
+  #mmBigCv { width: min(560px, 62vh, 60vw); aspect-ratio: 1; height: auto; flex: 0 0 auto; display: block; border-radius: 6px; cursor: pointer; }
+  #mmBig .mmList { flex: 1 1 auto; max-height: min(560px, 62vh, 60vw); overflow: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 4px; }
+  .mmRow { font: inherit; font-size: 17px; color: var(--ink); background: none; border: 0; border-bottom: 1.5px dashed rgba(42,34,48,.25); text-align: left; padding: 5px 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; border-radius: 6px; }
+  .mmRow:hover { background: rgba(228,184,79,.3); } .mmRow i { font-style: normal; color: var(--ink2); white-space: nowrap; }
+  #mmBig .soft { font-size: 14px; color: var(--ink2); margin: 8px 0 0; } #mmBig kbd { font-family: inherit; border: 1.5px solid var(--ink); border-radius: 5px; padding: 0 5px; background: var(--gold); }
+  #mmAsk { right: 16px; bottom: 206px; width: min(280px, 86vw); padding: 10px 14px 10px; z-index: 27; transform: rotate(-0.8deg); background: #fffaf0; }
+  #mmAsk[data-at="big"] { right: auto; left: 50%; bottom: auto; top: 50%; transform: translate(-50%, -50%) rotate(-0.8deg); }
+  #mmAsk b { font-family: 'Caveat', cursive; font-size: 28px; display: block; line-height: 1; } #mmAsk p { font-size: 17px; line-height: 1.3; margin: 4px 0 8px; }
+  #mmAsk .row { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; } #mmAsk button.sk { font-size: 18px; padding: 5px 14px; margin: 0; }
+  body.cine #mm, body.cine #mmPill { opacity: 0 !important; pointer-events: none !important; }
   #bagBtn { right: 160px; top: 14px; padding: 2px 10px 0; line-height: 0; }
   #sndBtn { right: 228px; top: 14px; padding: 4px 10px 0; line-height: 0; z-index: 40; }
   #sndBtn .x { display: none; } #sndBtn.off .x { display: inline; } #sndBtn.off .w { display: none; }
@@ -243,6 +266,12 @@
   @media (max-width: 640px) { body.touch #minimapBox { width: 124px; right: 10px; bottom: 74px; } body.touch #minimap { width: 110px; height: 110px; }
     body.touch #prompt { bottom: 220px; } body.touch #timer { top: 160px; } }
   @media (max-width: 640px) { #sndBtn { right: 16px; } #hint { display: none; } #nbBtn { top: auto; bottom: 16px; } #bagBtn { top: auto; bottom: 16px; right: 150px; } }
+  /* narrow screens: a smaller mini map above the notebook button, clear of the stick and the E prompt; it steps aside for a conversation */
+  @media (max-width: 640px) { #mm { right: 10px; bottom: 74px; width: 116px; } #mmCv { width: 116px; height: 116px; } #mmNear { display: none; }
+    #mm .mmb { width: 34px; height: 34px; top: -6px; } #mmBigB { right: -6px; } #mmMinB { left: -6px; }
+    #mmPill { right: 10px; bottom: 74px; } #mmAsk { right: 10px; bottom: 200px; }
+    body.mm-busy #mm, body.mm-busy #mmPill { opacity: 0 !important; pointer-events: none !important; }
+    #mmBig { padding: 10px 12px 8px; } #mmBig .mmWrap { flex-direction: column; align-items: stretch; } #mmBigCv { width: 100%; max-width: 58dvh; align-self: center; } #mmBig .mmList { max-height: none; } }
 </style>
 </head>
 <body>
@@ -283,46 +312,47 @@
 { "imports": {
   "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-  "./js/audio.js": "./js/audio.js?cb=231",
-  "./js/buildings.js": "./js/buildings.js?cb=231",
-  "./js/bump.js": "./js/bump.js?cb=231",
-  "./js/citizens.js": "./js/citizens.js?cb=231",
-  "./js/crowd.js": "./js/crowd.js?cb=231",
-  "./js/faces.js": "./js/faces.js?cb=231",
-  "./js/folk.js": "./js/folk.js?cb=231",
-  "./js/game.js": "./js/game.js?cb=231",
-  "./js/grounds.js": "./js/grounds.js?cb=231",
-  "./js/harbour.js": "./js/harbour.js?cb=231",
-  "./js/human.js": "./js/human.js?cb=231",
-  "./js/manifest.js": "./js/manifest.js?cb=231",
-  "./js/park.js": "./js/park.js?cb=231",
-  "./js/phone.js": "./js/phone.js?cb=231",
-  "./js/player.js": "./js/player.js?cb=231",
-  "./js/plaza.js": "./js/plaza.js?cb=231",
-  "./js/portraits.js": "./js/portraits.js?cb=231",
-  "./js/props.js": "./js/props.js?cb=231",
-  "./js/rail.js": "./js/rail.js?cb=231",
-  "./js/route.js": "./js/route.js?cb=231",
-  "./js/shopinterior.js": "./js/shopinterior.js?cb=231",
-  "./js/story.js": "./js/story.js?cb=231",
-  "./js/style.js": "./js/style.js?cb=231",
-  "./js/town.js": "./js/town.js?cb=231",
-  "./js/train.js": "./js/train.js?cb=231",
-  "./js/world.js": "./js/world.js?cb=231",
-  "./js/cull.js": "./js/cull.js?cb=231",
-  "./js/north.js": "./js/north.js?cb=231",
-  "./js/riverlife.js": "./js/riverlife.js?cb=231",
-  "./js/roadside.js": "./js/roadside.js?cb=231",
-  "./js/carparks.js": "./js/carparks.js?cb=231",
-  "./js/rooms.js": "./js/rooms.js?cb=231",
-  "./js/plants.js": "./js/plants.js?cb=231",
-  "./js/overlook.js": "./js/overlook.js?cb=231",
-  "./js/meadow.js": "./js/meadow.js?cb=231",
-  "./js/club.js": "./js/club.js?cb=231",
-  "./js/doorcop.js": "./js/doorcop.js?cb=231",
-  "./js/pondwater.js": "./js/pondwater.js?cb=231"
+  "./js/audio.js": "./js/audio.js?cb=232",
+  "./js/buildings.js": "./js/buildings.js?cb=232",
+  "./js/bump.js": "./js/bump.js?cb=232",
+  "./js/citizens.js": "./js/citizens.js?cb=232",
+  "./js/crowd.js": "./js/crowd.js?cb=232",
+  "./js/faces.js": "./js/faces.js?cb=232",
+  "./js/folk.js": "./js/folk.js?cb=232",
+  "./js/game.js": "./js/game.js?cb=232",
+  "./js/grounds.js": "./js/grounds.js?cb=232",
+  "./js/harbour.js": "./js/harbour.js?cb=232",
+  "./js/human.js": "./js/human.js?cb=232",
+  "./js/manifest.js": "./js/manifest.js?cb=232",
+  "./js/park.js": "./js/park.js?cb=232",
+  "./js/phone.js": "./js/phone.js?cb=232",
+  "./js/player.js": "./js/player.js?cb=232",
+  "./js/plaza.js": "./js/plaza.js?cb=232",
+  "./js/portraits.js": "./js/portraits.js?cb=232",
+  "./js/props.js": "./js/props.js?cb=232",
+  "./js/rail.js": "./js/rail.js?cb=232",
+  "./js/route.js": "./js/route.js?cb=232",
+  "./js/shopinterior.js": "./js/shopinterior.js?cb=232",
+  "./js/story.js": "./js/story.js?cb=232",
+  "./js/style.js": "./js/style.js?cb=232",
+  "./js/town.js": "./js/town.js?cb=232",
+  "./js/train.js": "./js/train.js?cb=232",
+  "./js/world.js": "./js/world.js?cb=232",
+  "./js/cull.js": "./js/cull.js?cb=232",
+  "./js/north.js": "./js/north.js?cb=232",
+  "./js/riverlife.js": "./js/riverlife.js?cb=232",
+  "./js/roadside.js": "./js/roadside.js?cb=232",
+  "./js/carparks.js": "./js/carparks.js?cb=232",
+  "./js/rooms.js": "./js/rooms.js?cb=232",
+  "./js/plants.js": "./js/plants.js?cb=232",
+  "./js/overlook.js": "./js/overlook.js?cb=232",
+  "./js/meadow.js": "./js/meadow.js?cb=232",
+  "./js/club.js": "./js/club.js?cb=232",
+  "./js/doorcop.js": "./js/doorcop.js?cb=232",
+  "./js/pondwater.js": "./js/pondwater.js?cb=232",
+  "./js/minimap.js": "./js/minimap.js?cb=232"
 } }
 </script>
-<script type="module" src="./js/main.js?cb=231"></script>
+<script type="module" src="./js/main.js?cb=232"></script>
 </body>
 </html>

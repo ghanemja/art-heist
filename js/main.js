@@ -16,6 +16,7 @@ import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
 import { createMeadow } from './meadow.js';
 import { createDoorCop } from './doorcop.js';
+import { createMinimap } from './minimap.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75));   // phones: fewer pixels, cooler GPU
@@ -96,6 +97,9 @@ const culler = createCuller(scene, camera);
 window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS };
 window.__v2.meadow = meadow;
 window.__v2.shopInside = shopInside;
+// the corner mini map (and the big map behind it): where you are, and tap a place to travel there on foot
+const minimap = createMinimap({ town, player, game, rooms });
+window.__v2.minimap = minimap;
 
 const clock = new THREE.Clock();
 function loop() {
@@ -128,6 +132,7 @@ function loop() {
     shopInside.update(dt, t, player);
   }
   if (!rooms.inside) meadow.update(dt);          // the meadow's stomp trail + "stomp!" words
+  minimap.update(dt);                            // (a 2D canvas, redrawn a few times a second)
   for (const c of clouds.children) c.rotateY(c.userData.spin * dt);
   sky.position.copy(camera.position); sky.material.uniforms.upv.value.copy(camera.up);
   styleTick(t, renderer.domElement.width, renderer.domElement.height);
