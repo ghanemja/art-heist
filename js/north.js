@@ -23,7 +23,7 @@ import { kit, lathe, signMat, upperGlass, DARK, placeOnPlanet, batchPlaced, hipR
 import { tree, pine, bush, lamp, bench, rbox } from './props.js';
 import { buildCar, fitToGround } from './player.js';
 import { person } from './human.js';
-import { poseFolk, STANCES } from './folk.js';
+import { poseFolk, STANCES, ikArm, ikLeg, gripHand, FIST } from './folk.js';
 import { audio } from './audio.js';
 import { buildRiverWater, createRiverLife } from './riverlife.js';
 import { createClubPlay } from './club.js';
@@ -306,9 +306,9 @@ const POOL_VS = /* glsl */`
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }`;
 const POOL_FS = /* glsl */`
-  uniform float uTime, uLight, uSwimOn, uMos, uS, uMeOn, uMeK; uniform vec2 uAB; uniform vec3 uCam, uSwim, uMeA, uMeB;
+  uniform float uTime, uLight, uSwimOn, uMos, uS, uMeOn, uMeK; uniform vec2 uAB; uniform vec3 uCam, uSwim, uSwimH, uSwimF, uMeA, uMeB;
   uniform sampler2D tMos;
-  uniform vec3 cDeep, cTint, cFoam, cTop, cBottom, cSkin, cMeTop, cMeBottom;
+  uniform vec3 cDeep, cTint, cFoam, cTop, cSkin, cMeTop, cMeBottom, cMeSkin;
   varying vec3 vP;
   float edgeR(vec2 p) { vec2 q = p / uAB; float th = atan(q.y, q.x); return (1.0 + 0.10 * sin(2.0 * th + 0.5) + 0.08 * sin(3.0 * th + 2.0)) - length(q); }
   float depthAt(vec2 p) {
@@ -368,13 +368,16 @@ const POOL_FS = /* glsl */`
       col = mix(col, cFoam, smoothstep(0.72, 0.95, c) * 0.45);       // caustics: the mosaic dances
     }
     if (uSwimOn > 0.5) {
-      float tb = capsule(ro, r, vec3(uSwim.x, uSwim.y + 0.1, uSwim.z), vec3(uSwim.x, -0.02, uSwim.z), 0.105);
-      if (tb > 0.0 && tb < t) { float y = (ro + r * tb).y; col = (y > uSwim.y + 0.36 ? cTop : y > uSwim.y + 0.24 ? cBottom : cSkin) * 0.92; t = tb; }
+      // her body lying along the swim: the trunk in her suit (shoulders → hips), her legs trailing behind
+      float tb = capsule(ro, r, uSwim, uSwimH, 0.1);
+      if (tb > 0.0 && tb < t) { col = cTop * 0.92; t = tb; }
+      float tl = capsule(ro, r, uSwimH, uSwimF, 0.065);
+      if (tl > 0.0 && tl < t) { col = cSkin * 0.92; t = tl; }
     }
     if (uMeOn > 0.5) {                              // the critic, swimming: her body under the surface, from her shoulders (A) back to her feet (B)
       float tb = capsule(ro, r, uMeA, uMeB, 0.085);
       if (tb > 0.0 && tb < t) { vec3 q = ro + r * tb; float u = clamp(dot(q - uMeA, uMeB - uMeA) / dot(uMeB - uMeA, uMeB - uMeA), 0.0, 1.0);
-        col = (u < 0.42 ? cMeTop : u < 0.9 ? cMeBottom : cSkin) * 0.92; t = tb; }
+        col = (u < 0.42 ? cMeTop : u < 0.9 ? cMeBottom : cMeSkin) * 0.92; t = tb; }
     }
     float fres = pow(1.0 - abs(rd.y), 3.0);
     col = mix(col, cDeep, clamp(t * -r.y / 1.4, 0.0, 0.45));        // deeper water, bluer
@@ -399,9 +402,11 @@ function poolWater() {
     uniforms: {
       uTime: { value: 0 }, uLight: { value: 1 }, uSwimOn: { value: 0 }, uMos: { value: MOS }, uS: { value: POOL_S },
       uMeOn: { value: 0 }, uMeK: { value: 0 }, uMeA: { value: new THREE.Vector3() }, uMeB: { value: new THREE.Vector3() },
-      uAB: { value: new THREE.Vector2(POOL_A, POOL_B) }, uCam: { value: new THREE.Vector3() }, uSwim: { value: new THREE.Vector3(0, -0.6, 0) },
+      uAB: { value: new THREE.Vector2(POOL_A, POOL_B) }, uCam: { value: new THREE.Vector3() }, uSwim: { value: new THREE.Vector3(0, -0.05, 0) },
+      uSwimH: { value: new THREE.Vector3(0.3, -0.2, 0) }, uSwimF: { value: new THREE.Vector3(0.7, -0.4, 0) },
       tMos: { value: mosaicTexture() },
-      cDeep: C(0x1f7fa6), cTint: C(0x8fd8e6), cFoam: C(0xf6fdff), cTop: C(0xe8604c), cBottom: C(0x3f5872), cSkin: C(0xdca78a), cMeTop: C(0xa898c4), cMeBottom: C(0x4d5f86),
+      // (cTop/cSkin: the swimmer's suit and skin, set from her look; cMe*: the critic's)
+      cDeep: C(0x1f7fa6), cTint: C(0x8fd8e6), cFoam: C(0xf6fdff), cTop: C(0x3f5872), cSkin: C(0xe6b99a), cMeTop: C(0xa898c4), cMeBottom: C(0x4d5f86), cMeSkin: C(0xdca78a),
     },
   });
   // the surface: the outline filled in rings round the centre (so the wobble has vertices to move)
@@ -762,11 +767,162 @@ export function buildNorth(scene, { add, solid, boulevard }) {
 STANCES.tennis = { free: 'L',
   R: { fwd: 0.45, out: 0.35, twist: 0.2, bend: 0.5, wrist: -0.2, grip: 1 },
   anim: (side, t, p) => { if (side === 'R') { const sw = Math.sin(t * 2.4); p.fwd += 0.7 * sw; p.out += 0.3 * Math.max(0, -sw); p.bend -= 0.3 * Math.max(0, sw); } } };
-STANCES.golf = { free: null,
-  L: { fwd: 0.5, out: -0.32, twist: 1.0, bend: 0.25, wrist: 0.1, grip: 1 },
-  R: { fwd: 0.5, out: -0.36, twist: 1.0, bend: 0.32, wrist: 0.1, grip: 1 },
-  anim: (side, t, p) => { const c = (t % 5.5) / 5.5; const back = c < 0.35 ? Math.sin(c / 0.35 * Math.PI / 2) : c < 0.45 ? Math.cos((c - 0.35) / 0.1 * Math.PI) : -Math.max(0, 1 - (c - 0.45) / 0.25) * 0.9;
-    p.out += (side === 'L' ? -0.55 : 0.55) * back; p.fwd += 0.35 * Math.abs(back); } };
+STANCES.golf = { free: null, ik: true, pose: (inst, t, talk, dt) => golfPose(inst, talk, dt) };
+STANCES.swim = { free: null, ik: true, pose: (inst) => swimPose(inst) };
+
+// ── whole-body poses for the club's sportsmen, solved with the folk's IK ──
+const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _mm = new THREE.Matrix4();
+const ease = (s) => s * s * (3 - 2 * s);
+// put a fist's grip centre exactly on `target` (spine frame), elbow toward `pole`; with `aim`
+// (a spine-frame direction) the wrist turns so the handle through the fist runs along it.
+// The IK places the wrist on the forearm's line, so the fist is re-measured and the target nudged.
+const C_AXIS = new THREE.Vector3(0, -0.3, 1).normalize();     // the channel through a closed fist (hand frame), out of the thumb side
+function reach(J, side, target, pole, aim) {
+  const s = side === 'L' ? -1 : 1, tgt = target.clone(), A = J['arm' + side], F = J['fore' + side], Hd = J['hand' + side], G = J['grip' + side];
+  for (let i = 0; i < 3; i++) {
+    ikArm(J, side, tgt, pole);
+    if (aim) { _q.copy(A.quaternion).multiply(F.quaternion).invert(); Hd.quaternion.setFromUnitVectors(C_AXIS, _v.copy(aim).applyQuaternion(_q)); }
+    A.updateMatrix(); F.updateMatrix(); Hd.updateMatrix(); G.updateMatrix();
+    const fist = FIST(s).applyMatrix4(G.matrix).applyMatrix4(Hd.matrix).applyMatrix4(F.matrix).applyMatrix4(A.matrix);
+    tgt.add(target.clone().sub(fist));
+  }
+}
+// rig frame (the person's own frame, world units) → spine frame, and back
+const toSpine = (inst) => { const { rig, J } = inst; rig.updateWorldMatrix(true, true); return _mm.copy(J.spine.matrixWorld).invert().multiply(rig.matrixWorld).clone(); };
+
+// ── the golfer: address, a waggle, a backswing, the strike, a held finish, then the next ball ──
+// The club and both hands swing as one round a hub between the shoulders, in a plane through
+// the target line and the ball (so the club head bottoms out at the ball); the wrists hinge on
+// the way up and again into the finish; shoulders and hips turn, the head stays on the ball
+// until it's struck, then watches it go. Feet are planted (leg IK).
+const GOLF_T = 7.2, TOP = 2.25, FIN = 2.5;
+function golfPhi(c) {
+  if (c < 1.4) return 0.07 * Math.sin(c / 1.4 * Math.PI * 2);                             // a waggle
+  if (c < 2.7) return TOP * ease((c - 1.4) / 1.3);                                          // the backswing
+  if (c < 2.85) return TOP;
+  if (c < 3.1) { const s = (c - 2.85) / 0.25; return TOP * (1 - s * s); }                  // down through the ball
+  if (c < 3.45) return -FIN * Math.sin((c - 3.1) / 0.35 * Math.PI / 2);                     // into the finish
+  if (c < 5.2) return -FIN;
+  if (c < 6.4) return -FIN * (1 - ease((c - 5.2) / 1.2));                                    // back to the ball
+  return 0;
+}
+function golfSetup(inst) {
+  const { J, rig } = inst, G = {};
+  // the club: a grip, a steel shaft, an iron's head (built along −Y from the top hand's fist)
+  const club = new THREE.Group(), dark = paint(PAL.ink, { hatch: 0 });
+  const L = 0.5;                                                                              // fist → hosel, world units
+  club.add(new THREE.Mesh(new THREE.CylinderGeometry(0.0085, 0.0075, 0.17, 8), dark).translateY(-0.005));
+  club.add(new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.0045, L, 6), paint(0xd8dde2)).translateY(-L / 2));
+  const head = new THREE.Group(); head.position.y = -L; club.add(head);
+  const hm = new THREE.Mesh(rbox(0.024, 0.034, 0.075, 0.007), paint(0xb9c0c8)); hm.position.set(0, -0.006, 0.034); head.add(hm);
+  ink(club, 'fine'); rig.add(club); G.club = club; G.head = head; G.L = L;
+  const ballM = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 8), paint(0xf6eedb, { hatch: 0 })); ink(ballM, 'fine'); rig.add(ballM); G.ball = ballM;
+  inst.golf = G; inst.gt = 0;
+  return G;
+}
+function golfPose(inst, talk, dt) {
+  const { J } = inst, G = inst.golf || golfSetup(inst);
+  if (!talk) inst.gt += dt;
+  const c = inst.gt % GOLF_T, phi = golfPhi(c), sg = Math.sign(phi), a = Math.abs(phi);
+  const back = Math.max(0, phi) / TOP, thru = Math.max(0, -phi) / FIN;
+  // body: bent forward from the hips, knees flexed, leaning a touch away from the target (+X);
+  // the shoulders turn away on the backswing and through to face the target at the finish
+  J.hips.position.y = 0.535 + 0.02 * thru;
+  J.hips.rotation.set(0, -0.35 * back + 0.75 * ease(thru), 0);
+  J.spine.rotation.set(0.42 - 0.3 * ease(thru), -0.85 * back + 0.55 * ease(thru), 0.1 - 0.12 * thru);
+  // feet planted shoulder-width apart; the trail heel peels up into the finish
+  J.hips.updateMatrix();
+  for (const [side, x] of [['L', -0.105], ['R', 0.105]]) {
+    _qi.copy(J.hips.quaternion).invert();
+    const ank = new THREE.Vector3(x, 0.045 + (side === 'L' ? 0.03 * thru : 0), side === 'L' ? -0.01 : 0.01).sub(J.hips.position).applyQuaternion(_qi);
+    ikLeg(J, side, ank, new THREE.Vector3(side === 'L' ? 0.25 * thru : -0.1, 0, 1).applyQuaternion(_qi));
+    // the shoe flat on the ground (the trail one rolls onto its toe at the finish)
+    _q.copy(J.hips.quaternion).multiply(J['thigh' + side].quaternion).multiply(J['shin' + side].quaternion).invert();
+    J['foot' + side].quaternion.setFromEuler(new THREE.Euler(side === 'L' ? -0.5 * thru : 0, side === 'L' ? 0.6 * thru : 0, 0)).premultiply(_q);
+  }
+  // the swing, in the rig frame: the address geometry is measured once from the body
+  const M = toSpine(inst);
+  if (!G.H) {
+    const sp0 = J.spine.rotation.clone(); J.spine.rotation.set(0.42, 0, 0.1);
+    const Mi0 = toSpine(inst).invert();
+    G.H = J.armL.position.clone().add(J.armR.position).multiplyScalar(0.5).applyMatrix4(Mi0);     // the hub, between the shoulders
+    J.spine.rotation.copy(sp0);
+    G.A = G.H.clone().add(new THREE.Vector3(0.025, -0.25, 0.115));                                // the top hand at address
+    const dy = G.A.y - 0.02, dz = Math.sqrt(Math.max(0.01, G.L * G.L - dy * dy));
+    G.B = new THREE.Vector3(G.H.x, 0.02, G.A.z + dz);                                              // the hosel, on the ground
+    G.u0 = G.B.clone().sub(G.A).normalize();
+    G.L = G.B.distanceTo(G.A);
+    G.n = new THREE.Vector3(1, 0, 0).cross(G.B.clone().sub(G.H)).normalize();                     // the swing plane's normal
+    G.head.position.y = -G.L; G.club.children[1].scale.y = G.L / 0.5; G.club.children[1].position.y = -G.L / 2;
+    G.head.rotation.x = Math.asin(G.u0.z);                                                         // the sole lies flat at address
+    G.ball.position.copy(G.B).add(new THREE.Vector3(0.026, 0, 0.034)); G.ball.position.y = 0.02;
+  }
+  const hinge = phi > 0 ? 1.2 * THREE.MathUtils.smoothstep(phi, 0.35, 1.7) : 1.0 * THREE.MathUtils.smoothstep(-phi, 0.6, 2.1);
+  const qa = new THREE.Quaternion().setFromAxisAngle(G.n, phi), qc = new THREE.Quaternion().setFromAxisAngle(G.n, phi + sg * hinge);
+  const top = G.A.clone().sub(G.H).applyQuaternion(qa).add(G.H), u = G.u0.clone().applyQuaternion(qc);
+  const face = new THREE.Vector3(1, 0, 0).applyQuaternion(qc);
+  // both hands on the grip: the lead (R, toward the target) on top, the trail just below it
+  const uS = u.clone().transformDirection(M), down = new THREE.Vector3(0, -1, 0).transformDirection(M);
+  reach(J, 'R', top.clone().applyMatrix4(M), down.clone().add(new THREE.Vector3(0.5, 0, -0.2)), uS);
+  reach(J, 'L', top.clone().addScaledVector(u, 0.052).applyMatrix4(M), down.clone().add(new THREE.Vector3(-0.5, 0, -0.2)), uS);
+  gripHand(J.gripR, 1); gripHand(J.gripL, 1);
+  // the club runs from the top fist along u, its face square to the swing
+  G.club.position.copy(top);
+  const y = u.clone().negate(), x = face.addScaledVector(y, -face.dot(y)).normalize(), z = new THREE.Vector3().crossVectors(x, y);
+  G.club.quaternion.setFromRotationMatrix(_mm.makeBasis(x, y, z));
+  G.ball.visible = !(c > 3.1 && c < 6.4);
+  // eyes on the ball; after the strike, down the range after it
+  J.neck.rotation.set(0, 0, 0);
+  J.head.rotation.order = 'YXZ';
+  const look = G.ball.position.clone().lerp(new THREE.Vector3(3, 0.9, 1.2), THREE.MathUtils.smoothstep(c, 3.05, 3.5) * (1 - THREE.MathUtils.smoothstep(c, 5.4, 6.2)));
+  J.neck.updateWorldMatrix(true, false);
+  inst.rig.updateWorldMatrix(true, false);
+  _v.copy(look).applyMatrix4(inst.rig.matrixWorld); J.neck.worldToLocal(_v).sub(J.head.position).normalize();
+  J.head.rotation.set(THREE.MathUtils.clamp(Math.asin(-_v.y), -0.4, 0.75), THREE.MathUtils.clamp(Math.atan2(_v.x, _v.z), -1.1, 1.1), 0);
+}
+
+// ── the swimmer: breaststroke, head up out of the water ──
+// The body lies forward along the swim (north.js tips the whole figure, `SWIM_PITCH`), the back
+// arched, the head lifted upright. One stroke (inst.swimPh 0..1): glide with the arms out in front,
+// sweep out, sweep in under the chin (the shoulders rise for a breath), shoot forward again as
+// the legs kick. Targets are given beside each shoulder in a level frame (out, up, ahead) and
+// turned into the spine's frame.
+const SWIM_PITCH = 1.22, SWIM_ARCH = 0.22;
+const STROKE = [   // [phase, out, up, ahead] for the hand, body units, relative to the shoulder joint
+  [0.0, -0.075, 0.03, 0.31], [0.32, -0.07, 0.025, 0.31], [0.5, 0.16, 0.0, 0.2], [0.64, -0.03, -0.035, 0.07],
+  [0.74, -0.08, 0.0, 0.14], [0.86, -0.08, 0.03, 0.3], [1.0, -0.075, 0.03, 0.31]];
+function strokeAt(ph) {
+  let i = 0; while (i < STROKE.length - 2 && ph > STROKE[i + 1][0]) i++;
+  const [p0, ...a] = STROKE[i], [p1, ...b] = STROKE[i + 1], k = ease((ph - p0) / (p1 - p0));
+  return a.map((v, j) => v + (b[j] - v) * k);
+}
+function swimPose(inst) {
+  const { J } = inst, ph = inst.swimPh || 0, beta = SWIM_PITCH - SWIM_ARCH, cb = Math.cos(beta), sb = Math.sin(beta);
+  J.hips.rotation.set(0, 0, 0);
+  J.spine.rotation.set(-SWIM_ARCH, 0, 0);
+  // the head up and level, looking ahead along the water
+  J.neck.rotation.set(-0.42, 0, 0); J.head.rotation.order = 'XYZ';
+  J.head.rotation.set(-(beta - 0.42) + 0.08 + 0.05 * Math.sin(ph * Math.PI * 2), 0, 0);
+  const lvl = (x, up, f) => new THREE.Vector3(x, up * cb + f * sb, -up * sb + f * cb);       // (out, up, ahead) → spine frame
+  for (const side of ['L', 'R']) {
+    const sg = side === 'L' ? -1 : 1, [o, up, f] = strokeAt(ph);
+    const target = lvl(sg * o, up, f).add(J['arm' + side].position);
+    ikArm(J, side, target, lvl(sg * 1, 0.7, -0.3));
+    // palms down in the glide, turned out to sweep, in to scoop
+    const turn = ph < 0.32 ? 0 : ph < 0.5 ? 0.9 : ph < 0.66 ? -0.6 : 0;
+    J['hand' + side].rotation.set(0, 0, 0);
+    J['hand' + side].rotation.y = -sg * (1.3 + turn * 0.4);
+    gripHand(J['grip' + side], 0.15);
+  }
+  // the frog kick: knees draw up and out in the sweep-in, the legs whip round and together
+  const draw = ph < 0.5 ? 0 : ph < 0.7 ? ease((ph - 0.5) / 0.2) : ph < 0.86 ? 1 - ease((ph - 0.7) / 0.16) : 0;
+  for (const side of ['L', 'R']) {
+    const sg = side === 'L' ? -1 : 1;
+    J['thigh' + side].rotation.set(-0.55 * draw, 0, sg * 0.3 * draw);
+    J['shin' + side].rotation.set(1.7 * draw, 0, 0);
+    J['foot' + side].rotation.set(0.9 - 0.4 * draw, 0, 0);
+  }
+}
 
 const LOOK = (o) => ({ folk: true, height: 1.0, build: 1.0, ...o });
 const PEOPLE = {
@@ -774,8 +930,10 @@ const PEOPLE = {
     face: { shape: { jaw: 0.3, chin: 0.5, cheeks: 0.4, long: 0.15, skull: 0.5, brow: 0.4 }, nose: 'snub', noseSize: 0.95, eyes: 'round', brows: 'raised', lashes: true, hair: 'pony', blush: 0.5 } }),
   tennisB: LOOK({ skin: 'deep', hair: 0x1d1716, hairStyle: 'crop', top: 0x7fb3a8, sleeve: 'short', bottom: 0xf6eedb, shoes: 0xf1ece0, height: 1.05, build: 1.0, stance: 'tennis', hat: 'cap', hatColor: 0xf6eedb,
     face: { shape: { jaw: 0.6, chin: 0.4, cheeks: 0.4, long: 0.2, skull: 0.5, brow: 0.55 }, nose: 'round', noseSize: 1.05, eyes: 'round', brows: 'flat', hair: 'crop', blush: 0.2 } }),
-  swimmer: LOOK({ skin: 'rose', hair: 0xb06a3a, hairStyle: 'crop', top: 0xe8604c, sleeve: 'short', bottom: 0x3f5872, shoes: 0xdc9e9a, height: 1.0, build: 0.95,
-    face: { shape: { jaw: 0.45, chin: 0.45, cheeks: 0.45, long: 0.1, skull: 0.5, brow: 0.45 }, nose: 'straight', noseSize: 1.0, eyes: 'round', brows: 'flat', hair: 'crop', blush: 0.4 } }),
+  // in a red swim cap and a navy swimsuit, barefoot (her "shoes" are her feet), doing breaststroke
+  swimmer: LOOK({ skin: 'rose', hair: 0xb06a3a, hairStyle: 'crop', top: 0x3f5872, sleeve: 'short', bottom: 0xe6b99a, shoes: 0xe6b99a, sole: 0xe6b99a, height: 1.0, build: 0.95,
+    stance: 'swim', hat: 'swimcap', hatColor: 0xe8604c,
+    face: { shape: { jaw: 0.45, chin: 0.45, cheeks: 0.45, long: 0.1, skull: 0.5, brow: 0.45 }, nose: 'straight', noseSize: 1.0, eyes: 'round', brows: 'flat', hair: 'sides', blush: 0.4 } }),
   lounger: LOOK({ skin: 'olive', hair: 0x2b1d1a, hairStyle: 'bun', outfit: 'dress', top: 0xe1b95c, bottom: 0xe1b95c, shoes: 0x8a5a3a, height: 0.95, build: 0.92, stance: 'reading', glasses: true,
     face: { shape: { jaw: 0.3, chin: 0.5, cheeks: 0.45, long: 0.2, skull: 0.5, brow: 0.4 }, nose: 'roman', noseSize: 1.0, eyes: 'round', brows: 'raised', glasses: true, lashes: true, hair: 'bun', blush: 0.5 } }),
   golfer: LOOK({ skin: 'rose', hair: 0xe8e2d6, hairStyle: 'crop', top: 0xdc9e9a, sleeve: 'short', bottom: 0xd8cab0, shoes: 0x6a4a3a, height: 1.04, build: 1.1, belly: 0.4, stance: 'golf', hat: 'cap', hatColor: 0x3e6b52,
@@ -785,17 +943,15 @@ const PEOPLE = {
   walkerB: LOOK({ skin: 'tan', hair: 0x6a3b22, hairStyle: 'crop', beard: true, top: 0x5f8f4c, sleeve: 'short', bottom: 0x2f3f55, shoes: 0xf1ece0, height: 1.06, build: 1.0,
     face: { shape: { jaw: 0.65, chin: 0.35, cheeks: 0.4, long: 0.2, skull: 0.55, brow: 0.6 }, nose: 'straight', noseSize: 1.1, eyes: 'round', brows: 'flat', hair: 'crop', blush: 0.2 } }),
 };
-// a racket / a golf club in the right fist, sized in the world's units whatever the rig's scale
+// a racket in the right fist, sized in the world's units whatever the rig's scale
+// (the golfer's club is held by both hands and swung by golfPose)
 function holdProp(obj, kind) {
   const h = obj.userData.human; if (!h?.J?.handR) return;
   const g = new THREE.Group(), dark = paint(PAL.ink, { hatch: 0 });
-  if (kind === 'racket') {
+  {
     g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.16, 6), dark).translateY(-0.07));
     const head = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.01, 6, 18), paint(PAL.accent)); head.scale.set(0.8, 1.15, 1); head.position.y = -0.23; g.add(head);
     const str = new THREE.Mesh(new THREE.CircleGeometry(0.07, 14), new THREE.MeshBasicMaterial({ color: 0xf6eedb, transparent: true, opacity: 0.5, side: THREE.DoubleSide })); str.scale.set(0.8, 1.15, 1); str.position.y = -0.23; str.userData.noInk = true; g.add(str);
-  } else {
-    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.62, 6), paint(0xd8dde2)).translateY(-0.29));
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.035, 0.09), dark); head.position.set(0, -0.6, 0.03); g.add(head);
   }
   ink(g, 'fine');
   obj.updateWorldMatrix(true, true);
@@ -825,8 +981,12 @@ export function createNorthLife({ scene, town, game, player }) {
   });
   // a swimmer doing lengths: shoulders out of the water, gently bobbing
   const pl = club.pool;
+  // (she lies along the water, so her blob shadow stays off; the pool's shader draws her body under the surface)
   { const d = CLW(pl.swim[0], pl.swimZ), obj = put(PEOPLE.swimmer, d, CLW(pl.swim[0] + 1, pl.swimZ));
-    const p = { obj, dir: d.clone(), kind: 'swim', t: 0 }; people.push(p); }
+    obj.children.forEach(c => { if (c !== obj.userData.turn) c.visible = false; });
+    obj.userData.turn.rotation.x = SWIM_PITCH;
+    if (club.water) club.water.material.uniforms.cTop.value.set(PEOPLE.swimmer.top);
+    const p = { obj, dir: d.clone(), kind: 'swim', x: pl.swim[0], way: 1, turn: 0, ph: 0 }; people.push(p); }
   // a reader on the middle lounger
   // (the seated stance is drawn for a bench seat ~0.2 higher than a lounger's: she sits down onto it)
   { const L = club.loungers[1], d = CLW(L.x - 0.1, L.z), obj = put(PEOPLE.lounger, d, CLW(L.fx, L.fz), -0.04);
@@ -836,8 +996,13 @@ export function createNorthLife({ scene, town, game, player }) {
   if (N.range) {
     const rr = N.range.root; rr.updateWorldMatrix(true, false);
     const RW = (x, z) => rr.localToWorld(new THREE.Vector3(x, 0, z)).normalize();
-    const t = N.range.tee, d = RW(t.x + 0.12, t.z + 0.05), obj = put(PEOPLE.golfer, d, RW(t.x + 3, t.z + 0.05), 0.1);
-    holdProp(obj, 'club');
+    // on the bay's mat, side-on to the field (the target, −z, on his left), the ball in front of him on the mat
+    const t = N.range.tee, gx = t.x - 0.2, gz = t.z - 0.15, d = RW(gx, gz), obj = put(PEOPLE.golfer, d, RW(gx + 3, gz));
+    { // stand exactly on the mat (it sits a little proud of the tee slab, which is the registered floor)
+      const ray = new THREE.Raycaster(d.clone().multiplyScalar(obj.position.length() + 0.5), d.clone().negate(), 0, 1.5);
+      const hit = ray.intersectObject(rr, true)[0];
+      if (hit) obj.position.copy(d).multiplyScalar(hit.point.length());
+    }
     const p = { obj, dir: d.clone(), kind: 'still' }; bumpIt(p, 150, 'FORE!'); people.push(p);
   }
   // two neighbours strolling round the Close (on its outer pavement)
@@ -871,6 +1036,7 @@ export function createNorthLife({ scene, town, game, player }) {
       river.update(dt);
       play.update(dt, t);
       const cold = game.G.state === 'cold', here = player.st.dir;
+      if (club.water) club.water.material.uniforms.uSwimOn.value = 0;            // (on again below while she's about)
       for (const p of people) {
         const busy = game.bumps.busy?.(p.obj), far = arc(here, p.dir) > NEAR;
         p.obj.visible = !cold && (!far || busy);
@@ -882,21 +1048,43 @@ export function createNorthLife({ scene, town, game, player }) {
           p.dir.copy(d); p.obj.position.copy(d).multiplyScalar(standAt(d));
           alignToSurface(p.obj, d, yawToFace(d, CLW(ct.x, ct.z - p.s)));
           if (h) poseFolk(h, dt, v);
-        } else if (p.kind === 'swim') {                                            // lengths, turning at each end
-          // she gives way to the critic: treads water while the critic's in her path
-          const me = play.swimAt(), ahead = (tt) => pl.swim[0] + (Math.sin(tt * 0.28) + 1) / 2 * (pl.swim[1] - pl.swim[0]) - pl.x;
-          const blocked = me && Math.hypot(ahead(p.t + dt * 8) - me[0], pl.swimZ - pl.z - me[1]) < 0.6 && Math.hypot(ahead(p.t + dt * 8) - me[0], pl.swimZ - pl.z - me[1]) < Math.hypot(ahead(p.t) - me[0], pl.swimZ - pl.z - me[1]);
-          if (!blocked) p.t += dt;
-          const u = (Math.sin(p.t * 0.28) + 1) / 2, x = pl.swim[0] + u * (pl.swim[1] - pl.swim[0]);
-          swimmerAt = [x - pl.x, pl.swimZ - pl.z];
-          const d = CLW(x, pl.swimZ), dirx = Math.cos(p.t * 0.28) >= 0 ? 1 : -1;
-          p.dir.copy(d);
-          const bob = 0.025 * Math.sin(p.t * 3.1);
-          p.obj.position.copy(d).multiplyScalar(radiusAt(d) + 0.03 - 0.62 + bob);   // the water lies 0.03 above the ground there
-          alignToSurface(p.obj, d, yawToFace(d, CLW(x + dirx, pl.swimZ)));
-          // the pool's shader draws the part of her under the surface (and the rings round her)
-          if (club.water) { const U = club.water.material.uniforms; U.uSwimOn.value = 1; U.uSwim.value.set(x - pl.x, -0.62 + bob, pl.swimZ - pl.z); }
-          if (h) poseFolk(h, dt, 0.6);
+        } else if (p.kind === 'swim') {                                            // lengths of breaststroke, turning at each end
+          const T = club.water?.material.uniforms;
+          p.ph = (p.ph + dt / (p.held ? 5.5 : 2.1)) % 1;                             // (held up: a slow sculling stroke, treading water)
+          const surge = 0.35 + 1.3 * Math.max(0, Math.sin((p.ph - 0.72) / 0.5 * Math.PI)) * (p.ph > 0.72 || p.ph < 0.22 ? 1 : 0);
+          let a;                                                                     // her heading in the club's frame
+          if (p.turn > 0) {                                                          // turning round at the wall: the head swings through +z
+            p.turn = Math.min(1, p.turn + dt / 2.4); a = p.way > 0 ? Math.PI * ease(p.turn) : Math.PI * (1 - ease(p.turn));
+            if (p.turn >= 1) { p.turn = 0; p.way = -p.way; }
+          } else {
+            // she gives way to the critic: treads water while the critic's in her path (ahead of her and closing)
+            const me = play.swimAt(), oz = pl.swimZ - pl.z, gap = (x) => me ? Math.hypot(x - pl.x - me[0], oz - me[1]) : 1e9;
+            const blocked = me && gap(p.x + p.way * 0.12) < 0.6 && gap(p.x + p.way * 0.12) < gap(p.x);
+            p.held = !!blocked; if (!blocked) p.x += p.way * 0.13 * surge * dt; a = p.way > 0 ? 0 : Math.PI;
+            if ((p.way > 0 && p.x >= pl.swim[1]) || (p.way < 0 && p.x <= pl.swim[0])) { p.x = THREE.MathUtils.clamp(p.x, pl.swim[0], pl.swim[1]); p.turn = 1e-3; }
+          }
+          if (p.turn > 0) p.held = false;
+          if (h) h.swimPh = p.ph;
+          swimmerAt = [p.x - pl.x, pl.swimZ - pl.z];                                 // (club.js keeps the critic out of her lane)
+          const d = CLW(p.x, pl.swimZ); p.dir.copy(d);
+          alignToSurface(p.obj, d, yawToFace(d, CLW(p.x + Math.cos(a), pl.swimZ + Math.sin(a))));
+          if (h) poseFolk(h, dt, 0);
+          // shoulders at the waterline, rising for the breath as the hands sweep in
+          const bob = 0.03 * Math.sin(Math.max(0, (p.ph - 0.45) / 0.4) * Math.PI) * (p.ph > 0.45 && p.ph < 0.85 ? 1 : 0) - 0.012;
+          const tg = p.obj.userData.turn; tg.position.set(0, 0, 0);
+          p.obj.position.copy(d).multiplyScalar(radiusAt(d) + 0.03);              // the water lies 0.03 above the ground there
+          p.obj.updateWorldMatrix(true, true);
+          if (h) {
+            const J = h.J, sh = J.armL.getWorldPosition(new THREE.Vector3()).add(J.armR.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+            p.obj.worldToLocal(sh); tg.position.set(-sh.x, -sh.y - 0.035 + bob, -sh.z);
+            p.obj.updateWorldMatrix(true, true);
+            // the pool's shader draws the part of her under the surface: her trunk, and her legs behind
+            if (T && club.water) {
+              const w = club.water, at = (o) => w.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+              const s0 = at(J.armL).add(at(J.armR)).multiplyScalar(0.5), hp = at(J.hips), ft = at(J.footL).add(at(J.footR)).multiplyScalar(0.5);
+              T.uSwimOn.value = 1; T.uSwim.value.copy(s0); T.uSwimH.value.copy(hp); T.uSwimF.value.copy(ft);
+            }
+          }
         } else if (p.kind === 'walk') {
           if (player.st.mode === 'walk' && arc(here, p.dir) < 1.1) { if (h) poseFolk(h, dt, 0); continue; }
           if (p.wait > 0) { p.wait -= dt; if (h) poseFolk(h, dt, 0); continue; }

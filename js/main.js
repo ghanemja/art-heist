@@ -95,7 +95,7 @@ lodPrepare(scene);                // (the distance LOD holds on to what it needs
 gpuOnly(scene, renderer, camera); // the world is built: what only the GPU reads leaves the JS heap once uploaded
 for (const it of game.items) if (it.kind === 'person') it.obj.position.setLength(standAt(it.obj.position.clone().normalize()));
 const culler = createCuller(scene, camera, { avatar: player.root, renderer });
-window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS };
+window.__v2 = { culler, rooms, scene, camera, renderer, town, player, game, citizens, plaza, park, ROADS, ZONES, JUNCTIONS, LAMPS, northLife };
 window.__v2.meadow = meadow;
 window.__v2.shopInside = shopInside;
 // the corner mini map (and the big map behind it): where you are, and tap a place to travel there on foot
