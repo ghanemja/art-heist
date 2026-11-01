@@ -15,7 +15,8 @@ import * as THREE from 'three';
 const MIN_TRIS = 192;                       // below this the plain loop is as quick
 const base = THREE.Mesh.prototype._computeIntersections;
 const plainVP = THREE.Mesh.prototype.getVertexPosition;
-const GRIDS = new WeakMap();
+let GRIDS = new WeakMap();
+let PER_CELL = 2;                           // triangles per cell, about (sparser once loaded: see raygridRelease)
 
 function build(geo) {
   const P = geo.attributes.position.array, I = geo.index ? geo.index.array : null;
@@ -29,7 +30,7 @@ function build(geo) {
   const ex = [x1 - x0, y1 - y0, z1 - z0], big = Math.max(...ex, 1e-6);
   // cells: about one per two triangles, sized on the two widest sides (most meshes here are flat)
   const s2 = [...ex].sort((a, b) => b - a);
-  let s = Math.sqrt(Math.max(s2[0] * s2[1], big * big * 1e-6) / Math.max(1, nt / 2));
+  let s = Math.sqrt(Math.max(s2[0] * s2[1], big * big * 1e-6) / Math.max(1, nt / PER_CELL));
   s = Math.max(s, big / 256);
   const pad = s * 1e-3 + big * 1e-7;
   x0 -= pad; y0 -= pad; z0 -= pad;
@@ -70,8 +71,13 @@ function build(geo) {
 const CHANGING = new WeakSet();
 // (and only for a geometry rays keep reaching: building one costs about as much as ~20 rays
 // through three's loop, which gives the same answer)
-const RAYS = new WeakMap(), WARM = 6;
-export const raygridStats = { builds: 0, ms: 0, tris: 0 };
+let RAYS = new WeakMap(); const WARM = 6;
+export const raygridStats = { builds: 0, ms: 0, tris: 0, bytes: 0 };
+// raygridRelease(): the load is done — let every grid go (they held ~110 MB: a big flat mesh's
+// triangles sit in dozens of fine cells each). Rays in play are few; a mesh they keep reaching
+// (the ground under the player) gets a grid again, sparser (~8 triangles a cell: a fraction of
+// the memory, still a handful of tests a ray). The hits are three's either way.
+export function raygridRelease() { GRIDS = new WeakMap(); RAYS = new WeakMap(); PER_CELL = 8; raygridStats.bytes = 0; }
 function gridOf(geo) {
   let G = GRIDS.get(geo);
   if (!G) { const n = (RAYS.get(geo) || 0) + 1; RAYS.set(geo, n); if (n < WARM) return null; }
@@ -79,7 +85,7 @@ function gridOf(geo) {
     if (G && (G.rebuilt = (G.rebuilt || 0) + 1) > 2) { CHANGING.add(geo); GRIDS.delete(geo); return null; }
     const t = performance.now(), was = G?.rebuilt || 0;
     G = build(geo); G.rebuilt = was; GRIDS.set(geo, G);
-    raygridStats.builds++; raygridStats.ms += performance.now() - t; raygridStats.tris += G.nt;
+    raygridStats.builds++; raygridStats.ms += performance.now() - t; raygridStats.tris += G.nt; raygridStats.bytes += G.start.byteLength + G.list.byteLength + G.always.byteLength + G.stamp.byteLength;
   }
   return G;
 }
