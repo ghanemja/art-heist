@@ -122,7 +122,133 @@
   #phone .msg { background: #fffaf0; border: 2px solid var(--ink); border-radius: 14px 14px 14px 4px; padding: 6px 10px; margin: 6px 0; font-size: 18px; line-height: 1.3; }
   #phone button { margin-top: 8px; width: 100%; }
 
-  #loader { inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'Caveat', cursive; font-size: 34px; background: #f3ead7; z-index: 50; }
+  /* the loader: a pencil doodles the case on a scrap of paper while another is sharpened, shavings
+     flying. Only transform/opacity animate, so it keeps moving while the world is being built. */
+  #loader { inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-family: 'Caveat', cursive; font-weight: 700; font-size: 34px; color: #2a2230; background: #f3ead7; z-index: 50; }
+  #loader.hide, #loader.hide * { animation-play-state: paused !important; }
+  .ld-stage { position: relative; width: 440px; height: 230px; }
+  .ld-stage div { position: absolute; will-change: transform, opacity; }
+  .ld-paper { left: 128px; top: 8px; width: 300px; height: 200px; background: #fffaf0; border: 2.5px solid #2a2230; border-radius: 6px 14px 8px 12px / 12px 6px 14px 8px; box-shadow: 3px 4px 0 rgba(42,34,48,.85); transform: rotate(-1.6deg); }
+  .ld-paper svg { position: absolute; inset: 0; overflow: visible; }
+  .ld-s { inset: 0; opacity: 0; animation: 8.0s linear infinite; }
+  .ld-s path { fill: none; stroke: #2a2230; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .ld-pp { left: 0; top: 0; animation: ld-pen 8.0s ease-in-out infinite; }
+  .ld-pen { left: -13px; top: -128px; transform-origin: 13px 128px; animation: ld-wig .22s ease-in-out infinite alternate; }
+  @keyframes ld-wig { from { transform: rotate(28deg); } to { transform: rotate(34deg); } }
+  @keyframes ld-pen {
+  0.00% { transform: translate(330.0px, 225.0px); }
+  6.00% { transform: translate(54.0px, 100.0px); }
+  7.00% { transform: translate(55.2px, 90.7px); }
+  8.00% { transform: translate(58.8px, 82.0px); }
+  9.00% { transform: translate(64.5px, 74.5px); }
+  10.00% { transform: translate(72.0px, 68.8px); }
+  11.00% { transform: translate(80.7px, 65.2px); }
+  12.00% { transform: translate(90.0px, 64.0px); }
+  12.00% { transform: translate(90.0px, 64.0px); }
+  13.00% { transform: translate(99.3px, 65.2px); }
+  14.00% { transform: translate(108.0px, 68.8px); }
+  15.00% { transform: translate(115.5px, 74.5px); }
+  16.00% { transform: translate(121.2px, 82.0px); }
+  17.00% { transform: translate(124.8px, 90.7px); }
+  18.00% { transform: translate(126.0px, 100.0px); }
+  18.00% { transform: translate(126.0px, 100.0px); }
+  19.00% { transform: translate(124.8px, 109.3px); }
+  20.00% { transform: translate(121.2px, 118.0px); }
+  21.00% { transform: translate(115.5px, 125.5px); }
+  22.00% { transform: translate(108.0px, 131.2px); }
+  23.00% { transform: translate(99.3px, 134.8px); }
+  24.00% { transform: translate(90.0px, 136.0px); }
+  24.00% { transform: translate(90.0px, 136.0px); }
+  25.00% { transform: translate(80.7px, 134.8px); }
+  26.00% { transform: translate(72.0px, 131.2px); }
+  27.00% { transform: translate(64.5px, 125.5px); }
+  28.00% { transform: translate(58.8px, 118.0px); }
+  29.00% { transform: translate(55.2px, 109.3px); }
+  30.00% { transform: translate(54.0px, 100.0px); }
+  32.00% { transform: translate(38.0px, 112.0px); }
+  33.00% { transform: translate(48.2px, 119.9px); }
+  34.00% { transform: translate(61.6px, 124.2px); }
+  35.00% { transform: translate(77.1px, 125.1px); }
+  36.00% { transform: translate(93.5px, 122.8px); }
+  37.00% { transform: translate(109.7px, 117.3px); }
+  38.00% { transform: translate(124.6px, 108.9px); }
+  39.00% { transform: translate(137.1px, 97.8px); }
+  40.00% { transform: translate(146.0px, 84.0px); }
+  42.00% { transform: translate(79.0px, 64.0px); }
+  42.86% { transform: translate(79.0px, 55.0px); }
+  43.71% { transform: translate(86.0px, 55.0px); }
+  44.57% { transform: translate(86.0px, 64.0px); }
+  45.43% { transform: translate(94.0px, 64.0px); }
+  46.29% { transform: translate(94.0px, 55.0px); }
+  47.14% { transform: translate(101.0px, 55.0px); }
+  48.00% { transform: translate(101.0px, 64.0px); }
+  50.00% { transform: translate(74.0px, 55.0px); }
+  52.00% { transform: translate(90.0px, 43.0px); }
+  54.00% { transform: translate(106.0px, 55.0px); }
+  56.00% { transform: translate(74.0px, 55.0px); }
+  59.00% { transform: translate(222.0px, 33.0px); }
+  59.70% { transform: translate(226.1px, 44.3px); }
+  60.40% { transform: translate(238.2px, 44.7px); }
+  61.10% { transform: translate(228.7px, 52.2px); }
+  61.80% { transform: translate(232.0px, 63.8px); }
+  62.50% { transform: translate(222.0px, 57.0px); }
+  63.20% { transform: translate(212.0px, 63.8px); }
+  63.90% { transform: translate(215.3px, 52.2px); }
+  64.60% { transform: translate(205.8px, 44.7px); }
+  65.30% { transform: translate(217.9px, 44.3px); }
+  66.00% { transform: translate(222.0px, 33.0px); }
+  69.00% { transform: translate(190.0px, 92.0px); }
+  71.00% { transform: translate(270.0px, 92.0px); }
+  73.00% { transform: translate(270.0px, 162.0px); }
+  75.00% { transform: translate(190.0px, 162.0px); }
+  77.00% { transform: translate(190.0px, 92.0px); }
+  78.00% { transform: translate(199.0px, 101.0px); }
+  79.50% { transform: translate(261.0px, 101.0px); }
+  81.00% { transform: translate(261.0px, 153.0px); }
+  82.50% { transform: translate(199.0px, 153.0px); }
+  84.00% { transform: translate(199.0px, 101.0px); }
+  86.00% { transform: translate(221.0px, 117.0px); }
+  86.57% { transform: translate(224.4px, 109.7px); }
+  87.14% { transform: translate(230.8px, 107.2px); }
+  87.71% { transform: translate(236.8px, 109.7px); }
+  88.29% { transform: translate(239.0px, 117.0px); }
+  88.86% { transform: translate(236.2px, 123.0px); }
+  89.43% { transform: translate(232.1px, 127.4px); }
+  90.00% { transform: translate(230.0px, 134.0px); }
+  91.00% { transform: translate(230.0px, 143.0px); }
+  92.00% { transform: translate(230.0px, 144.0px); }
+  96.00% { transform: translate(330.0px, 225.0px); }
+  100.00% { transform: translate(330.0px, 225.0px); }
+  }
+  #ld-s0 { animation-name: ld-s0; } @keyframes ld-s0 { 0%, 6.0% { opacity: 0; } 12.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s1 { animation-name: ld-s1; } @keyframes ld-s1 { 0%, 12.0% { opacity: 0; } 18.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s2 { animation-name: ld-s2; } @keyframes ld-s2 { 0%, 18.0% { opacity: 0; } 24.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s3 { animation-name: ld-s3; } @keyframes ld-s3 { 0%, 24.0% { opacity: 0; } 30.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s4 { animation-name: ld-s4; } @keyframes ld-s4 { 0%, 32.0% { opacity: 0; } 40.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s5 { animation-name: ld-s5; } @keyframes ld-s5 { 0%, 42.0% { opacity: 0; } 48.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s6 { animation-name: ld-s6; } @keyframes ld-s6 { 0%, 50.0% { opacity: 0; } 56.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s7 { animation-name: ld-s7; } @keyframes ld-s7 { 0%, 59.0% { opacity: 0; } 66.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s8 { animation-name: ld-s8; } @keyframes ld-s8 { 0%, 69.0% { opacity: 0; } 77.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s9 { animation-name: ld-s9; } @keyframes ld-s9 { 0%, 78.0% { opacity: 0; } 84.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s10 { animation-name: ld-s10; } @keyframes ld-s10 { 0%, 86.0% { opacity: 0; } 90.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  #ld-s11 { animation-name: ld-s11; } @keyframes ld-s11 { 0%, 91.0% { opacity: 0; } 92.0%, 93% { opacity: 1; } 99%, 100% { opacity: 0; } }
+  .ld-sh { left: 0; top: 70px; width: 128px; height: 160px; }
+  .ld-twist { left: 0; top: 34px; width: 92px; height: 22px; animation: ld-push .7s ease-in-out infinite alternate; }
+  @keyframes ld-push { from { transform: translateX(-4px) rotate(-1deg); } to { transform: translateX(3px) rotate(1deg); } }
+  .ld-body { left: 14px; top: 0; width: 70px; height: 22px; background: #e1b95c; border: 2.5px solid #2a2230; border-right: 0; border-radius: 3px 0 0 3px; overflow: hidden; box-sizing: border-box; }
+  .ld-body i { position: absolute; left: 0; right: 0; height: 2px; background: rgba(42,34,48,.35); animation: ld-roll .45s linear infinite; }
+  @keyframes ld-roll { from { transform: translateY(-6px); } to { transform: translateY(18px); } }
+  .ld-cap { left: 0; top: 0; width: 16px; height: 22px; background: #e89a86; border: 2.5px solid #2a2230; border-radius: 6px 2px 2px 6px; box-sizing: border-box; }
+  .ld-blade { left: 70px; top: 18px; width: 54px; height: 56px; }
+  .ld-pile { left: 24px; top: 118px; width: 100px; height: 36px; }
+  #ld-v0 { left: 92px; top: 4px; z-index: 2; animation: ld-v0 1.6s 0s ease-in infinite; opacity: 0; } @keyframes ld-v0 { 0% { transform: translate(0,0) rotate(0) scale(.3); opacity: 0; } 8% { opacity: 1; } 30% { transform: translate(-14px,-40px) rotate(104deg) scale(.9); } 85% { opacity: 1; } 100% { transform: translate(-40px,104px) rotate(260deg) scale(1); opacity: 0; } }
+  #ld-v1 { left: 92px; top: 4px; z-index: 2; animation: ld-v1 1.6s 0.27s ease-in infinite; opacity: 0; } @keyframes ld-v1 { 0% { transform: translate(0,0) rotate(0) scale(.3); opacity: 0; } 8% { opacity: 1; } 30% { transform: translate(-22px,-30px) rotate(-88deg) scale(.9); } 85% { opacity: 1; } 100% { transform: translate(-62px,100px) rotate(-220deg) scale(1); opacity: 0; } }
+  #ld-v2 { left: 92px; top: 4px; z-index: 2; animation: ld-v2 1.6s 0.55s ease-in infinite; opacity: 0; } @keyframes ld-v2 { 0% { transform: translate(0,0) rotate(0) scale(.3); opacity: 0; } 8% { opacity: 1; } 30% { transform: translate(-8px,-46px) rotate(120deg) scale(.9); } 85% { opacity: 1; } 100% { transform: translate(-24px,108px) rotate(300deg) scale(1); opacity: 0; } }
+  #ld-v3 { left: 92px; top: 4px; z-index: 2; animation: ld-v3 1.6s 0.8s ease-in infinite; opacity: 0; } @keyframes ld-v3 { 0% { transform: translate(0,0) rotate(0) scale(.3); opacity: 0; } 8% { opacity: 1; } 30% { transform: translate(-18px,-36px) rotate(-112deg) scale(.9); } 85% { opacity: 1; } 100% { transform: translate(-52px,96px) rotate(-280deg) scale(1); opacity: 0; } }
+  #ld-v4 { left: 92px; top: 4px; z-index: 2; animation: ld-v4 1.6s 1.05s ease-in infinite; opacity: 0; } @keyframes ld-v4 { 0% { transform: translate(0,0) rotate(0) scale(.3); opacity: 0; } 8% { opacity: 1; } 30% { transform: translate(-11px,-50px) rotate(96deg) scale(.9); } 85% { opacity: 1; } 100% { transform: translate(-32px,106px) rotate(240deg) scale(1); opacity: 0; } }
+  #ld-v5 { left: 92px; top: 4px; z-index: 2; animation: ld-v5 1.6s 1.3s ease-in infinite; opacity: 0; } @keyframes ld-v5 { 0% { transform: translate(0,0) rotate(0) scale(.3); opacity: 0; } 8% { opacity: 1; } 30% { transform: translate(-24px,-28px) rotate(-104deg) scale(.9); } 85% { opacity: 1; } 100% { transform: translate(-70px,98px) rotate(-260deg) scale(1); opacity: 0; } }
+  @media (max-width: 480px) { .ld-stage { transform: scale(.72); margin: -30px 0; } }
+  @media (prefers-reduced-motion: reduce) { .ld-stage div { animation: none !important; } .ld-s { opacity: 1; } .ld-pp { transform: translate(260px, 150px); } [id^="ld-v"] { opacity: 0 !important; } }
   /* the backpack button + panel */
   /* the driving map: heading-up, bottom-right (clear of the message pop-ups up top) */
   #minimapBox { right: 16px; bottom: 64px; width: 176px; padding: 8px 8px 6px; text-align: center; transform: rotate(0.8deg); border-radius: 18px; transition: opacity .3s; }
@@ -279,7 +405,32 @@
 </style>
 </head>
 <body>
-<div id="loader" class="ui fade">sharpening pencils…</div>
+<div id="loader" class="ui fade">
+  <div class="ld-stage" aria-hidden="true">
+    <div class="ld-sh">
+      <div class="ld-pile"><svg width="100" height="36" viewBox="0 0 100 36"><path d="M6 32 C10 18 22 22 26 14 C30 8 40 18 46 12 C52 6 62 16 70 14 C78 12 86 22 94 32 Z" fill="#efd3a6" stroke="#2a2230" stroke-width="2.2" stroke-linejoin="round"/><path d="M22 26 c3 -4 8 -2 6 2 M48 20 c4 -4 9 -1 6 3 M70 24 c3 -3 7 -1 5 2" fill="none" stroke="#c7533e" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div class="ld-twist"><div class="ld-cap"></div><div class="ld-body"><i style="top:0"></i><i style="top:-12px"></i><i style="top:12px"></i></div></div>
+      <div class="ld-blade"><svg width="54" height="56" viewBox="0 0 54 56"><path d="M4 6 Q4 2 9 2 H46 Q52 2 52 8 V48 Q52 54 46 54 H9 Q4 54 4 49 Z" fill="#9fa7b0" stroke="#2a2230" stroke-width="2.5"/><path d="M4 20 H26 V34 H4" fill="#5f6770" stroke="#2a2230" stroke-width="2.2"/><path d="M28 9 L46 9 L44 16 L28 15 Z" fill="#d8dde2" stroke="#2a2230" stroke-width="1.8"/><circle cx="40" cy="38" r="3" fill="#d8dde2" stroke="#2a2230" stroke-width="1.8"/></svg></div>
+      <div id="ld-v0"><svg width="22" height="18" viewBox="0 0 22 18"><path d="M2 10 C2 3 12 0 17 5 C21 9 17 15 11 13 C7 12 8 7 12 8" fill="#efd3a6" stroke="#c7533e" stroke-width="2.4" stroke-linecap="round"/></svg></div><div id="ld-v1"><svg width="22" height="18" viewBox="0 0 22 18"><path d="M2 10 C2 3 12 0 17 5 C21 9 17 15 11 13 C7 12 8 7 12 8" fill="#efd3a6" stroke="#e1b95c" stroke-width="2.4" stroke-linecap="round"/></svg></div><div id="ld-v2"><svg width="22" height="18" viewBox="0 0 22 18"><path d="M2 10 C2 3 12 0 17 5 C21 9 17 15 11 13 C7 12 8 7 12 8" fill="#efd3a6" stroke="#c7533e" stroke-width="2.4" stroke-linecap="round"/></svg></div><div id="ld-v3"><svg width="22" height="18" viewBox="0 0 22 18"><path d="M2 10 C2 3 12 0 17 5 C21 9 17 15 11 13 C7 12 8 7 12 8" fill="#efd3a6" stroke="#7fb3a8" stroke-width="2.4" stroke-linecap="round"/></svg></div><div id="ld-v4"><svg width="22" height="18" viewBox="0 0 22 18"><path d="M2 10 C2 3 12 0 17 5 C21 9 17 15 11 13 C7 12 8 7 12 8" fill="#efd3a6" stroke="#e1b95c" stroke-width="2.4" stroke-linecap="round"/></svg></div><div id="ld-v5"><svg width="22" height="18" viewBox="0 0 22 18"><path d="M2 10 C2 3 12 0 17 5 C21 9 17 15 11 13 C7 12 8 7 12 8" fill="#efd3a6" stroke="#c7533e" stroke-width="2.4" stroke-linecap="round"/></svg></div>
+    </div>
+    <div class="ld-paper">
+      <div class="ld-s" id="ld-s0"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M54 100 A36 36 0 0 1 90 64"/></svg></div>
+      <div class="ld-s" id="ld-s1"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M90 64 A36 36 0 0 1 126 100"/></svg></div>
+      <div class="ld-s" id="ld-s2"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M126 100 A36 36 0 0 1 90 136"/></svg></div>
+      <div class="ld-s" id="ld-s3"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M90 136 A36 36 0 0 1 54 100"/></svg></div>
+      <div class="ld-s" id="ld-s4"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M38 112 C60 138 128 124 146 84"/></svg></div>
+      <div class="ld-s" id="ld-s5"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M79 64V55M86 64V55M94 64V55M101 64V55"/></svg></div>
+      <div class="ld-s" id="ld-s6"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M74 55L90 43L106 55Z"/></svg></div>
+      <div class="ld-s" id="ld-s7"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M222.0 33.0L226.1 44.3L238.2 44.7L228.7 52.2L232.0 63.8L222.0 57.0L212.0 63.8L215.3 52.2L205.8 44.7L217.9 44.3L222.0 33.0"/></svg></div>
+      <div class="ld-s" id="ld-s8"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M190 92H270V162H190Z"/></svg></div>
+      <div class="ld-s" id="ld-s9"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M199 101H261V153H199Z"/></svg></div>
+      <div class="ld-s" id="ld-s10"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M221 117C222 104 240 104 239 117C238 125 230 125 230 134"/></svg></div>
+      <div class="ld-s" id="ld-s11"><svg viewBox="0 0 300 200" width="300" height="200"><path d="M230 142.5a1.8 1.8 0 1 0 0.1 0Z"/></svg></div>
+      <div class="ld-pp"><div class="ld-pen"><svg width="26" height="130" viewBox="0 0 26 130"><rect x="4" y="2" width="18" height="13" rx="4" fill="#e89a86" stroke="#2a2230" stroke-width="2.2"/><rect x="4" y="14" width="18" height="8" fill="#b9b4ae" stroke="#2a2230" stroke-width="2.2"/><path d="M4 22H22V96H4Z" fill="#e1b95c" stroke="#2a2230" stroke-width="2.2"/><path d="M10 22V96M16 22V96" stroke="rgba(42,34,48,.3)" stroke-width="1.6"/><path d="M4 96L22 96L13 127Z" fill="#efd3a6" stroke="#2a2230" stroke-width="2.2" stroke-linejoin="round"/><path d="M10 116L16 116L13 127Z" fill="#2a2230"/></svg></div></div>
+    </div>
+  </div>
+  <span>sharpening pencils…</span>
+</div>
 
 <div id="title" class="ui fade hide">
   <h1>The <span>Vanishing</span><br>Gallery</h1>
