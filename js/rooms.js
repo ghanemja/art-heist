@@ -171,26 +171,31 @@ const SHOW = {
   default(F, w, h) {
     frameBars(F, w, h, 0.1, (len, t, hz) => new THREE.Mesh(rb(hz ? len : t, hz ? t : len, 0.08, 0.02), paint(PAL.gold)));
   },
-  yarnflow(F, w, h) {                          // a frame wrapped in chunky yarn, pom-poms at the corners
-    const cols = [0xe8604c, 0xe4b84f, 0x7fb3a8, 0x8f7ae8];
-    frameBars(F, w, h, 0.13, (len, t, hz) => {
-      const g = new THREE.Group();
-      g.add(new THREE.Mesh(rb(hz ? len : t, hz ? t : len, 0.08, 0.04), paint(0xdc9e9a)));
-      // the wraps: little tori round the bar
-      const n = Math.round(len / 0.07), col = paint(cols[Math.round(len * 10) % cols.length]);
-      for (let i = 0; i < n; i++) {
-        const u = -len / 2 + (i + 0.5) * len / n;
-        const r = new THREE.Mesh(new THREE.TorusGeometry(t * 0.55, 0.018, 5, 12), col);
-        r.position.set(hz ? u : 0, hz ? 0 : u, 0); r.rotation.y = hz ? Math.PI / 2 : 0; r.rotation.x = hz ? 0 : Math.PI / 2;
-        r.rotation.z = 0.25; r.userData.noInk = true; g.add(r);
+  yarnflow(F, w, h) {                          // a walnut frame with a brass lip, crocheted flowers on its top corners
+    const FG = new THREE.Group(); F.g.add(FG);
+    const wal = paint(0x6e4a33), lip = paint(0xc9a45a), t = 0.11, tb = 0.07, zc = 0.02;
+    const put = (geo, mat, x, y, z, rz = 0, s) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.z = rz; if (s) m.scale.set(...s); FG.add(m); return m; };
+    // the sides run floor to top; the bottom rail is slim (the screen nearly meets the floor)
+    for (const s of [-1, 1]) put(yfBox(t, h + t + tb, 0.09, 0.035), wal, s * (w / 2 + t / 2), (t - tb) / 2, zc);
+    put(yfBox(w, t, 0.09, 0.035), wal, 0, h / 2 + t / 2, zc);
+    put(yfBox(w, tb, 0.09, 0.03), wal, 0, -h / 2 - tb / 2, zc);
+    for (const s of [-1, 1]) {
+      put(yfBox(0.024, h + 0.048, 0.03, 0.01), lip, s * (w / 2 + 0.012), 0, 0.075);
+      put(yfBox(w, 0.024, 0.03, 0.01), lip, 0, s * (h / 2 + 0.012), 0.075);
+    }
+    // two crocheted flowers sewn to the top corners
+    [[-1, 0xdfa59a], [1, 0x9fbfba]].forEach(([s, col]) => {
+      const fx = s * (w / 2 + t / 2), fy = h / 2 + t / 2, pm = paint(col);
+      for (let i = 0; i < 6; i++) {
+        const a = i * Math.PI / 3 + 0.3, p = put(new THREE.SphereGeometry(0.042, 14, 10), pm, fx + Math.cos(a) * 0.05, fy + Math.sin(a) * 0.05, 0.088, a, [1, 0.62, 0.36]);
+        p.userData.r = a;
       }
-      return g;
+      put(new THREE.SphereGeometry(0.03, 14, 10), paint(0xe2bf7a), fx, fy, 0.1, 0, [1, 1, 0.6]);
+      for (const k of [-1, 1]) put(new THREE.SphereGeometry(0.04, 12, 8), paint(0x7aa86a), fx - s * 0.1, fy - 0.03 + k * 0.035, 0.078, k * 0.5 - s * 0.3, [1, 0.45, 0.3]);
     });
-    [[-1, 1], [1, 1], [-1, -1], [1, -1]].forEach(([sx, sy], i) => {
-      F.put(new THREE.IcosahedronGeometry(0.15, 1), paint(cols[i], { hatch: 0.6 }), sx * (w / 2 + 0.07), sy * (h / 2 + 0.07), 0.08);
-    });
-    // a crochet hook tucked into the bottom corner
-    F.put(new THREE.CylinderGeometry(0.018, 0.018, 0.7, 8), paint(0x8f7ae8), w / 2 - 0.35, -h / 2 - 0.02, 0.1, [0, 0, 1.2]);
+    ink(FG, 'fine');
+    mergeStatic(FG, [], { vc: true });
+    FG.traverse(o => { if (o.isMesh && !o.userData.isInk) o.userData.noInk = true; });
   },
   'borrowed-eyes'(F, w, h) {                    // looking through the field camera's viewfinder
     frameBars(F, w, h, 0.14, (len, t, hz) => new THREE.Mesh(rb(hz ? len : t, hz ? t : len, 0.1, 0.05), paint(0x2a2230, { hatch: 0 })));
@@ -305,38 +310,336 @@ function wallLabel(K, place, x, y, z) {
 
 // the plaque: a lectern with the story on it
 
+// ── YARNFLOW: a cosy crochet studio (helpers shared by its SHOW/SETS/ENV/EXTRA/MINI entries) ──
+// Cream wallpaper over a sage wainscot, honey planks, a round crocheted rug; the app's screen
+// in a walnut frame; a white cubby wall of yarn graded by colour; a reading nook by the window
+// (armchair, a half-finished granny blanket, a basket, a cat asleep); a work table under a
+// pegboard; plants, a floor lamp and string lights. The static set is inked and merged per
+// material (yarn balls share ONE textured material, coloured per vertex).
+const YF = {
+  chair: { x: 3.12, z: -3.1, yaw: -1.0 },          // the armchair, its front turned to the room
+  cub: { x: -2.98, z: -5.23, w: 1.75, h: 2.0, d: 0.36 },
+  table: { x: -3.6, z: -3.2, w: 0.6, l: 1.3 },
+  rack: { x: -3.05, z: -1.55, yaw: 0.9 },
+  rug: { x: 0.15, z: -2.75, r: 1.2 },
+  win: { z: -3.15 },
+};
+// chair-local (x right, z front) → room coords
+const yfChair = (lx, lz) => { const { x, z, yaw } = YF.chair, c = Math.cos(yaw), s = Math.sin(yaw); return [x + lx * c + lz * s, z - lx * s + lz * c]; };
+YF.basket = yfChair(0.42, 0.72);
+// smooth rounded boxes (enough segments that the bevels read round, not chamfered)
+const yfBox = (w, h, d, r = 0.03, seg = 3) => new RoundedBoxGeometry(w, h, d, seg, Math.max(1e-3, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)));
+// the yarn's palette: soft rainbow rows, light to deep
+const YF_HUES = [0.995, 0.065, 0.125, 0.32, 0.54, 0.76];
+const yfCol = (row, k) => new THREE.Color().setHSL(YF_HUES[row % 6], 0.42 + 0.05 * k, 0.74 - k * 0.066);
+// wound yarn: crossing strands on white, tinted per ball by vertex colour
+let _yfWound = null, _yfYarn = null;
+function yfYarnMat() {
+  if (_yfYarn) return _yfYarn;
+  _yfWound = canvasTex(256, 128, (c, w, h) => {
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, w, h);
+    for (const dir of [1, -1]) for (let k = 0; k < 16; k++) {
+      const y0 = (k / 16) * h * 1.6 - h * 0.3, ph = dir * 0.9 + k * 0.15;
+      c.strokeStyle = 'rgba(70,40,50,0.22)'; c.lineWidth = 2.2;
+      c.beginPath();
+      for (let x = 0; x <= w; x += 8) { const y = y0 + Math.sin((x / w) * Math.PI * 2 + ph) * h * 0.28 * dir; x ? c.lineTo(x, y) : c.moveTo(x, y); }
+      c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,0.55)'; c.lineWidth = 1.2; c.save(); c.translate(0, -2.5); c.stroke(); c.restore();
+    }
+  });
+  _yfWound.wrapS = THREE.RepeatWrapping;
+  return (_yfYarn = paint(0xffffff, { map: _yfWound, vertexColors: true, hatch: 0.25 }));
+}
+function yfBall(r, col, seg = 16) {
+  const g = new THREE.SphereGeometry(r, seg, Math.round(seg * 0.75));
+  const n = g.attributes.position.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return new THREE.Mesh(g, yfYarnMat());
+}
+// round crochet (the rug, the hoop doilies): rounds of stitches out from a magic ring
+function yfRoundTex(px, rounds, bg = '#efe4cf') {
+  return canvasTex(px, px, (c, w, h) => {
+    const cx = w / 2, cy = h / 2, k = px / 1024;
+    c.fillStyle = bg; c.beginPath(); c.arc(cx, cy, w / 2, 0, 7); c.fill();
+    let r = 14 * k;
+    rounds.forEach((col, i) => {
+      const len = (i ? 36 : 30) * k * (12 / rounds.length), wid = 15 * k * (12 / rounds.length), n = Math.max(10, Math.round(2 * Math.PI * (r + len / 2) / (wid * 0.92)));
+      for (let q = 0; q < n; q++) { const a = (q + (i % 2) * 0.5) / n * Math.PI * 2; stitch(c, cx + Math.cos(a) * r, cy + Math.sin(a) * r, a - Math.PI / 2, len, wid, col); }
+      r += len + 3 * k;
+    });
+    c.strokeStyle = 'rgba(60,40,40,0.55)'; c.lineWidth = Math.max(2, 4 * k); c.beginPath(); c.arc(cx, cy, Math.min(r, w / 2 - 3), 0, 7); c.stroke();
+  });
+}
+const YF_RUG = ['#f2e8d4', '#c9d6b8', '#f2e8d4', '#e2bf7a', '#f2e8d4', '#dfa59a', '#f2e8d4', '#9fbfba', '#ecdcc0', '#b9a6c9', '#f2e8d4', '#d9c49f'];
+// the half-finished blanket: seven granny squares joined, the eighth not made yet (cut out)
+function yfBlanketTex() {
+  return canvasTex(1024, 512, (c, w, h) => {
+    const s = w / 4, pals = [['#dfa59a', '#f2e8d4', '#e2bf7a', '#f6eedb'], ['#9fbfba', '#f6eedb', '#dfa59a', '#f6eedb'], ['#e2bf7a', '#9fbfba', '#f2e8d4', '#f6eedb'],
+      ['#b9a6c9', '#e2bf7a', '#c9d6b8', '#f6eedb'], ['#c9d6b8', '#dfa59a', '#9fbfba', '#f6eedb']];
+    let k = 0;
+    for (let j = 0; j < 2; j++) for (let i = 0; i < 4; i++) {
+      if (j === 1 && i === 3) continue;
+      c.fillStyle = '#8a7068'; c.fillRect(i * s, j * s, s, s);
+      grannySquare(c, i * s, j * s, s, pals[k++ % pals.length]);
+    }
+  });
+}
+// a page of a pattern book: a round chart on the left, the written rounds on the right
+function yfBookTex() {
+  return canvasTex(512, 256, (c, w, h) => {
+    c.fillStyle = '#fbf6ea'; c.fillRect(0, 0, w, h);
+    const g = c.createLinearGradient(w / 2 - 24, 0, w / 2 + 24, 0);
+    g.addColorStop(0, 'rgba(120,90,70,0)'); g.addColorStop(0.5, 'rgba(120,90,70,0.28)'); g.addColorStop(1, 'rgba(120,90,70,0)');
+    c.fillStyle = g; c.fillRect(w / 2 - 24, 0, 48, h);
+    c.strokeStyle = INKC; c.lineWidth = 2;
+    const cx = w / 4, cy = h / 2;
+    c.beginPath(); c.arc(cx, cy, 10, 0, 7); c.stroke();
+    for (let rr = 1; rr <= 3; rr++) {
+      const n = rr * 12, R0 = 12 + rr * 26;
+      c.strokeStyle = ['#c0504a', '#3f6a8a', '#6a8a4a'][rr - 1];
+      for (let k = 0; k < n; k++) {
+        const a = k / n * Math.PI * 2, x = cx + Math.cos(a) * R0, y = cy + Math.sin(a) * R0;
+        c.save(); c.translate(x, y); c.rotate(a + Math.PI / 2);
+        c.beginPath(); c.moveTo(0, -9); c.lineTo(0, 9); c.moveTo(-5, -9); c.lineTo(5, -9); c.moveTo(-3, -1); c.lineTo(3, 2); c.stroke();
+        c.restore();
+      }
+    }
+    c.fillStyle = INKC; c.font = `700 26px ${SCRIPT}`; c.fillText('Sunburst square', w / 2 + 24, 40);
+    c.font = `400 17px ${HAND}`; c.fillStyle = '#4a4050';
+    ['Rnd 1: magic ring, ch 3,', '  11 dc into the ring.', 'Rnd 2: 2 dc in each st (24)', 'Rnd 3: *dc, 2 dc* round (36)', 'Rnd 4: corners: 3 dc, ch 2…', '', 'fasten off, weave in ends.']
+      .forEach((l, i) => c.fillText(l, w / 2 + 24, 72 + i * 25));
+  });
+}
+
 // ── per-room set dressing ───────────────────────────────────────────────────
 const SETS = {
   yarnflow(K) {
-    // cubbies of yarn, every colour in the palette
-    const sh = kit(new THREE.Group()); sh.g.position.set(-2.8, 0, -D + 0.75);
-    const wood = paint(0x9a7c5c);
-    for (let r = 0; r < 4; r++) sh.box(1.9, 0.05, 0.45, wood, 0, 0.42 + r * 0.42, 0);
-    for (const s of [-1, 1]) sh.box(0.06, 1.75, 0.45, wood, s * 0.95, 0.9, 0);
-    const cols = [0xe8604c, 0xe4b84f, 0x7fb3a8, 0xb7a3c6, 0xdc9e9a, 0x93abc0, 0xf1e4c8, 0x8f7ae8, 0xa8b994];
-    for (let i = 0; i < 12; i++) {
-      const r = Math.floor(i / 4), cI = i % 4;
-      const ball = sh.put(new THREE.SphereGeometry(0.14, 12, 10), paint(cols[i % cols.length]), -0.68 + cI * 0.45, 0.6 + r * 0.42, 0);
-      const wrap = sh.put(new THREE.TorusGeometry(0.14, 0.018, 6, 18), paint(cols[(i + 3) % cols.length]), -0.68 + cI * 0.45, 0.6 + r * 0.42, 0, [0.6 + i, 0.4 * i, 0]);
-      wrap.userData.noInk = true;
+    // ── the studio's furniture: built into one group, inked, then merged per material ──
+    const SG = new THREE.Group(); K.g.add(SG);
+    const cream = paint(0xf6efe2), creamDk = paint(0xe8dcc6), oak = paint(0xc89a68), walnut = paint(0x6e4a33);
+    const terra = paint(0xc97b5a), brass = paint(0xc9a45a), soil = paint(0x5a4234, { hatch: 0 });
+    const leafA = paint(0x5f8f5a), leafB = paint(0x7aa86a), leafC = paint(0x46744c);
+    const R = rng(41);
+    const put = (parent, geo, mat, x, y, z, rot) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (rot) m.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0); parent.add(m); return m; };
+    const group = (x, y, z, ry = 0, parent = SG) => { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; parent.add(g); return g; };
+    const ball = (parent, r, col, x, y, z, seg = 14) => { const b = yfBall(r, col, seg); b.position.set(x, y, z); b.rotation.set(R() * 6, R() * 6, R() * 6); parent.add(b); return b; };
+    const hook = (parent, col, x, y, z, rot, len = 0.2) => {          // a crochet hook: a shaft, a coloured grip
+      const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.set(...rot); parent.add(g);
+      put(g, new THREE.CylinderGeometry(0.005, 0.005, len, 8), paint(0xb8bec6), 0, 0, 0).userData.noInk = true;
+      put(g, new THREE.SphereGeometry(0.007, 8, 6), paint(0xb8bec6), 0, len / 2, 0).userData.noInk = true;
+      put(g, new THREE.CylinderGeometry(0.011, 0.011, len * 0.4, 10), paint(col), 0, -len * 0.18, 0);
+      return g;
+    };
+    // a potted plant: a terracotta pot, soil, and leaves (tall blades or soft ovals)
+    const pot = (parent, x, y, z, r, h, mat = terra) => {
+      const g = group(x, y, z, 0, parent);
+      put(g, new THREE.LatheGeometry([new THREE.Vector2(0, 0), new THREE.Vector2(r * 0.74, 0), new THREE.Vector2(r * 0.9, h * 0.8), new THREE.Vector2(r, h * 0.82), new THREE.Vector2(r, h), new THREE.Vector2(r * 0.86, h)], 20), mat, 0, 0, 0);
+      put(g, new THREE.CylinderGeometry(r * 0.86, r * 0.86, 0.01, 20), soil, 0, h * 0.92, 0).userData.noInk = true;
+      return g;
+    };
+
+    // ── the cubby wall: white shelving, every cubby a colour, graded light to deep ──
+    {
+      const { x, z, w, h, d } = YF.cub, tk = 0.035, cols = 5, rows = 6, base = 0.06;
+      const C = group(x, 0, z);
+      put(C, yfBox(w - 0.06, base, d - 0.06, 0.012), creamDk, 0, base / 2, -0.015);
+      for (const s of [-1, 1]) put(C, yfBox(tk, h, d, 0.012), cream, s * (w / 2 - tk / 2), h / 2, 0);
+      put(C, yfBox(w, tk, d, 0.012), cream, 0, h - tk / 2, 0);
+      const y0 = base + tk, y1 = h - tk, ch = (y1 - y0 - (rows - 1) * tk) / rows, x0 = -w / 2 + tk, cw = (w - 2 * tk - (cols - 1) * tk) / cols;
+      put(C, yfBox(w - 2 * tk, tk, d, 0.01), cream, 0, base + tk / 2, 0);
+      const back = put(C, new THREE.PlaneGeometry(w - 2 * tk, y1 - y0), creamDk, 0, (y0 + y1) / 2, -d / 2 + 0.008);
+      back.userData.noInk = true;
+      // shelves proud of the dividers (their fronts never share a plane)
+      for (let r = 1; r < rows; r++) put(C, yfBox(w - 2 * tk, tk, d - 0.01, 0.01), cream, 0, y1 - r * (ch + tk) + tk / 2, 0.005);
+      for (let c = 1; c < cols; c++) put(C, yfBox(tk, y1 - y0, d - 0.035, 0.01), cream, x0 + c * (cw + tk) - tk / 2, (y0 + y1) / 2, -0.012);
+      const r0 = 0.068, zf = d / 2 - 0.1;
+      for (let ri = 0; ri < rows; ri++) for (let ci = 0; ci < cols; ci++) {
+        const yb = y1 - (ri + 1) * ch - ri * tk, cx = x0 + ci * (cw + tk) + cw / 2;
+        const col = (j) => yfCol(ri, ci + (R() - 0.5) * 0.5 + j * 0.15);
+        ball(C, r0, col(0), cx - r0 * 1.04, yb + r0, zf, 12);
+        ball(C, r0, col(1), cx + r0 * 1.04, yb + r0, zf - 0.01, 12);
+        if ((ri * 7 + ci * 3) % 5) ball(C, r0, col(-1), cx + (R() - 0.5) * 0.01, yb + r0 + 0.118, zf - 0.03, 12);   // most have a third, on top
+      }
+      // a pothos on top, trailing down the far side
+      const P = pot(C, -w / 2 + 0.22, h, 0.02, 0.085, 0.15);
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.4, rr = 0.03 + (i % 3) * 0.02;
+        put(P, new THREE.SphereGeometry(0.045, 12, 9).scale(1, 0.5, 0.75), [leafA, leafB, leafC][i % 3], Math.cos(a) * rr, 0.17 + (i % 2) * 0.03, Math.sin(a) * rr, [0.3 * Math.sin(a), a, 0.4 * Math.cos(a)]);
+      }
+      const vine = new THREE.CatmullRomCurve3([[-0.07, 0.16, 0.06], [-0.13, 0.12, 0.16], [-0.16, -0.15, 0.17], [-0.14, -0.4, 0.18], [-0.17, -0.65, 0.17]].map(p => new THREE.Vector3(...p)));
+      put(P, new THREE.TubeGeometry(vine, 24, 0.006, 5), leafC, 0, 0, 0).userData.noInk = true;
+      for (let i = 1; i < 10; i++) {
+        const p = vine.getPointAt(i / 10), s = i % 2 ? 1 : -1;
+        put(P, new THREE.SphereGeometry(0.03, 10, 8).scale(1, 0.55, 0.3), i % 2 ? leafA : leafB, p.x + s * 0.025, p.y, p.z + 0.005, [0, 0, s * 0.7]);
+      }
+      K.cols.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
     }
-    K.g.add(sh.g); ink(sh.g, 'fine');
-    // a giant granny square on the wall
-    K.flat(0.7, 0.7, texMat(300, 300, (c, w, h) => {
-      const ring = ['#8f7ae8', '#dc9e9a', '#e4b84f', '#7fb3a8', '#f6eedb'];
-      ring.forEach((col, i) => {
-        const m = 10 + i * 28;
-        c.strokeStyle = col; c.lineWidth = 22;
-        c.setLineDash([16, 7]);
-        c.strokeRect(m, m, w - 2 * m, h - 2 * m);
+
+    // ── the rug: a round crocheted one, out in the open floor ──
+    {
+      const { x, z, r } = YF.rug;
+      const m = put(SG, new THREE.CylinderGeometry(r, r, 0.012, 72), paint(0xffffff, { map: yfRoundTex(1024, YF_RUG), hatch: 0.2, unique: true }), x, 0.01, z);
+      m.rotation.y = 0.3;
+    }
+
+    // ── the work table, under a pegboard of tools ──
+    {
+      const { x, z, w, l } = YF.table, top = 0.77;
+      const T = group(x, 0, z);
+      put(T, yfBox(w, 0.05, l, 0.02), oak, 0, top - 0.025, 0);
+      put(T, yfBox(w - 0.1, 0.07, l - 0.12, 0.01), oak, 0, top - 0.085, 0);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(T, new THREE.CylinderGeometry(0.024, 0.017, top - 0.05, 12), oak, sx * (w / 2 - 0.06), (top - 0.05) / 2, sz * (l / 2 - 0.07));
+      put(T, yfBox(w - 0.12, 0.025, l - 0.16, 0.008), oak, 0, 0.17, 0);
+      for (let i = 0; i < 4; i++) ball(T, 0.075, yfCol([3, 4, 0, 2][i], 1 + (i % 2)), -0.08 + (i % 2) * 0.1, 0.1825 + 0.075, -0.42 + i * 0.27);
+      // on top: the pattern book, open
+      {
+        const B = group(0.04, top, 0.24, Math.PI / 2, T);
+        put(B, yfBox(0.45, 0.014, 0.31, 0.005), paint(0x3f6a6a), 0, 0.007, 0);
+        const bookM = paint(0xffffff, { map: yfBookTex(), hatch: 0, unique: true });
+        for (const s of [-1, 1]) {
+          const g = new THREE.PlaneGeometry(0.212, 0.29).rotateX(-Math.PI / 2), uv = g.attributes.uv;
+          for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.5 + (s > 0 ? 0.5 : 0));
+          const pg = put(B, g, bookM, s * 0.108, 0.017 + 0.106 * Math.sin(0.06), 0, [0, 0, s * 0.06]);
+          pg.userData.noInk = true;
+        }
+      }
+      // a swatch in progress, a hook across it
+      const sw = put(T, yfBox(0.15, 0.01, 0.15, 0.004), paint(0xffffff, { map: canvasTex(256, 256, (c, w2) => { c.fillStyle = '#8a7068'; c.fillRect(0, 0, w2, w2); grannySquare(c, 0, 0, w2, ['#dfa59a', '#f6eedb', '#9fbfba', '#f6eedb']); }), hatch: 0, unique: true }), 0.1, top + 0.005, -0.2, [0, 0.35, 0]);
+      hook(T, 0xdfa59a, 0.1, top + 0.017, -0.2, [Math.PI / 2, 0, 1.1], 0.18);
+      // a jar of hooks
+      put(T, new THREE.CylinderGeometry(0.05, 0.045, 0.12, 18), paint(0x9fb39a), -0.17, top + 0.06, -0.47);
+      [0xdfa59a, 0xe2bf7a, 0x9fbfba, 0xb9a6c9, 0xc9d6b8].forEach((col, i) => {
+        const a = i * 1.26;
+        hook(T, col, -0.17 + Math.cos(a) * 0.022, top + 0.14, -0.47 + Math.sin(a) * 0.022, [Math.sin(a) * 0.22, 0, -Math.cos(a) * 0.22]);
       });
-      c.setLineDash([]);
-      c.fillStyle = '#e8604c'; c.beginPath(); c.arc(w / 2, h / 2, 26, 0, 7); c.fill();
-      c.strokeStyle = INKC; c.lineWidth = 3; c.stroke();
-    }), 3.45, 1.95, -D + 0.56);
-    // a basket with needles
-    K.put(new THREE.CylinderGeometry(0.3, 0.22, 0.3, 12, 1, true), paint(0xc8a47c, { side: THREE.DoubleSide }), 1.1, 0.15, -D + 1.1);
-    for (const a of [-0.3, 0.1, 0.5]) K.box(0.025, 0.85, 0.025, paint(0x6b4a34), 1.1 + a * 0.3, 0.5, -D + 1.1, 0.008, [0, 0, a]);
+      // a ball with a hook through it, a mug, a little succulent
+      ball(T, 0.07, yfCol(5, 1), -0.12, top + 0.07, -0.1);
+      hook(T, 0xe2bf7a, -0.12, top + 0.1, -0.1, [0.5, 0, 0.6], 0.2);
+      put(T, new THREE.CylinderGeometry(0.038, 0.034, 0.09, 16), paint(0xdfa59a), 0.15, top + 0.045, 0.53);
+      put(T, new THREE.TorusGeometry(0.025, 0.008, 8, 16), paint(0xdfa59a), 0.15, top + 0.05, 0.575, [0, Math.PI / 2, 0]);
+      const sp = pot(T, -0.18, top, 0.52, 0.055, 0.08);
+      for (let i = 0; i < 7; i++) { const a = i * 0.9; put(sp, new THREE.SphereGeometry(0.022, 10, 8).scale(0.7, 1.3, 0.7), i % 2 ? leafB : leafA, Math.cos(a) * 0.022 * (i ? 1 : 0), 0.1, Math.sin(a) * 0.022 * (i ? 1 : 0), [Math.sin(a) * 0.5, 0, Math.cos(a) * 0.5]); }
+      // the pegboard: a few tools on pegs
+      const PB = group(-W / 2 + 0.012, 1.42, z, Math.PI / 2);
+      put(PB, yfBox(1.1, 0.6, 0.02, 0.008), paint(0xffffff, { map: canvasTex(256, 140, (c, cw2, ch2) => {
+        c.fillStyle = '#e9dcc4'; c.fillRect(0, 0, cw2, ch2); c.fillStyle = 'rgba(90,60,40,0.35)';
+        for (let i = 8; i < cw2; i += 12) for (let j = 8; j < ch2; j += 12) { c.beginPath(); c.arc(i, j, 2, 0, 7); c.fill(); }
+      }), hatch: 0.2, unique: true }), 0, 0, 0);
+      [0xdfa59a, 0xe2bf7a, 0x9fbfba, 0xb9a6c9].forEach((col, i) => hook(PB, col, -0.42 + i * 0.07, 0.05, 0.03, [0, 0, 0.05 * (i - 1.5)], 0.22));
+      // a pair of scissors, an embroidery hoop with a doily in it
+      for (const s of [-1, 1]) put(PB, new THREE.TorusGeometry(0.03, 0.009, 8, 16), paint(0xdfa59a), -0.08 + s * 0.035, -0.1, 0.03);
+      for (const s of [-1, 1]) put(PB, yfBox(0.012, 0.15, 0.006, 0.003), paint(0xb8bec6), -0.08 + s * 0.01, 0.0, 0.035, [0, 0, -s * 0.12]);
+      put(PB, new THREE.TorusGeometry(0.16, 0.012, 10, 40), oak, 0.3, 0, 0.035);
+      put(PB, new THREE.CircleGeometry(0.155, 40), paint(0xffffff, { map: yfRoundTex(256, ['#f6eedb', '#dfa59a', '#f6eedb', '#9fbfba', '#f6eedb', '#e2bf7a'], '#f6eedb'), hatch: 0, unique: true }), 0.3, 0, 0.026).userData.noInk = true;
+      K.cols.push({ x0: x - w / 2, x1: x + w / 2, z0: z - l / 2, z1: z + l / 2 });
+    }
+
+    // ── the reading nook: an armchair by the window, a blanket half made, a basket of yarn ──
+    {
+      const { x, z, yaw } = YF.chair, teal = paint(0x6b9893), tealDk = paint(0x5c8783);
+      const C = group(x, 0, z, yaw);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(C, new THREE.CylinderGeometry(0.024, 0.016, 0.11, 12), walnut, sx * 0.34, 0.055, sz * 0.29);
+      put(C, yfBox(0.86, 0.3, 0.76, 0.07, 4), teal, 0, 0.25, 0);
+      put(C, yfBox(0.58, 0.13, 0.62, 0.05, 4), tealDk, 0, 0.465, 0.04);
+      put(C, yfBox(0.86, 0.62, 0.18, 0.08, 4), teal, 0, 0.71, -0.29, [-0.1, 0, 0]);
+      put(C, yfBox(0.56, 0.42, 0.12, 0.05, 4), tealDk, 0, 0.75, -0.17, [-0.12, 0, 0]);
+      for (const s of [-1, 1]) put(C, yfBox(0.15, 0.3, 0.72, 0.065, 4), teal, s * 0.355, 0.54, 0.0);
+      // the blanket: over the seat and the right arm, its end hanging down (the last square to go)
+      const prof = new THREE.CatmullRomCurve3([[-0.24, 0.54], [0.0, 0.541], [0.2, 0.542], [0.262, 0.57], [0.282, 0.665], [0.32, 0.7], [0.36, 0.706], [0.4, 0.696], [0.437, 0.65], [0.447, 0.5], [0.452, 0.32], [0.456, 0.18]].map(([a, b]) => new THREE.Vector3(a, b, 0)));
+      const NX = 48, NZ = 10, z0b = -0.1, wb = 0.47, bg = new THREE.PlaneGeometry(1, 1, NX, NZ), bp = bg.attributes.position, bu = bg.attributes.uv;
+      for (let iz = 0; iz <= NZ; iz++) for (let ix = 0; ix <= NX; ix++) {
+        const i = iz * (NX + 1) + ix, tt = ix / NX, v = iz / NZ, p = prof.getPointAt(tt);
+        const hang = Math.max(0, (0.66 - p.y) / 0.5) * (p.x > 0.43 ? 1 : 0);
+        bp.setXYZ(i, p.x + hang * 0.014 * Math.sin(v * Math.PI * 3), p.y, z0b + v * wb);
+        bu.setXY(i, tt, v);
+      }
+      bg.computeVertexNormals();
+      const bm = paint(0xffffff, { map: yfBlanketTex(), hatch: 0.15, side: THREE.DoubleSide, unique: true }); bm.alphaTest = 0.5;
+      put(C, bg, bm, 0, 0, 0).userData.noInk = true;
+      // the basket at its foot: woven, full of yarn, a strand out to where the cat plays
+      const [bx, bz] = YF.basket, BK = group(bx, 0, bz);
+      const wt = canvasTex(256, 128, (c, cw2, ch2) => basketweave(c, cw2, ch2, ['#c8a06e', '#b48a5a', '#d4ad7c', '#a87e50'])); wt.wrapS = THREE.RepeatWrapping; wt.repeat.set(3, 1);
+      put(BK, new THREE.LatheGeometry([new THREE.Vector2(0, 0.005), new THREE.Vector2(0.15, 0.005), new THREE.Vector2(0.17, 0.03), new THREE.Vector2(0.2, 0.22), new THREE.Vector2(0.205, 0.235)], 28), paint(0xffffff, { map: wt, side: THREE.DoubleSide, hatch: 0.3, unique: true }), 0, 0, 0);
+      put(BK, new THREE.TorusGeometry(0.205, 0.016, 10, 32), paint(0xa87e50), 0, 0.237, 0, [Math.PI / 2, 0, 0]);
+      put(BK, new THREE.SphereGeometry(0.19, 16, 12).scale(1, 0.35, 1), creamDk, 0, 0.17, 0).userData.noInk = true;
+      ball(BK, 0.08, yfCol(0, 1), -0.07, 0.24, 0.04); ball(BK, 0.075, yfCol(3, 1), 0.08, 0.23, -0.03); ball(BK, 0.07, yfCol(1, 0), 0.0, 0.225, -0.1);
+      hook(BK, 0x9fbfba, 0.05, 0.3, 0.08, [0.4, 0, -0.5], 0.22);
+      K.cols.push({ x0: x - 0.56, x1: x + 0.56, z0: z - 0.57, z1: z + 0.57 }, { x0: bx - 0.2, x1: bx + 0.2, z0: bz - 0.2, z1: bz + 0.2 });
+    }
+
+    // ── the window: daylight, curtains, a succulent on the sill (east wall) ──
+    {
+      const WG = group(W / 2, 0, YF.win.z, -Math.PI / 2), white = paint(0xfbf6ec);
+      const sky = new THREE.MeshBasicMaterial({ toneMapped: false, map: canvasTex(256, 224, (c, w2, h2) => {
+        const g = c.createLinearGradient(0, 0, 0, h2); g.addColorStop(0, '#8fc3e3'); g.addColorStop(0.65, '#d5ecf3'); g.addColorStop(1, '#eef6ee');
+        c.fillStyle = g; c.fillRect(0, 0, w2, h2);
+        c.fillStyle = 'rgba(255,255,255,0.92)';
+        for (const [cx, cy, s] of [[60, 50, 1], [190, 82, 0.8]]) for (const [dx, dy, r] of [[0, 0, 18], [18, -6, 22], [38, 2, 16], [-16, 4, 13]]) { c.beginPath(); c.arc(cx + dx * s, cy + dy * s, r * s, 0, 7); c.fill(); }
+        c.fillStyle = '#a9cf9a'; c.beginPath(); c.moveTo(0, h2); c.bezierCurveTo(w2 * 0.2, h2 * 0.7, w2 * 0.5, h2 * 0.78, w2, h2 * 0.68); c.lineTo(w2, h2); c.fill();
+        c.fillStyle = '#7fb27a'; c.beginPath(); c.arc(w2 * 0.78, h2 * 0.7, 30, 0, 7); c.arc(w2 * 0.86, h2 * 0.66, 24, 0, 7); c.fill();
+      }) });
+      put(WG, new THREE.PlaneGeometry(1.1, 0.96), sky, 0, 1.5, 0.004).userData.noInk = true;
+      for (const s of [-1, 1]) put(WG, yfBox(0.07, 1.1, 0.07, 0.02), white, s * 0.585, 1.5, 0.035);
+      for (const s of [-1, 1]) put(WG, yfBox(1.1, 0.07, 0.07, 0.02), white, 0, 1.5 + s * 0.515, 0.035);
+      put(WG, yfBox(0.028, 0.96, 0.03, 0.01), white, 0, 1.5, 0.02);
+      put(WG, yfBox(1.1, 0.028, 0.03, 0.01), white, 0, 1.5, 0.02);
+      put(WG, yfBox(1.24, 0.04, 0.16, 0.015), white, 0, 0.955, 0.08);
+      const sp = pot(WG, 0.36, 0.975, 0.09, 0.05, 0.08);
+      for (let i = 0; i < 6; i++) { const a = i * 1.05; put(sp, new THREE.SphereGeometry(0.02, 10, 8).scale(0.8, 1.2, 0.8), i % 2 ? leafB : leafA, Math.cos(a) * 0.02, 0.095, Math.sin(a) * 0.02, [Math.sin(a) * 0.6, 0, Math.cos(a) * 0.6]); }
+      // a brass rod, linen curtains tied back either side
+      put(WG, new THREE.CylinderGeometry(0.012, 0.012, 2.12, 10), brass, 0, 2.12, 0.1, [0, 0, Math.PI / 2]);
+      for (const s of [-1, 1]) put(WG, new THREE.SphereGeometry(0.025, 12, 10), brass, s * 1.07, 2.12, 0.1);
+      const curtM = paint(0xd9a596, { side: THREE.DoubleSide });
+      for (const s of [-1, 1]) {
+        const cg = new THREE.PlaneGeometry(0.34, 1.5, 18, 12), cp = cg.attributes.position;
+        for (let i = 0; i < cp.count; i++) {
+          const u = cp.getX(i) / 0.34 + 0.5, v = cp.getY(i) / 1.5 + 0.5;            // v: 0 at the hem, 1 at the rod
+          const pinch = 1 - 0.45 * Math.exp(-((v - 0.42) ** 2) / 0.01);             // the tie-back
+          cp.setX(i, (u - 0.5) * 0.34 * pinch * (1 + 0.15 * (1 - v)) + s * (1 - pinch) * 0.06);
+          cp.setZ(i, 0.03 * Math.sin(u * Math.PI * 5) * pinch);
+        }
+        cg.computeVertexNormals();
+        put(WG, cg, curtM, s * 0.84, 2.11 - 0.75, 0.085);
+        const tie = put(WG, new THREE.TorusGeometry(0.1, 0.014, 8, 24), paint(0xb9806f), s * 0.867, 2.11 - 1.5 * 0.58, 0.085, [Math.PI / 2, 0, 0]);   // the tie-back, round the pinch
+        tie.scale.set(1, 0.42, 1);
+      }
+    }
+
+    // ── a floor lamp beside the chair, a snake plant in the corner, hoop art on the east wall ──
+    {
+      const L = group(3.55, 0, -4.3);
+      put(L, new THREE.CylinderGeometry(0.14, 0.16, 0.03, 24), brass, 0, 0.015, 0);
+      put(L, new THREE.CylinderGeometry(0.014, 0.014, 1.42, 10), brass, 0, 0.74, 0);
+      put(L, new THREE.LatheGeometry([new THREE.Vector2(0.2, -0.24), new THREE.Vector2(0.12, 0)], 28), paint(0xf6e6c4, { side: THREE.DoubleSide, emissive: 0x6a4a1a }), 0, 1.62, 0);
+      K.cols.push({ x0: 3.4, x1: 3.7, z0: -4.45, z1: -4.15 });
+      const PL = pot(SG, 3.6, 0, -5.02, 0.17, 0.34, paint(0xe8dcc6));
+      for (let i = 0; i < 8; i++) {
+        const a = i * 2.3, hl = 0.32 + R() * 0.24, tilt = 0.12 + R() * 0.16;
+        put(PL, new THREE.SphereGeometry(1, 14, 12).scale(0.05, hl, 0.016), i % 2 ? leafC : leafA, Math.cos(a) * 0.06, 0.31 + hl * 0.82, Math.sin(a) * 0.06, [Math.sin(a) * tilt, -a, -Math.cos(a) * tilt]);
+      }
+      K.cols.push({ x0: 3.4, x1: 3.8, z0: -5.25, z1: -4.8 });
+      const HG = group(W / 2 - 0.012, 0, -1.55, -Math.PI / 2);
+      [[-0.32, 1.62, 0.15, ['#f6eedb', '#9fbfba', '#f6eedb', '#dfa59a', '#f6eedb']], [0.04, 1.42, 0.2, ['#f6eedb', '#e2bf7a', '#f6eedb', '#c9d6b8', '#f6eedb', '#b9a6c9', '#f6eedb']], [0.36, 1.68, 0.12, ['#f6eedb', '#dfa59a', '#f6eedb', '#e2bf7a']]].forEach(([hx, hy, hr, pal]) => {
+        put(HG, new THREE.TorusGeometry(hr, 0.012, 10, 40), oak, hx, hy, 0.014);
+        put(HG, new THREE.CircleGeometry(hr - 0.004, 40), paint(0xffffff, { map: yfRoundTex(256, pal, '#efe4cf'), hatch: 0, unique: true }), hx, hy, 0.006).userData.noInk = true;
+      });
+    }
+
+    // the glows: the lamp, the window's daylight on the floor (additive, never inked)
+    const glow = (col, a) => canvasTex(128, 128, (c, cw2, ch2) => { const g = c.createRadialGradient(cw2 / 2, ch2 / 2, 2, cw2 / 2, ch2 / 2, cw2 / 2); g.addColorStop(0, `rgba(${col},${a})`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.fillRect(0, 0, cw2, ch2); });
+    const add = (tex) => new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow('255,214,150', 0.55), blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    halo.position.set(3.55, 1.5, -4.3); halo.scale.set(1.1, 1.1, 1); K.g.add(halo);
+    K.flat(1.8, 1.8, add(glow('255,214,150', 0.28)), 3.4, 0.02, -4.1, [-Math.PI / 2, 0, 0]).renderOrder = 3;
+    K.flat(1.0, 1.5, add(canvasTex(64, 96, (c, cw2, ch2) => {
+      c.fillStyle = 'rgba(255,240,200,0.22)'; c.fillRect(6, 6, cw2 - 12, ch2 - 12);
+      c.fillStyle = 'rgba(0,0,0,1)'; c.globalCompositeOperation = 'destination-out'; c.fillRect(cw2 / 2 - 2, 0, 4, ch2); c.fillRect(0, ch2 / 2 - 2, cw2, 4);
+    })), 2.85, 0.021, -3.8, [-Math.PI / 2, 0, 0.35]).renderOrder = 3;
+
+    ink(SG, 'fine');
+    mergeStatic(SG, [], { vc: true });
+    SG.traverse(o => { if (o.isMesh && !o.userData.isInk) o.userData.noInk = true; });     // (already inked)
   },
   'borrowed-eyes'(K) {
     // a wall of eyes: cow, honeybee, owl — each sees you differently
@@ -1148,76 +1451,79 @@ function catMove(cat, x, z, dx, dz, t, pace = 9) {
 
 const EXTRA = {
   yarnflow(K) {
-    // ── yarn EVERYWHERE ──
-    const cols = [0xe8604c, 0xe4b84f, 0x7fb3a8, 0xb7a3c6, 0xdc9e9a, 0x8f7ae8, 0xa8b994, 0x93abc0];
-    const spots = [[-3.2, -1.1], [-2.2, -2.9], [-0.9, -4.3], [2.1, -1.2], [3.1, -3.2], [-1.6, -0.7], [3.4, -4.6], [0.6, -4.8], [-3.5, -4.6], [2.8, -0.6]];
-    spots.forEach(([x, z], i) => {
-      const r = 0.1 + (i % 3) * 0.03;
-      K.put(new THREE.SphereGeometry(r, 10, 8), paint(cols[i % cols.length]), x, r, z);
-      const w = K.put(new THREE.TorusGeometry(r, 0.014, 6, 16), paint(cols[(i + 3) % cols.length]), x, r, z, [0.6 + i, i * 0.8, 0]);
-      w.userData.noInk = true;
-    });
-    // loose strands trailing across the floor between the balls
-    for (let s = 0; s < 4; s++) {
-      const pts = [spots[s], spots[s + 3], spots[s + 6 < spots.length ? s + 6 : s + 1]].map(([x, z], j) =>
-        new THREE.Vector3(x, 0.02, z).add(new THREE.Vector3(Math.sin(s * 3 + j) * 0.4, 0, Math.cos(s * 5 + j) * 0.4)));
-      const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.013, 5), paint(cols[(s * 2 + 1) % cols.length]));
-      tube.userData.noInk = true;
-      K.g.add(tube);
-    }
-    // ── the cats ──
-    // Pickle chases a runaway ball round the room
+    // ── two cats: Pickle asleep on the armchair's blanket; Mochi batting a ball of yarn about ──
+    const { yaw } = YF.chair;
     const pickle = makeCat(0xe09a52, 0xd98a40);
-    const ball = K.put(new THREE.SphereGeometry(0.11, 10, 8), paint(0xe8604c), 0, 0.11, -2);
-    const bw = K.put(new THREE.TorusGeometry(0.11, 0.015, 6, 16), paint(0xe4b84f), 0, 0.11, -2);
-    bw.userData.noInk = true;
+    pickle.g.remove(pickle.g.children[pickle.g.children.length - 1]);      // (no floor shadow up on a cushion)
+    pickle.g.traverse(o => { if (o.isMesh && o.geometry.parameters?.radius === 0.013) o.scale.set(1.3, 0.22, 1); });   // eyes shut
+    pickle.legs.forEach((l) => { l.rotation.x = -1.5; });                  // a loaf: every paw tucked forward
+    pickle.tail.rotation.order = 'YXZ'; pickle.tail.rotation.set(-1.3, 1.0, 0);   // tail laid round her
+    const [px, pz] = yfChair(-0.01, 0.07);
+    pickle.g.position.set(px, 0.548 - 0.072, pz);
+    pickle.g.rotation.y = yaw - Math.PI / 2 + 0.22;                         // curled across the seat, nose to the left arm
     K.g.add(pickle.g);
-    const orbit = (tt) => { const a = tt * 0.62; return [Math.cos(a) * 2.1, -2.1 + Math.sin(a) * 1.15, a]; };
+    let petT = -9;
     LIVE.push((t) => {
-      const [bx, bz, a] = orbit(t);
-      ball.position.set(bx, 0.11, bz); bw.position.set(bx, 0.11, bz);
-      ball.rotation.z -= 0.08; bw.rotation.y = a;
-      const [cx, cz] = orbit(t - 0.55), [nx, nz] = orbit(t - 0.5);
-      catMove(pickle, cx, cz, nx - cx, nz - cz, t);
+      const b = Math.sin(t * 1.5);
+      pickle.g.scale.set(1 + b * 0.012, 1 + b * 0.028, 1);                // breathing
+      const k = Math.min(1, Math.max(0, (t - petT) / 1.8)), st = Math.sin(k * Math.PI);
+      pickle.legs[0].rotation.x = pickle.legs[1].rotation.x = -1.5 + st * 0.35;     // a stretch when you pet her
+      pickle.tail.rotation.y = 1.0 + Math.sin(t * 0.7) * 0.06 + st * 0.25;
     });
-    // Mochi sits on her haunches under the shelf, batting at a strand
+    mini(K, ...yfChair(0, 0.9), 'pet Pickle', (m) => { petT = NOW; m.say('Pickle stretches both front paws, purrs, and goes back to sleep on the blanket.'); }, 0.65);
+
+    // Mochi: sits by the ball, watches, bats it — it rolls off, its strand trailing slack back to
+    // the basket — and trots after it. Three spots, round and round.
     const mochi = makeCat(0x9a9490, 0xb8b2ac);
-    mochi.g.position.set(-2.0, 0.03, -4.05);
     mochi.g.rotation.order = 'YXZ';
-    mochi.g.rotation.y = -2.3;                 // facing the hanging strand
-    mochi.g.rotation.x = -0.5;                 // up on her haunches, nose to the toy
-    mochi.legs[0].rotation.x = 0.5;            // front legs stay planted under her
-    mochi.legs[2].rotation.x = 0.95;           // hind legs tucked beneath
-    mochi.legs[3].rotation.x = 0.95;
     K.g.add(mochi.g);
-    const strandG = new THREE.Group(); strandG.position.set(-2.35, 1.3, -4.4);
-    const strand = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.03, -0.45, 0.05), new THREE.Vector3(-0.02, -0.9, 0.02),
-    ]), 12, 0.013, 5), paint(0x8f7ae8));
-    strand.userData.noInk = true;
-    strandG.add(strand);
-    const strandBall = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 7), paint(0x8f7ae8));
-    strandBall.position.set(-0.02, -0.95, 0.02);
-    strandG.add(strandBall);
-    K.g.add(strandG);
+    const ball = yfBall(0.065, yfCol(0, 1)); K.g.add(ball);
+    const P = [[1.75, -1.75], [1.25, -1.3], [1.95, -1.05]];
+    const dirs = P.map((p, k) => { const q = P[(k + 1) % 3], dx = q[0] - p[0], dz = q[1] - p[1], l = Math.hypot(dx, dz); return [dx / l, dz / l]; });
+    const seat = P.map((p, k) => [p[0] - dirs[k][0] * 0.4, p[1] - dirs[k][1] * 0.4]);
+    const [bkx, bkz] = YF.basket, strandM = paint(yfCol(0, 1).getHex());
+    const strand = new THREE.Mesh(new THREE.BufferGeometry(), strandM); strand.userData.noInk = true; K.g.add(strand);
+    const _ax = new THREE.Vector3();
+    let lastX = 1e9, lastZ = 1e9;
+    const lay = (x, z) => {                                               // the strand from the basket's rim to the ball
+      const dx = x - bkx, dz = z - bkz, l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l, nx = -uz, nz = ux;
+      const at = (r, y) => new THREE.Vector3(bkx + ux * r, y, bkz + uz * r);
+      const fx = bkx + ux * 0.34, fz = bkz + uz * 0.34, mx = (fx + x) / 2 + nx * 0.16, mz = (fz + z) / 2 + nz * 0.16;
+      const pts = [at(0.15, 0.24), at(0.205, 0.255), at(0.25, 0.2), at(0.27, 0.06), new THREE.Vector3(fx, 0.008, fz), new THREE.Vector3(mx, 0.008, mz), new THREE.Vector3(x - ux * 0.05, 0.02, z - uz * 0.05)];
+      strand.geometry.dispose();
+      strand.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.006, 5);
+    };
+    const sitAt = (x, z, d, t, swipe) => {
+      mochi.g.position.set(x, 0.03, z);
+      mochi.g.rotation.set(-0.5, Math.atan2(d[0], d[1]), 0);
+      mochi.legs[0].rotation.x = 0.5; mochi.legs[2].rotation.x = mochi.legs[3].rotation.x = 0.95;
+      mochi.legs[1].rotation.x = 0.5 - swipe * 1.3;
+      mochi.tail.rotation.y = Math.sin(t * 3.1) * 0.5; mochi.tail.rotation.x = 0;
+    };
+    const T = 6.5;
     LIVE.push((t) => {
-      strandG.rotation.z = Math.sin(t * 2.3) * 0.3;
-      strandG.rotation.x = Math.cos(t * 1.7) * 0.15;
-      // the batting paw hinges at the shoulder: planted (0.5) up to a raised swipe
-      mochi.legs[1].rotation.x = 0.5 - Math.max(0, Math.sin(t * 2.3 + 0.6)) * 1.3;
-      mochi.tail.rotation.y = Math.sin(t * 3.1) * 0.5;
-    });
-    // Biscuit does zoomies along the front of the room
-    const biscuit = makeCat(0x2a2230, 0x3a3240);
-    K.g.add(biscuit.g);
-    LIVE.push((t) => {
-      const x = Math.sin(t * 0.9) * 2.7, dx = Math.cos(t * 0.9);
-      catMove(biscuit, x, -0.9 + Math.sin(t * 1.8) * 0.2, dx, Math.cos(t * 1.8) * 0.2, t, 13);
-      biscuit.g.scale.z = 1 + Math.abs(dx) * 0.12;        // stretch along her OWN length (local z is her nose-to-tail axis)
+      const cyc = Math.floor(t / T), u = t - cyc * T, k = cyc % 3, k1 = (k + 1) % 3;
+      // the ball: rolls from spot k to k+1 after the swipe, easing to a stop
+      const ru = Math.min(1, Math.max(0, (u - 2.5) / 1.2)), re = 1 - (1 - ru) ** 2;
+      const bx = P[k][0] + (P[k1][0] - P[k][0]) * re, bz = P[k][1] + (P[k1][1] - P[k][1]) * re;
+      const mv = Math.hypot(bx - lastX, bz - lastZ);
+      if (mv > 1e-4) {
+        if (mv < 0.5) ball.rotateOnWorldAxis(_ax.set(bz - lastZ, 0, -(bx - lastX)).normalize(), mv / 0.065);
+        ball.position.set(bx, 0.065, bz); lay(bx, bz); lastX = bx; lastZ = bz;
+      }
+      // the cat
+      if (u < 3.4) sitAt(...seat[k], dirs[k], t, u > 2.1 && u < 2.6 ? Math.sin((u - 2.1) / 0.5 * Math.PI) : Math.max(0, Math.sin(t * 2.2)) * 0.12);
+      else if (u < 4.9) {
+        const w = (u - 3.4) / 1.5, e = w * w * (3 - 2 * w), [ax, az] = seat[k], [cx2, cz2] = seat[k1];
+        const mx = (ax + cx2) / 2, mz = (az + cz2) / 2, ox = mx - P[k1][0], oz = mz - P[k1][1], ol = Math.hypot(ox, oz) || 1;
+        const qx = mx + ox / ol * 0.35, qz = mz + oz / ol * 0.35;           // round the ball, not through it
+        const x = (1 - e) ** 2 * ax + 2 * (1 - e) * e * qx + e * e * cx2, z = (1 - e) ** 2 * az + 2 * (1 - e) * e * qz + e * e * cz2;
+        const dx = 2 * (1 - e) * (qx - ax) + 2 * e * (cx2 - qx), dz = 2 * (1 - e) * (qz - az) + 2 * e * (cz2 - qz);
+        mochi.g.rotation.x = 0;
+        catMove(mochi, x, z, dx, dz, t, 10);
+      } else sitAt(...seat[k1], dirs[k1], t, 0);
     });
   },
-
-
 
   'borrowed-eyes'(K) {
     // the menagerie is IN: frog, bee, goldfish, and a bat on the rail
@@ -1633,27 +1939,23 @@ const THEMES = {
   },
   'borrowed-eyes': { mural: forestMural, floor: forestFloor, bare: true, rug: false },
   yarnflow: {
-    wash: [0.3, '#f2d9d6'],
-    tile: [128, 0.36, (c, w, h) => {             // knitted stockinette: rows of little Vs
-      c.fillStyle = '#e9c8c3'; c.fillRect(0, 0, w, h);
-      const sw = w / 8, sh = h / 8;
-      for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) {
-        const x = i * sw + sw / 2, y = j * sh + sh / 2;
-        const band = j < 2 ? '#d9a9b8' : j === 5 ? '#f3dfa8' : '#f2d9d6';
-        for (const s of [-1, 1]) {
-          c.fillStyle = band; c.beginPath(); c.ellipse(x + s * sw * 0.22, y, sw * 0.24, sh * 0.5, s * -0.5, 0, 7); c.fill();
-          c.strokeStyle = 'rgba(120,70,80,0.35)'; c.lineWidth = 1.2; c.stroke();
-        }
+    wash: [0.12, '#f4ead8'],
+    tile: [256, 0.64, (c, w, h) => {             // cream wallpaper: soft oat stripes, a little sprig between
+      c.fillStyle = '#f3e8d5'; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#ece0c9'; c.fillRect(0, 0, w * 0.16, h); c.fillRect(w * 0.5, 0, w * 0.16, h);
+      c.strokeStyle = 'rgba(190,160,120,0.28)'; c.lineWidth = 1.5;
+      for (const x of [w * 0.16, w * 0.66]) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+      for (const [sx, sy] of [[w * 0.33, h * 0.27], [w * 0.83, h * 0.77]]) {
+        c.strokeStyle = 'rgba(120,150,110,0.55)'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(sx, sy + 16); c.quadraticCurveTo(sx + 3, sy, sx, sy - 14); c.stroke();
+        c.fillStyle = 'rgba(140,170,125,0.55)';
+        for (const [dx, dy, a] of [[-6, 4, -0.7], [6, -2, 0.7], [-5, -8, -0.6]]) { c.beginPath(); c.ellipse(sx + dx, sy + dy, 6, 3, a, 0, 7); c.fill(); }
+        c.fillStyle = 'rgba(214,150,125,0.6)'; c.beginPath(); c.arc(sx, sy - 16, 3.5, 0, 7); c.fill();
       }
     }],
-    floor: (c, w, h) => {                      // a crocheted floor: granny squares, stitch by stitch
-      const pal = [['#e8604c', '#e4b84f', '#7fb3a8', '#f6eedb'], ['#8f7ae8', '#f6eedb', '#dc9e9a', '#e4b84f'], ['#7fb3a8', '#e8604c', '#f3dfa8', '#93abc0'], ['#dc9e9a', '#a8b994', '#8f7ae8', '#f6eedb']];
-      c.fillStyle = '#7a6670'; c.fillRect(0, 0, w, h);          // the shadow showing through the holes
-      const s = w / 2;
-      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) grannySquare(c, i * s, j * s, s, pal[i * 2 + j]);
-    },
-    floorTile: 1.8, floorPx: 512,
-    rug: false,
+    floor: (c, w, h) => planksDraw(c, w, h, ['#c99f70', '#bf9465', '#d0a879', '#c49a6b'], 8),       // honey planks
+    floorTile: 1.6, floorPx: 512,
+    rug: false,                                // (its own round crocheted rug: SETS)
   },
   gallery: {
     wash: [0.3, '#c7b9d8'],
@@ -1949,37 +2251,57 @@ const ENV = {
     });
   },
   yarnflow(K) {
-    // pom-pom garlands strung round the room
-    const cols = [0xe8604c, 0xe4b84f, 0x7fb3a8, 0xb7a3c6, 0xdc9e9a, 0x8f7ae8];
-    for (const pts of topLoops()) bunting(K, pts, 14, (p, a, i) => {
-      const pm = K.put(new THREE.IcosahedronGeometry(0.06, 1), paint(cols[i % cols.length], { hatch: 0.6 }), p.x, p.y - 0.06, p.z);
-      pm.userData.noInk = i % 2 === 0;
+    // warm string lights round the top of the room (clear of the sign, the cubbies' plant and the curtain rod)
+    const y = 2.55, LG = new THREE.Group(); K.g.add(LG);
+    const bulbG = new THREE.SphereGeometry(0.028, 12, 10).scale(1, 1.3, 1), bulbM = new THREE.MeshBasicMaterial({ color: 0xffd68a, toneMapped: false });
+    const at = [];
+    const loops = [
+      sag([-W / 2 + 0.1, y, -D + 0.62], [-SCR_W / 2 - 0.15, y, -D + 0.62], 0.12),
+      sag([SCR_W / 2 + 0.15, y, -D + 0.62], [W / 2 - 0.1, y, -D + 0.62], 0.12),
+      sag([-W / 2 + 0.08, y, -D + 0.7], [-W / 2 + 0.08, y, -0.2], 0.15),
+      sag([W / 2 - 0.08, y, -D + 0.7], [W / 2 - 0.08, y, -0.2], 0.15),
+    ];
+    for (const pts of loops) bunting(K, pts, 16, (p) => {
+      const b = new THREE.Mesh(bulbG, bulbM); b.position.set(p.x, p.y - 0.04, p.z); LG.add(b);
+      at.push(p.x, p.y - 0.04, p.z);
     });
+    mergeStatic(LG);
+    LG.traverse(o => { o.userData.noInk = true; });
+    // their glow: one draw of soft points
+    const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(at, 3));
+    const glowT = canvasTex(64, 64, (c, w, h) => { const g = c.createRadialGradient(w / 2, h / 2, 1, w / 2, h / 2, w / 2); g.addColorStop(0, 'rgba(255,214,140,0.7)'); g.addColorStop(1, 'rgba(255,214,140,0)'); c.fillStyle = g; c.fillRect(0, 0, w, h); });
+    const pts = new THREE.Points(pg, new THREE.PointsMaterial({ map: glowT, size: 0.24, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    pts.userData.noInk = true; K.g.add(pts);
   },
 };
 
 const MINI = {
   yarnflow(K) {
-    // a drying rack with a scarf on it: every press crochets one more row
-    const x = 2.7, z = -3.2, wood = paint(0x8a6448);
-    for (const dx of [-0.42, 0.42]) { K.box(0.05, 1.6, 0.05, wood, x + dx, 0.8, z, 0.012); K.box(0.3, 0.04, 0.3, wood, x + dx, 0.02, z, 0.01); }
-    K.box(0.95, 0.05, 0.05, wood, x, 1.58, z, 0.012);
-    const cols = [0xe8604c, 0xe4b84f, 0x7fb3a8, 0x8f7ae8, 0xdc9e9a, 0xa8b994];
+    // the drying rack, a scarf on it: every press crochets one more row
+    const { x, z, yaw } = YF.rack;
+    const RG = new THREE.Group(); RG.position.set(x, 0, z); RG.rotation.y = yaw; K.g.add(RG);
+    const RS = kit(new THREE.Group()), wood = paint(0xb0845a); RG.add(RS.g);
+    for (const dx of [-0.42, 0.42]) { RS.put(yfBox(0.05, 1.6, 0.05, 0.018), wood, dx, 0.8, 0); RS.put(yfBox(0.07, 0.04, 0.34, 0.015), wood, dx, 0.02, 0); }
+    RS.put(new THREE.CylinderGeometry(0.022, 0.022, 0.84, 12), wood, 0, 1.56, 0, [0, 0, Math.PI / 2]);
+    RS.put(yfBox(0.44, 0.075, 0.075, 0.03), paint(yfCol(0, 1).getHex(), { hatch: 0.7 }), 0, 1.56, 0);      // the scarf, folded over the bar
+    ink(RS.g, 'fine'); mergeStatic(RS.g, [], { vc: true });
+    RS.g.traverse(o => { if (o.isMesh && !o.userData.isInk) o.userData.noInk = true; });
     const STITCH = ['chain', 'single crochet', 'half double crochet', 'double crochet', 'treble crochet'];
     const rows = [];
     for (let i = 0; i < 16; i++) {
-      const r = K.box(0.42, 0.07, 0.035, paint(cols[Math.floor(i / 2) % cols.length], { hatch: 0.7 }), x, 1.5 - i * 0.075, z, 0.03);
-      r.visible = i < 5; rows.push(r);
+      const r = new THREE.Mesh(yfBox(0.42, 0.075, 0.03, 0.012), paint(yfCol(Math.floor(i / 2.67), 1).getHex(), { hatch: 0.7 }));
+      r.position.set(0, 1.5 - i * 0.072, (i % 2) * 0.003); r.visible = i < 5; RG.add(r); rows.push(r);
     }
     let n = 5;
-    const hook = K.put(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 8), paint(0x8f7ae8), x + 0.26, 1.5 - n * 0.075, z + 0.05, [0, 0, 0.9]);
-    LIVE.push((t) => { hook.position.y = 1.54 - n * 0.075 + Math.sin(t * 6) * 0.01; hook.rotation.z = 0.9 + Math.sin(t * 6) * 0.15; });
-    mini(K, x, z + 0.75, 'crochet a row', (m) => {
-      if (n >= rows.length) { rows.forEach((r, i) => { r.visible = i < 1; }); n = 1; return m.say('Finished a swatch! Starting a new one with a chain.'); }
+    const hook = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 10), paint(0x9fbfba)); RG.add(hook);
+    hook.position.set(0.26, 1.5 - n * 0.072, 0.05);
+    LIVE.push((t) => { hook.position.y = 1.54 - n * 0.072 + Math.sin(t * 6) * 0.01; hook.rotation.z = 0.9 + Math.sin(t * 6) * 0.15; });
+    mini(K, x + Math.sin(yaw) * 0.75, z + Math.cos(yaw) * 0.75, 'crochet a row', (m) => {
+      if (n >= rows.length) { rows.forEach((r, i) => { r.visible = i < 1; }); n = 1; return m.say('Finished a scarf! Starting a new one with a chain.'); }
       rows[n].visible = true; n++;
       m.say(`Row ${n}: ${STITCH[n % STITCH.length]} × 12. YarnFlow plays a pattern like this stitch by stitch, in 3D.`);
     });
-    K.cols.push({ x0: x - 0.55, x1: x + 0.55, z0: z - 0.25, z1: z + 0.25 });
+    K.cols.push({ x0: x - 0.42, x1: x + 0.42, z0: z - 0.46, z1: z + 0.46 });
   },
   'borrowed-eyes'(K) {
     // look through the field camera and the whole room changes to how that animal sees
@@ -2018,7 +2340,7 @@ const MINI = {
   },
 };
 
-const ROOM_WALL = { qr: 0x6f8a84, yarnflow: 0xf2d9d6, 'borrowed-eyes': 0xdbe8dd, gallery: 0x8a6a9a };
+const ROOM_WALL = { qr: 0x6f8a84, yarnflow: 0xc9dcc1, 'borrowed-eyes': 0xdbe8dd, gallery: 0x8a6a9a };
 
 // ── one room, built the first time it's needed ──
 const LAYER = 2, DEEP = -3000;
