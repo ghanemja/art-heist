@@ -584,12 +584,12 @@ const SETS = {
       for (const s of [-1, 1]) put(WG, yfBox(1.1, 0.07, 0.07, 0.02), white, 0, 1.5 + s * 0.515, 0.035);
       put(WG, yfBox(0.028, 0.96, 0.03, 0.01), white, 0, 1.5, 0.02);
       put(WG, yfBox(1.1, 0.028, 0.03, 0.01), white, 0, 1.5, 0.02);
-      put(WG, yfBox(1.24, 0.04, 0.16, 0.015), white, 0, 0.955, 0.08);
-      const sp = pot(WG, 0.36, 0.975, 0.09, 0.05, 0.08);
+      put(WG, yfBox(1.24, 0.04, 0.16, 0.015), white, 0, 0.975, 0.08);          // (clear of the chair rail below)
+      const sp = pot(WG, 0.36, 0.995, 0.09, 0.05, 0.08);
       for (let i = 0; i < 6; i++) { const a = i * 1.05; put(sp, new THREE.SphereGeometry(0.02, 10, 8).scale(0.8, 1.2, 0.8), i % 2 ? leafB : leafA, Math.cos(a) * 0.02, 0.095, Math.sin(a) * 0.02, [Math.sin(a) * 0.6, 0, Math.cos(a) * 0.6]); }
       // a brass rod, linen curtains tied back either side
-      put(WG, new THREE.CylinderGeometry(0.012, 0.012, 2.12, 10), brass, 0, 2.12, 0.1, [0, 0, Math.PI / 2]);
-      for (const s of [-1, 1]) put(WG, new THREE.SphereGeometry(0.025, 12, 10), brass, s * 1.07, 2.12, 0.1);
+      put(WG, new THREE.CylinderGeometry(0.012, 0.012, 2.12, 10), brass, 0, 2.12, 0.13, [0, 0, Math.PI / 2]);
+      for (const s of [-1, 1]) put(WG, new THREE.SphereGeometry(0.025, 12, 10), brass, s * 1.07, 2.12, 0.13);
       const curtM = paint(0xd9a596, { side: THREE.DoubleSide });
       for (const s of [-1, 1]) {
         const cg = new THREE.PlaneGeometry(0.34, 1.5, 18, 12), cp = cg.attributes.position;
@@ -600,8 +600,8 @@ const SETS = {
           cp.setZ(i, 0.03 * Math.sin(u * Math.PI * 5) * pinch);
         }
         cg.computeVertexNormals();
-        put(WG, cg, curtM, s * 0.84, 2.11 - 0.75, 0.085);
-        const tie = put(WG, new THREE.TorusGeometry(0.1, 0.014, 8, 24), paint(0xb9806f), s * 0.867, 2.11 - 1.5 * 0.58, 0.085, [Math.PI / 2, 0, 0]);   // the tie-back, round the pinch
+        put(WG, cg, curtM, s * 0.84, 2.11 - 0.75, 0.115);                          // (its folds clear of the chair rail)
+        const tie = put(WG, new THREE.TorusGeometry(0.1, 0.014, 8, 24), paint(0xb9806f), s * 0.867, 2.11 - 1.5 * 0.58, 0.115, [Math.PI / 2, 0, 0]);   // the tie-back, round the pinch
         tie.scale.set(1, 0.42, 1);
       }
     }
