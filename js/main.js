@@ -11,7 +11,7 @@ import { createPlaza } from './plaza.js';
 import { createPark } from './park.js';
 import { createShopInteriors, shopDoorway } from './shopinterior.js';
 import { createRooms, ROOM_STYLES } from './rooms.js';
-import { createCarParks } from './carparks.js';
+import { createCarParks, layLotsOnSheet } from './carparks.js';
 import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
 import { createMeadow } from './meadow.js';
@@ -42,6 +42,7 @@ const lights = buildLights(scene);
 const clouds = buildClouds(scene);
 const town = buildTown(scene);
 buildRoadSurface(scene);          // every road is laid: draw the network as one sheet (kerb returns at every junction)
+layLotsOnSheet(town);             // the shops' car-park markings down onto that asphalt as drawn
 buildFootpaths(scene, town);      // Lantern Park's cobbles out to the kerbs and through the meadow to the rose arbour (needs the sheet)
 collectLamps([scene, ...town.shops.map(sp => sp.root)]);   // every lamp's spot, before the props are baked (the shops' own are in their frames)
 // the town's loose props (trees, lamps, benches, planters…), each baked down in place to a fill

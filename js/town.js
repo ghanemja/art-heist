@@ -11,7 +11,7 @@ import { house, tree, pine, bush, lamp, bench, rnd, pick, rbox, lathe } from './
 import { buildMuseum } from '../museum.js?v=17';
 import { planHarbour, buildHarbour } from './harbour.js';
 import { buildFarm, buildIsland } from './farm.js';
-import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, SHOP_LOT } from './buildings.js';
+import { MAIN_STREET, buildShop, stripMall, mallDrive, mallPylon, station, townBlock, capeFarSide, placeOnPlanet, batchPlaced, bookLibrary, projectShop, isProjectShop, STATION_TRACK, parkGarden, shopLot, shopLotPost, SHOP_LOT } from './buildings.js';
 import { parkedTrain } from './train.js';
 import { museumGrounds, shopApproach, APPROACH_STOP, APPROACH_Z1, MOUTH_LAP, makersRow, ROW_X, ROW, ROW_MOUTH_LAP } from './grounds.js';
 import { addKoi } from './pondwater.js';
@@ -678,6 +678,14 @@ export function buildTown(scene) {
         for (const [cx, cz, hx, hz, r] of SHOP_LOT.pads) {
           const c = F.toDir(s * cx, cz), ex = F.toDir(s * cx + 1, cz).sub(c), ez = F.toDir(s * cx, cz + 1).sub(c);
           addPad(c, ex.projectOnPlane(c), ez.projectOnPlane(c), hx, hz, r);
+        }
+        // its lamp and P sign, each upright on the ground beside the kerb (not bent in with the
+        // markings: laid on vertex by vertex where the ground falls off the lot they leaned and
+        // hovered). None stands in water (YarnFlow's lot corner hangs over its river)
+        for (const [kind, [x, z]] of Object.entries(SHOP_LOT.posts)) {
+          const pd = F.toDir(s * x, z);
+          if (isWater(pd, 0)) continue;
+          feet(add(placeOnPlanet(shopLotPost(kind), pd, yawToFace(pd, F.toDir(s * x, z + 5)), { weight: 'fine', upright: true })));
         }
         lm.lot = { side: s, root: g };
       }

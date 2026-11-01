@@ -1293,19 +1293,27 @@ export function mallDrive(edgeZ, lotEnd) {
 // stepped outline where it met the road). The lot and its apron are two rounded rectangles
 // (SHOP_LOT.pads, shop frame) drawn into the road sheet (world.js addPad, town.js): flush on
 // the ground, one kerb band, curved kerb returns where the apron meets the spur. Here: the
-// painted bays, wheel stops, a lamp and a P sign.
-export const SHOP_LOT = { x0: 3.15, x1: 8.3, z0: -2.1, z1: 7.6, aisle: 5.15, apron: [5.45, 7.6], bays: [-0.9, 1.3, 3.5], bayW: 2.2 };   // (the apron's wide enough to turn in off the spur)
+// painted bays, wheel stops and the aisle arrow. They're built at SHOP_LOT.top over the ground,
+// but the sheet drapes its own way (over the highest ground near, not the terrain under each
+// point), so once it's laid carparks.js layLotsOnSheet sets them down onto the asphalt itself —
+// laid on the terrain they hovered over it, a whole unit where a lot's corner hangs over a bank.
+// The lamp and the P sign are shopLotPost: each placed on its own, upright, on the ground beside.
+export const SHOP_LOT = { x0: 3.15, x1: 8.3, z0: -2.1, z1: 7.6, aisle: 5.15, apron: [5.45, 7.6], bays: [-0.9, 1.3, 3.5], bayW: 2.2, top: 0.09 };   // (the apron's wide enough to turn in off the spur)
 // the two paved rectangles (side +1; x mirrors with s): [cx, cz, hx, hz, corner r]
 SHOP_LOT.pads = [
   [(SHOP_LOT.x0 + SHOP_LOT.x1) / 2, (SHOP_LOT.z0 + SHOP_LOT.z1) / 2, (SHOP_LOT.x1 - SHOP_LOT.x0) / 2, (SHOP_LOT.z1 - SHOP_LOT.z0) / 2, 0.6],
   [(SHOP_LOT.x0 + 1.2) / 2, (SHOP_LOT.apron[0] + SHOP_LOT.apron[1]) / 2, (SHOP_LOT.x0 - 1.2) / 2 + 0.6, (SHOP_LOT.apron[1] - SHOP_LOT.apron[0]) / 2, 0.3],
 ];
+// the lamp and the P sign, shop frame (side +1): [x, z]
+SHOP_LOT.posts = { lamp: [SHOP_LOT.x1 + 0.34, SHOP_LOT.z0 + 0.3], sign: [SHOP_LOT.x1 + 0.4, SHOP_LOT.z1 - 0.6] };
 export function shopLot(s) {
   const K = kit(), L = SHOP_LOT, line = paint(0xf6eedb, { hatch: 0 }), kerb = paint(PAL.kerb);
-  const TOP = 0.09;                                           // just over the sheet (it lies 0.06 over the ground, on the highest ground near)
-  // the bays: lines between them, a wheel stop at the head of each
+  const TOP = L.top;
+  // the bays: lines between them, a wheel stop at the head of each. (No line along the first
+  // bay's outer side: the lot's kerb is right there, and its rounded corner cut the line's end
+  // off the asphalt, up onto the kerb)
   const bx0 = L.aisle, bx1 = L.x1 - 0.2, bayD = bx1 - bx0;
-  for (let k = 0; k <= L.bays.length; k++) {
+  for (let k = 1; k <= L.bays.length; k++) {
     const z = L.bays[0] - L.bayW / 2 + k * L.bayW;
     K.box(bayD, 0.012, 0.06, line, s * (bx0 + bayD / 2), TOP + 0.004, z, 0.004).userData.noInk = true;
   }
@@ -1315,14 +1323,18 @@ export function shopLot(s) {
   ar.moveTo(-0.09, -0.45); ar.lineTo(0.09, -0.45); ar.lineTo(0.09, 0.1); ar.lineTo(0.22, 0.1); ar.lineTo(0, 0.42); ar.lineTo(-0.22, 0.1); ar.lineTo(-0.09, 0.1); ar.closePath();
   K.put(new THREE.ShapeGeometry(ar), line, s * (L.x0 + L.aisle) / 2, TOP + 0.006, 1.6, [-Math.PI / 2, 0, 0]).userData.noInk = true;
   // (the kerb is the sheet's own kerb band, round the lot and apron as round every road)
-  // a lamp just outside the far corner's kerb (it stood inside the end bay, in front of a parked
-  // car's nose), and a P sign at the apron
-  lampPost(K, s * (L.x1 + 0.34), L.z0 + 0.3, 2.3);
-  const sg = K.sub(s * (L.x1 + 0.4), 0, L.z1 - 0.6, 0);
-  sg.foot(0, 0, 0.1);
-  sg.box(0.06, 1.5, 0.06, DARK(), 0, 0.75, 0, 0.02);
-  sg.box(0.46, 0.46, 0.05, paint(0x3f6fb0), 0, 1.6, 0, 0.04);
-  sg.flat(0.38, 0.38, signMat('P', { bg: '#3f6fb0', fg: '#f6eedb', w: 128, h: 128, font: '700 $px ' + HAND }), 0, 1.6, 0.027);
+  return K.g;
+}
+// the lot's lamp (just outside the far corner's kerb — it stood inside the end bay, in front of a
+// parked car's nose) or its P sign (at the apron), at its own origin: placed upright beside the
+// kerb by town.js. The sign's post runs on down into the ground, so it never shows a gap under it
+export function shopLotPost(kind) {
+  const K = kit();
+  if (kind === 'lamp') { lampPost(K, 0, 0, 2.3); return K.g; }
+  K.foot(0, 0, 0.1);
+  K.box(0.06, 1.8, 0.06, DARK(), 0, 0.6, 0, 0.02);
+  K.box(0.46, 0.46, 0.05, paint(0x3f6fb0), 0, 1.6, 0, 0.04);
+  K.flat(0.38, 0.38, signMat('P', { bg: '#3f6fb0', fg: '#f6eedb', w: 128, h: 128, font: '700 $px ' + HAND }), 0, 1.6, 0.027);
   return K.g;
 }
 
