@@ -2026,6 +2026,17 @@ export function roseArbour() {
   return K.g;
 }
 
+// a bench nook: where Lantern Park's east path ends (footpaths.js lays the paving). A park bench
+// facing +z (back toward the pond) with a shade tree behind it. y 0 is the ground.
+export function benchNook() {
+  const K = kit();
+  parkSeat(K, 0, 0, 0);
+  K.foot(-0.3, -0.02, 0.22); K.foot(0.3, -0.02, 0.22);
+  const t = tree({ s: 1.0 }); t.position.set(0.25, 0, -1.35); t.rotation.y = 0.7; K.g.add(t);
+  K.foot(0.25, -1.35, 0.3);
+  return K.g;
+}
+
 // ── The Library (Janelle's bookshelf project): the building IS a bookcase. A brick
 // reading-room behind a giant timber bookcase front, its shelves stacked with house-sized
 // books (spines, gilt bands, title labels, one leaning, a bookend), the door set into the

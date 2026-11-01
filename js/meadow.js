@@ -41,6 +41,8 @@ function meadowFrame() {
   const local = (d) => { const w = d.clone().normalize().multiplyScalar(R); return [w.dot(U), w.dot(V), d.clone().normalize().dot(c)]; };
   return { c, U, V, at, local };
 }
+// where the meadow is (its middle, a direction): footpaths.js sets the rose arbour there
+export const meadowCentre = () => meadowFrame().c;
 // the blob's edge: a wobbly ellipse; rho < 1 inside (it thins from ~0.6 out to ~1.12)
 const LOBES = [[2, 0.16, 0.7], [3, 0.11, 2.1], [5, 0.07, 4.0], [7, 0.04, 1.3]];
 function rhoAt(x, z) {

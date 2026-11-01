@@ -1,13 +1,13 @@
 // ─── FOOTPATHS: Lantern Park's cobbles, carried out of the park to somewhere ───
 // The park's ring round the pond and its four paths out used to stop dead on the lawn. Now they
-// are one cobbled network that goes somewhere: the east and north paths run on to road 11's
-// kerb, and so does the south one, curving round to meet it square. Each ends in a little
-// bell-mouth apron that tucks under the kerb (a dropped kerb). The west path becomes the
-// MEADOW TRAIL. It winds out across the grass and up through the wildflowers (meadow.js keeps
-// its planting off it) to a ROSE ARBOUR in the middle of the meadow (buildings.js roseArbour):
-// a round paved terrace with benches either side of the path. From there it bends back east to
-// road 11, where a painted zebra crossing takes you over to Maple Plaza's pavement. A short
-// cobbled apron crosses the verge on that side and tucks under the pavement's edge.
+// are one cobbled network that goes somewhere. Road 11 runs down the park's west side, with the
+// wildflower meadow across it. The west path runs to its kerb, a painted zebra takes you over, and
+// on the far side the MEADOW TRAIL winds north up the lawn and through the flowers (meadow.js keeps
+// its planting off it) to a ROSE ARBOUR in the meadow's middle (buildings.js roseArbour): a round
+// paved terrace with benches either side of the path. It then carries on to road 11's kerb further
+// up. The north and south paths bend round to meet road 11's kerb square, each in a bell-mouth apron
+// tucked under the kerb band (a dropped kerb). No road runs east of the park, so the east path ends
+// in a paved bench nook under a tree (buildings.js benchNook), looking back at the pond.
 //
 // One surface: the whole network is meshed from a 2D signed distance field (the ring, the
 // paths as capsule chains, the terrace, the aprons) joined with a smooth minimum. So every
@@ -24,16 +24,17 @@
 // underside. The zebra's stripes are paint draped on the road sheet (no change to ROADS: cars
 // still follow the road).
 import * as THREE from 'three';
-import { R, ROADS, PADS, ZONES, padDist, closestOnRoad, radiusAt, drawnGroundAt, SHEET, arc, yawToFace } from './world.js';
+import { R, ROADS, PADS, ZONES, padDist, radiusAt, drawnGroundAt, SHEET, arc, yawToFace } from './world.js';
 import { groundsMats, COBBLE_TILE, COBBLE_COURSES } from './grounds.js';
 import { paint } from './style.js';
-import { PARK, ARBOUR, roseArbour, placeOnPlanet } from './buildings.js';
+import { PARK, roseArbour, benchNook, placeOnPlanet } from './buildings.js';
+import { meadowCentre } from './meadow.js';
 
-const H = 0.08;                 // the marching grid's pitch (m)
+const H = 0.1;                  // the marching grid's pitch (m): fine enough for round edges on a 0.62 path
 const K_SMIN = 0.6;             // the fillet: smooth-min blend width where two paths meet
 const BORDER = 0.12;            // the border course's depth
 const TUCK = 0.24;              // a path stops this far out from the carriageway's edge (the kerb band is 0.28)
-const LIFT_OUT = 0.016, LIFT_PARK = 0.022, UNDER = 0.012;
+const LIFT_OUT = 0.016, LIFT_PARK = 0.02, UNDER = 0.012;
 const smin = (a, b, k = K_SMIN) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
 
 export function buildFootpaths(scene, town) {
@@ -55,113 +56,133 @@ export function buildFootpaths(scene, town) {
   };
   // ── the roads (and car-park pads) near enough to matter ──
   const near = ROADS.map((rd, i) => i).filter(i => { const rd = ROADS[i]; if (rd.deck) return false;
-    return rd.disc ? arc(rd.disc.c, c0) < 32 : rd.pts.some(p => arc(p, c0) < 32); });
-  const pads = PADS.filter(P => arc(P.c, c0) < 32);
-  const roadAt = (d) => {                 // signed distance past the carriageway's edge, and the road
-    let best = 1e9, bi = -1, bc = null;
-    for (const i of near) {
-      const rd = ROADS[i], c = closestOnRoad(d, rd), s = c.dist - (rd.disc ? rd.disc.r : rd.half);
-      if (s < best) { best = s; bi = i; bc = c; }
+    return rd.disc ? arc(rd.disc.c, c0) < 24 : rd.pts.some(p => arc(p, c0) < 24); });   // (the network lies within ~19 of the park)
+  const pads = PADS.filter(P => arc(P.c, c0) < 24);
+  // every near road's centre-line segments, indexed on the chart in 1-unit cells (each cell lists
+  // the segments within 3 of it): a lookup tests a handful exactly, in 3D, instead of every road
+  const segs = [], discs3 = [], cells = new Map(), CELL = 1, REACH3 = 3;
+  for (const i of near) {
+    const rd = ROADS[i];
+    if (rd.disc) { discs3.push({ i, c: rd.disc.c, r: rd.disc.r }); continue; }
+    const P = rd.pts, n = P.length, m = rd.closed ? n : n - 1;
+    for (let k = 0; k < m; k++) {
+      const a = P[k], b = P[(k + 1) % n], la = Lc(a), lb = Lc(b);
+      if (Math.min(Math.hypot(...la), Math.hypot(...lb)) > 26) continue;
+      const id = segs.length;
+      segs.push({ i, half: rd.half, A: a.clone().multiplyScalar(R), AB: b.clone().sub(a).multiplyScalar(R) });
+      for (let cx = Math.floor((Math.min(la[0], lb[0]) - REACH3) / CELL); cx <= Math.floor((Math.max(la[0], lb[0]) + REACH3) / CELL); cx++)
+        for (let cz = Math.floor((Math.min(la[1], lb[1]) - REACH3) / CELL); cz <= Math.floor((Math.max(la[1], lb[1]) + REACH3) / CELL); cz++) {
+          const key = cx * 4096 + cz; let l = cells.get(key); if (!l) cells.set(key, l = []); l.push(id);
+        }
     }
+  }
+  const _x = new THREE.Vector3(), _q = new THREE.Vector3();
+  // signed distance past the carriageway's edge (1e9 if no road within ~3), the road, and its
+  // nearest centre-line point { p (dir), tan }. (x, z): d on the chart, if the caller has them
+  const roadAt = (d, x, z) => {
+    if (x === undefined) [x, z] = Lc(d);
+    let best = 1e9, bs = null, bt = 0;
+    _x.copy(d).multiplyScalar(R);
+    for (const id of cells.get(Math.floor(x / CELL) * 4096 + Math.floor(z / CELL)) || []) {
+      const sg = segs[id], l2 = sg.AB.lengthSq();
+      const t = l2 > 1e-12 ? Math.max(0, Math.min(1, _q.copy(_x).sub(sg.A).dot(sg.AB) / l2)) : 0;
+      const s = _q.copy(sg.A).addScaledVector(sg.AB, t).distanceTo(_x) - sg.half;
+      if (s < best) { best = s; bs = sg; bt = t; }
+    }
+    let disc = null;
+    for (const D3 of discs3) { const s = arc(d, D3.c) - D3.r; if (s < best) { best = s; disc = D3; } }
     for (const P of pads) best = Math.min(best, padDist(P, d));
-    return { s: best, i: bi, c: bc };
+    if (disc) return { s: best, i: disc.i, c: { p: disc.c, tan: null } };
+    if (!bs) return { s: best, i: -1, c: null };
+    const p = bs.A.clone().addScaledVector(bs.AB, bt).normalize();
+    return { s: best, i: bs.i, c: { p, tan: bs.AB.clone().projectOnPlane(p).normalize() } };
   };
   // the road sheet's drawn height along a direction (null off the sheet)
   const rc = new THREE.Raycaster(), _o = new THREE.Vector3(), _n = new THREE.Vector3();
+  const C0 = c0.clone().multiplyScalar(R);
+  const sheetNear = SHEET.meshes.filter(m => { const b = m.geometry.boundingSphere; return !b || b.center.distanceTo(C0) < 26 + b.radius; });
   const sheetH = (d) => {
     rc.set(_o.copy(d).multiplyScalar(R + 4), _n.copy(d).negate()); rc.far = 8;
-    const h = rc.intersectObjects(SHEET.meshes, false)[0];
+    const h = rc.intersectObjects(sheetNear, false)[0];
     return h ? R + 4 - h.distance : null;
   };
   // the kerb band's top at its outer edge, opposite the point d
+  const kerbCache = new Map();
   const kerbTop = (d, rr) => {
     if (!rr.c || !rr.c.p) return null;
     const rd = ROADS[rr.i], P = rr.c.p.clone().multiplyScalar(R), V = d.clone().multiplyScalar(R);
     const u = V.sub(P).projectOnPlane(rr.c.p); if (u.lengthSq() < 1e-10) return null;
     const k = P.addScaledVector(u.normalize(), (rd.disc ? rd.disc.r : rd.half) + 0.265).normalize();
-    return sheetH(k);
+    // (kerbs change height slowly: one raycast per ~8 cm of kerb, shared by every vertex there. A raycast
+    // tests every triangle of the sheet's chunks, so per vertex it was most of the build's time)
+    const q = R / 0.08, key = Math.round(k.x * q) + ',' + Math.round(k.y * q) + ',' + Math.round(k.z * q);
+    let h = kerbCache.get(key); if (h === undefined) kerbCache.set(key, h = sheetH(k));
+    return h;
   };
 
   // ── the layout (park-local metres; +z toward town) ──
   const { RING, PATH } = PARK, HW = PATH / 2, IN = RING + 0.5, EDGE = 4.75;
   // a kerb to run a path to: the nearest point of the nearest road's centre line to `guide`, its
-  // side normal (pointing back toward the guide) and half-width
-  const kerbAt = (gx, gz) => {
-    const rr = roadAt(D(gx, gz)), rd = ROADS[rr.i];
+  // side normal (pointing back toward the guide) and half-width. null if the nearest road there is
+  // a turning circle or is far off (then that path ends where it is)
+  const kerbAt = (gx, gz, maxOff = 4) => {
+    const rr = roadAt(D(gx, gz));
+    if (!rr.c || !rr.c.p || !rr.c.tan || rr.s > maxOff) return null;
+    const rd = ROADS[rr.i];
     const p = Lc(rr.c.p), q = Lc(rr.c.p.clone().multiplyScalar(R).addScaledVector(rr.c.tan, 0.3).normalize());
     let tx = q[0] - p[0], tz = q[1] - p[1]; const tl = Math.hypot(tx, tz); tx /= tl; tz /= tl;
     let nx = -tz, nz = tx; if (nx * (gx - p[0]) + nz * (gz - p[1]) < 0) { nx = -nx; nz = -nz; }
     return { p, t: [tx, tz], n: [nx, nz], half: rd.half, road: rr.i };
   };
+  const across = (k) => k && { ...k, n: [-k.n[0], -k.n[1]] };          // the same spot, from the road's far side
   const off = (k, a, b = 0) => [k.p[0] + k.n[0] * a + k.t[0] * b, k.p[1] + k.n[1] * a + k.t[1] * b];
   // a path's run-in to a kerb: square on for the last stretch, then into the road (clipped there)
   const runIn = (k, w) => [[...off(k, k.half + 1.0), w], [...off(k, k.half + 0.45), w], [...off(k, k.half - 0.3), w]];
   // the bell-mouth: a disc clipped by the road, so it flares evenly either side even on a bend
   const apron = (k) => ({ a: off(k, k.half + 0.2), b: off(k, k.half + 0.2), r: 0.5 });
-  const kE = kerbAt(5.6, 0), kN = kerbAt(0, 4.9), kS = kerbAt(0.3, -8.6), kX = kerbAt(-3.6, 14.6);
   // an arm that leaves the park straight along its axis, then bends (an arc of radius `rad`) onto
   // a straight run square to the kerb: the corner is where the axis meets that run's line
   const bendTo = (ax, az, k, rad) => {
-    const sx = Math.abs(k.n[0]) > 1e-6 && ax === 0 ? (0 - k.p[0]) / k.n[0] : (0 - k.p[1]) / k.n[1];
+    const sx = ax === 0 ? (0 - k.p[0]) / k.n[0] : (0 - k.p[1]) / k.n[1];
     const C = off(k, sx);
     return fillet([[ax * IN, az * IN], [ax * EDGE * 0.9, az * EDGE * 0.9], C, off(k, k.half - 0.3)], rad).map(([x, z]) => [x, z, HW]);
   };
-  const A = { x: -9.07, z: 13.25 };                  // the rose arbour: the meadow's middle
-  const chains = [
-    [[IN, 0, HW], [EDGE, 0, HW], ...runIn(kE, HW)],                                        // east, straight to the kerb
-    bendTo(0, 1, kN, 1.4),                                                                // north, easing round square to the kerb
-    bendTo(0, -1, kS, 0.85),                                                              // south, bending east to meet the road square
-    // the meadow trail: west out of the park, winding up through the flowers to the arbour, then
-    // on round and back east to the crossing
-    [[-IN, 0, HW], [-EDGE, 0, HW], [-6.0, 0.4, 0.32], [-7.1, 1.7, 0.32], [-7.6, 3.6, 0.33], [-7.25, 5.6, 0.33], [-7.5, 7.6, 0.34],
-      [-8.2, 9.6, 0.34], [-8.75, 11.5, 0.34], [A.x, A.z, 0.34], [-9.38, 14.95, 0.34], [-9.2, 15.9, 0.34], [-8.3, 16.45, 0.33],
-      [-6.7, 16.45, 0.33], [-5.2, 15.7, 0.32], ...runIn(kX, 0.32)],
-  ].map((c) => sampleChain(c.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 0.05)));
-  const discs = [{ x: A.x, z: A.z, r: 1.42 }];
-  const caps = [apron(kE), apron(kN), apron(kS), apron(kX)];
+  // Road 11 runs down the park's west side; the meadow is across it, to the north-west. So: the west
+  // path runs to road 11 and a zebra takes you over; on the far side the trail winds north up the
+  // lawn (clear of the airport's ground) into the meadow, through the rose arbour in its middle, and
+  // on to road 11's kerb further up. North and south bend round to road 11's kerb too. There is no
+  // road east of the park: the east path ends at a bench nook under a tree, looking back at the pond.
+  const kW = kerbAt(-5.2, 0), kN = kerbAt(-2.0, 6.6), kS = kerbAt(0, -8.6), kT = kerbAt(-4.4, 14.5);
+  const kWf = across(kW);
+  const [ax, az] = Lc(meadowCentre());
+  const A = { x: ax, z: az };                        // the rose arbour: the meadow's middle
+  const NOOK = { x: 6.3, z: 0, r: 0.85 };            // the east path's bench nook
+  const ctrl = [
+    [[IN, 0, HW], [EDGE, 0, HW], [NOOK.x, NOOK.z, HW]],                                     // east, to the bench nook
+    kW && [[-IN, 0, HW], [-EDGE, 0, HW], ...runIn(kW, HW)],                                  // west, straight to the kerb (the crossing)
+    kN && bendTo(0, 1, kN, 1.2),                                                             // north, bending round to meet the road square
+    kS && bendTo(0, -1, kS, 0.85),                                                           // south, the same
+    // the meadow trail: from the crossing's far kerb, winding north up the lawn to the arbour, then
+    // on round to road 11's kerb
+    kWf && [...runIn(kWf, 0.32).slice(1).reverse(), [-8.25, 0.6, 0.32], [-8.3, 1.6, 0.32], [-8.3, 2.8, 0.33],   // (turning north between the kerb and a tree) [-8.0, 4.6, 0.33], [-8.05, 6.4, 0.33],
+      [-8.35, 8.3, 0.34], [-8.0, 10.1, 0.34], [A.x + 0.2, A.z - 1.6, 0.34], [A.x, A.z, 0.34], [A.x + 0.25, A.z + 1.6, 0.34],
+      [A.x + 1.3, A.z + 2.35, 0.33], [A.x + 2.8, A.z + 2.2, 0.33], ...(kT ? runIn(kT, 0.32) : [])],
+  ].filter(Boolean);
+  const chains = ctrl.map((c) => sampleChain(c.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 0.05)));
+  const discs = [{ x: A.x, z: A.z, r: 1.42 }, NOOK];
+  const caps = [kW, kWf, kN, kS, kT].filter(Boolean).map(apron);
+  // (nothing may be laid on reserved ground: other than the park and the meadow, the field stops
+  // at every zone's edge)
+  const zonesNear = ZONES.filter(zz => zz.key !== 'park' && zz.key !== 'meadow' && arc(zz.dir, c0) < 34);
+  const zoneGap = (x, z) => { const d = D(x, z); let m = 1e9; for (const zz of zonesNear) m = Math.min(m, arc(d, zz.dir) - zz.r); return m; };
   const fieldMain = (x, z) => {
     let f = Math.abs(Math.hypot(x, z) - RING) - HW;
     for (const ch of chains) f = smin(f, chainDist(ch, x, z));
     for (const c of discs) f = smin(f, Math.hypot(x - c.x, z - c.z) - c.r);
     for (const c of caps) f = smin(f, segDist(x, z, c.a, c.b) - c.r, 0.35);
+    if (f < 0.5) f = Math.max(f, 0.05 - zoneGap(x, z));
     return f;
   };
-
-  // the far side of the crossing: across the verge to Maple Plaza's pavement, if there's one there
-  // (scan out from the far kerb for the first raised paving past a strip of grass)
-  let far = null;
-  {
-    const nx = -kX.n[0], nz = -kX.n[1];
-    let grass = false;
-    for (let s = kX.half + 0.3; s < kX.half + 1.6; s += 0.04) {
-      const x = kX.p[0] + nx * s, z = kX.p[1] + nz * s, d = D(x, z), g = drawnGroundAt(d);
-      const top = standTop(d, g);
-      if (top - g < 0.015) grass = true;
-      else if (grass && top - g > 0.03) { far = { s0: kX.half + 0.28, s1: s, kerb: null, pave: top }; break; }
-    }
-    if (far) {
-      const kd = D(kX.p[0] + nx * (kX.half + 0.265), kX.p[1] + nz * (kX.half + 0.265));
-      far.kerb = sheetH(kd);
-      far.a = [kX.p[0] + nx * (kX.half - 0.3), kX.p[1] + nz * (kX.half - 0.3)];
-      far.b = [kX.p[0] + nx * (far.s1 + 0.12), kX.p[1] + nz * (far.s1 + 0.12)];
-      far.n = [nx, nz];
-      if (far.kerb == null) far = null;
-    }
-  }
-  // (the pavement's top under a direction: the highest thing drawn there, from the town's statics)
-  function standTop(d, g) {
-    rc.set(_o.copy(d).multiplyScalar(R + 4), _n.copy(d).negate()); rc.far = 8;
-    let best = g;
-    for (const h of rc.intersectObjects(town.statics.filter(o => o.position.distanceTo(_o) < 30), true)) {
-      if (h.object.userData.isInk || !h.face) continue;
-      const r = R + 4 - h.distance; if (r < g + 0.2 && r > best) best = r;
-    }
-    return best;
-  }
-  // (it stops at the edge of any reserved ground it meets: the pavement's own zone, the mall's)
-  const zonesNear = ZONES.filter(zz => zz.key !== 'park' && zz.key !== 'meadow' && arc(zz.dir, c0) < 34);
-  const zoneGap = (x, z) => { const d = D(x, z); let m = 1e9; for (const zz of zonesNear) m = Math.min(m, arc(d, zz.dir) - zz.r); return m; };
-  const fieldFar = far ? (x, z) => Math.max(segDist(x, z, far.a, far.b) - 0.42, 0.01 - zoneGap(x, z)) : null;
 
   // ── heights ──
   // on the lawn: 1 cm over it; off it: 1.6 cm over the planet as drawn (the step at the lawn's edge
@@ -169,7 +190,8 @@ export function buildFootpaths(scene, town) {
   // never more than 2 cm off the ground (a kerb on a slope stands proud, as kerbs do)
   const heightMain = (x, z, d, rr) => {
     const g = drawnGroundAt(d);
-    let h = Math.hypot(x, z) < EDGE + 0.05 ? radiusAt(d) + LIFT_PARK : g + LIFT_OUT;
+    // (the lawn's height is kept one grid cell past its rim, so no cell crossing the rim dips toward it)
+    let h = Math.hypot(x, z) < EDGE + 0.05 + H ? radiusAt(d) + LIFT_PARK : g + LIFT_OUT;
     if (rr.s < 1.0) {
       const kt = kerbTop(d, rr);
       if (kt != null) h = Math.max(h, Math.min(kt - UNDER - 0.07 * Math.max(0, rr.s - 0.28), g + 0.02));
@@ -179,10 +201,8 @@ export function buildFootpaths(scene, town) {
   // ── mesh it ──
   const out = { pos: [], uv: [], nrm: [], idx: [], keyN: [] };
   const lines = [];
-  const pieces = [{ field: fieldMain, height: heightMain, tag: 'main' }];
-  if (fieldFar) pieces.push({ field: fieldFar, height: heightMain, tag: 'far' });
   const stats = { tris: 0, loops: 0 };
-  for (const pc of pieces) meshField(pc, out, stats, { D, roadAt, chains, far });
+  meshField({ field: fieldMain, height: heightMain, tag: 'main' }, out, stats, { D, roadAt });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(out.pos, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(out.nrm, 3));
@@ -198,7 +218,7 @@ export function buildFootpaths(scene, town) {
   scene.add(group);
 
   // ── the zebra crossing: white bars painted on the road sheet ──
-  const zebra = paintZebra(kX, D, sheetH);
+  const zebra = kW ? paintZebra(kW, D, sheetH) : null;
   if (zebra) group.add(zebra);
 
   // ── the rose arbour on its terrace ──
@@ -207,19 +227,22 @@ export function buildFootpaths(scene, town) {
   scene.add(arbour); town.statics.push(arbour);
   arbour.updateWorldMatrix(true, false);
   for (const [x, z, r] of arbour.userData.foots || []) town.colliders.push({ dir: arbour.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r, soft: false });
+  // ── the bench nook at the east path's end: a bench on the paving looking back at the pond, a tree behind ──
+  const nd = D(NOOK.x, NOOK.z), nook = placeOnPlanet(benchNook(), nd, yawToFace(nd, c0), { weight: 'fine', sink: 0, drawn: true });
+  scene.add(nook); town.statics.push(nook);
+  nook.updateWorldMatrix(true, false);
+  for (const [x, z, r] of nook.userData.foots || []) town.colliders.push({ dir: nook.localToWorld(new THREE.Vector3(x, 0, z)).normalize(), r, soft: false });
 
   // ── what other systems ask: is this direction on a path? (the meadow keeps its plants off) ──
   for (const ch of chains) lines.push(ch.filter((_, i) => i % 4 === 0 || i === ch.length - 1).map(([x, z]) => D(x, z)));
-  if (far) lines.push([D(...far.a), D(...far.b)]);
   const reach = 30;
   const on = (d, pad = 0) => {
     if (arc(d, c0) > reach) return false;
     const [x, z] = Lc(d);
-    let f = fieldMain(x, z);
-    if (fieldFar) f = Math.min(f, fieldFar(x, z));
-    return f < pad && roadAt(d).s > TUCK - pad;
+    const f = fieldMain(x, z);
+    return f < pad && roadAt(d, x, z).s > TUCK - pad;
   };
-  town.footpaths = { kerbs: { kE, kN, kS, kX }, on, lines, group, mesh, arbour, zebra, chart: { D, L: Lc }, stats, far: far && { s0: far.s0, s1: far.s1, kerb: far.kerb, pave: far.pave, b: far.b }, arbourAt: ad };
+  town.footpaths = { kerbs: { kW, kN, kS, kT }, on, lines, group, mesh, arbour, nook, zebra, chart: { D, L: Lc }, stats, arbourAt: ad };
   return town.footpaths;
 }
 
@@ -290,22 +313,27 @@ function segDist(x, z, a, b) {
 // ── marching triangles over one piece's field: the cobbles' top (field + border course) and skirt ──
 function meshField({ field, height, tag }, out, stats, { D, roadAt }) {
   // the box to cover: where the field is under ~0.2 (found on a coarse pass)
+  // (kept: a fine vertex near a coarse one well clear of the paths is clear too, the field being a
+  // distance: it changes by at most the spacing, so it needn't be worked out there)
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
-  for (let x = -40; x <= 40; x += 0.4) for (let z = -40; z <= 40; z += 0.4) {
-    if (Math.hypot(x, z) > 32) continue;
-    if (field(x, z) < 0.45) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+  const CS = 0.4, CN = 111, coarse = new Float32Array(CN * CN);
+  for (let a = 0; a < CN; a++) for (let b = 0; b < CN; b++) {
+    const x = -22 + a * CS, z = -22 + b * CS, f = field(x, z); coarse[a * CN + b] = f;
+    if (f < 0.45) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
   }
+  const coarseAt = (x, z) => { const a = Math.round((x + 22) / CS), b = Math.round((z + 22) / CS); return a >= 0 && b >= 0 && a < CN && b < CN ? coarse[a * CN + b] : -1; };
   if (x0 > x1) return;
   x0 -= 0.6; z0 -= 0.6; x1 += 0.6; z1 += 0.6;
   const NX = Math.ceil((x1 - x0) / H) + 1, NZ = Math.ceil((z1 - z0) / H) + 1;
   // grid vertices: the field (clipped off the roads), lazily their direction, height and road
-  const S = new Float32Array(NX * NZ).fill(NaN), G = new Map();
+  const S = new Float32Array(NX * NZ).fill(NaN), G = new Map(), RR = new Map();   // (RR: each vertex's road, looked up once)
   const sAt = (i, k) => {
     const id = i * NZ + k; let s = S[id];
     if (Number.isNaN(s)) {
-      const x = x0 + i * H, z = z0 + k * H;
+      const x = x0 + i * H, z = z0 + k * H, fc = coarseAt(x, z);
+      if (fc > 0.8) { S[id] = fc; return fc; }                  // (≥ 0.5 here for sure: nothing to draw)
       s = field(x, z);
-      if (s < 0.3) s = Math.max(s, TUCK - roadAt(D(x, z)).s);
+      if (s < 0.3) { const rr = roadAt(D(x, z), x, z); RR.set(id, rr); s = Math.max(s, TUCK - rr.s); }
       S[id] = s;
     }
     return s;
@@ -314,7 +342,8 @@ function meshField({ field, height, tag }, out, stats, { D, roadAt }) {
     const id = i * NZ + k; let o = G.get(id);
     if (o) return o;
     const x = x0 + i * H, z = z0 + k * H, d = D(x, z);
-    o = { id: tag + id, s: sAt(i, k), x, z, d, h: height(x, z, d, roadAt(d)), g: drawnGroundAt(d) };
+    const s = sAt(i, k);
+    o = { id: tag + id, s, x, z, d, h: height(x, z, d, RR.get(id) || roadAt(d, x, z)), g: drawnGroundAt(d) };
     G.set(id, o); return o;
   };
   const onEdge = (A, B, level) => {
