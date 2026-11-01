@@ -320,7 +320,8 @@ export function createMeadow({ scene, town, player, camera, seed = 11 }) {
   reserve(F.c, SPOT.reserveR, 'meadow');
   const solids = (town.colliders || []).filter((c) => arc(c.dir, F.c) < 12);
   const ok = (d, r) => !decoBlocked(d, r) && !isWater(d, -0.05) && !LOTS.some((f) => f(d))
-    && !zoneHit(d, r, (z) => z.key === 'meadow') && !solids.some((c) => arc(d, c.dir) < c.r + r + 0.12);
+    && !zoneHit(d, r, (z) => z.key === 'meadow') && !solids.some((c) => arc(d, c.dir) < c.r + r + 0.12)
+    && !town.footpaths?.on(d, r + 0.1);                     // (the flowers part round the cobbled trail: footpaths.js)
   // drift centres inside the blob
   const clumps = [];
   for (let tries = 0; clumps.length < 28 && tries < 400; tries++) {
@@ -334,7 +335,7 @@ export function createMeadow({ scene, town, player, camera, seed = 11 }) {
   for (let x = -SPOT.a * 1.2; x <= SPOT.a * 1.2; x += STEP) for (let z = -SPOT.b * 1.2; z <= SPOT.b * 1.2; z += STEP) {
     const px = x + (Rn() - 0.5) * STEP * 0.9, pz = z + (Rn() - 0.5) * STEP * 0.9, rho = rhoAt(px, pz);
     const keep = 1 - THREE.MathUtils.smoothstep(rho, 0.55, 1.12);
-    if (Rn() > keep * 0.46) continue;
+    if (Rn() > keep * 0.62) continue;                       // (a touch denser than it was: the trail and the arbour's terrace take its middle)
     let best = null, bw = 0;
     for (const c of clumps) { const d = Math.hypot(px - c.x, pz - c.z) / c.r; if (d < 1.25) { const w = (1.25 - d) * (0.6 + Rn()); if (w > bw) { bw = w; best = c; } } }
     let kind, col;

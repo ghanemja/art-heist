@@ -15,6 +15,7 @@ import { createCarParks } from './carparks.js';
 import { createTelescope } from './overlook.js';
 import { createNorthLife } from './north.js';
 import { createMeadow } from './meadow.js';
+import { buildFootpaths } from './footpaths.js';
 import { createDoorCop } from './doorcop.js';
 import { createMinimap } from './minimap.js';
 
@@ -40,6 +41,7 @@ const lights = buildLights(scene);
 const clouds = buildClouds(scene);
 const town = buildTown(scene);
 buildRoadSurface(scene);          // every road is laid: draw the network as one sheet (kerb returns at every junction)
+buildFootpaths(scene, town);      // Lantern Park's cobbles out to the kerbs and through the meadow to the rose arbour (needs the sheet)
 collectLamps([scene, ...town.shops.map(sp => sp.root)]);   // every lamp's spot, before the props are baked (the shops' own are in their frames)
 // the town's loose props (trees, lamps, benches, planters…), each baked down in place to a fill
 // and a hull — before anything reads the ground, so the walk rays index the baked meshes
