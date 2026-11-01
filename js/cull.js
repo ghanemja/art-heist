@@ -117,6 +117,11 @@ function lodLevels(g) {
   const grp = new Uint32Array(n);
   if (SI) for (let i = 0; i < n; i++) { let b = 0, w = -1; for (let k = 0; k < 4; k++) if (SW[i * 4 + k] > w) { w = SW[i * 4 + k]; b = SI[i * 4 + k]; } grp[i] = b + 1; }
   else if (RT) for (let i = 0; i < n; i++) { let h = 0; for (let k = 0; k < RS; k++) h = (h * 31 + Math.round(RT[i * RS + k] * 400)) | 0; grp[i] = (h >>> 0) % 4093 + 1; }
+  // (and its part: vertices only collapse onto ones joined to them by triangles — two parts that
+  // touch, a paint over a wall, a lawn under its cobbles, a fill's parts under one hull, never smear
+  // into each other, and a hull simplifies exactly as its fills do. By colour instead left a
+  // smoothly shaded lawn half collapsed: long overlapping slivers, as spikes)
+  if (N) { const comp = partsOf(ni, n, at); for (let i = 0; i < n; i++) if (used[i]) grp[i] = (Math.imul(grp[i], 0x9e3779b1) + comp[i]) | 0; }
   const levels = [], cl = new Int32Array(n), rep = new Int32Array(n), ev = new Float32Array(n);
   // the vertices on an edge only one triangle uses — the rim of an open part, or a seam where the
   // shape was split (a hard edge, a change of paint): one of those sliding across its rim, even
@@ -148,9 +153,8 @@ function lodLevels(g) {
       // (a rim vertex: its move across its rim — along it, the outline stays where it was)
       if (tx === tx) ev[i] = tx || ty || tz ? Math.hypot(dy * tz - dz * ty, dz * tx - dx * tz, dx * ty - dy * tx) : Math.hypot(dx, dy, dz);
       else ev[i] = Math.max(Math.abs(dx * N[i * 3] + dy * N[i * 3 + 1] + dz * N[i * 3 + 2]), Math.abs(dx * N[j * 3] + dy * N[j * 3 + 1] + dz * N[j * 3 + 2]));
-      // (a vertex taking another colour smears paint across the face — a lawn's shading, a painted
-      // stripe — however flat it lies: that counts as the worst case. Grouping vertices by colour
-      // instead left a smoothly shaded lawn half collapsed: long overlapping slivers, as spikes)
+      // (a vertex taking another colour smears paint across its face — a painted stripe, a lawn's
+      // shading — however flat it lies: that counts as the worst case)
       if (C && Math.max(Math.abs(C[i * CS] - C[j * CS]), Math.abs(C[i * CS + 1] - C[j * CS + 1]), Math.abs(C[i * CS + 2] - C[j * CS + 2])) > CD) ev[i] = Infinity; }
     const out = new IDX(ni); let k = 0;
     const off = ch ? new Uint32Array(ch.n + 1) : null, err = ch ? new Float32Array(ch.n) : null;
@@ -186,6 +190,14 @@ function lodLevels(g) {
   }
   if (ch) return ch;                                                  // (even with no simpler version: its patches still drop out of view)
   return levels;
+}
+// partsOf: each vertex's connected part (union–find over the triangles), as its root vertex
+function partsOf(ni, n, at) {
+  const pa = new Int32Array(n); for (let i = 0; i < n; i++) pa[i] = i;
+  const find = (x) => { while (pa[x] !== x) { pa[x] = pa[pa[x]]; x = pa[x]; } return x; };
+  for (let t = 0; t < ni; t += 3) { const a = find(at(t)), b = find(at(t + 1)), c = find(at(t + 2)); pa[b] = a; pa[c === b ? a : c] = a; }
+  for (let i = 0; i < n; i++) pa[i] = find(i);
+  return pa;
 }
 // edgeVerts: the vertices of every edge just one triangle uses (each edge a sorted key; a key
 // that occurs once is a rim)
@@ -332,11 +344,11 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         if (huge) _wide.add(q.geometry);
         if (huge && !_chunky.has(q.geometry)) return;
         if (_lod.get(q.geometry) === null) { if (q.raycast !== THREE.Mesh.prototype.raycast || o.userData.noGround) _rayless.add(q.geometry); else _rayless.delete(q.geometry); }
-        // (measured error only for solid inked things — buildings, props, their hulls. Ground layers
-        // lie ~0.01 over each other — lawn under cobbles, verge under road — and planting sways: a
-        // chord there that's under a pixel still lets the layer below poke through. Those keep the
-        // worst case)
-        const g = q.geometry, solid = !g.attributes.sway && !g.attributes.aRoot && !q.isSkinnedMesh &&
+        // (measured error only for solid inked things — buildings, props, planting, their hulls.
+        // Ground layers lie ~0.01 over each other — lawn under cobbles, verge under road: a chord
+        // there that's under a pixel still lets the layer below poke through — and people bend:
+        // those keep the worst case)
+        const g = q.geometry, solid = !q.isSkinnedMesh &&
           (q.userData.isInk || (q.parent?.children || []).some(h => h !== q && h.userData.isInk && h.geometry?.attributes?.position === g.attributes.position) || q.children.some(h => h.userData.isInk));
         lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person,
           u: _scale.get(q.geometry), tol: !solid ? 1.0 : q.userData.isInk ? LOD_TOL_INK : LOD_TOL, measured: solid });
