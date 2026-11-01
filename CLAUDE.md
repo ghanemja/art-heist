@@ -74,7 +74,9 @@ texture size or triangles first, not the smoothness.
 - **Run the smoke test before pushing anything that touches `js/`:** `python3 -m http.server 8123 &`,
   then `node scripts/smoke.mjs`. It fails on any console error, any missing file, the world not
   building, walking or the museum room not working. For visual changes, also compare
-  `scripts/perf-measure.mjs` screenshots against `main`'s, and look at them.
+  `scripts/perf-measure.mjs` screenshots against `main`'s, and look at them. Headless Chromium
+  gets light mode (`js/quality.js`), so run the smoke test with `QUERY='&quality=high'` too;
+  `perf-measure.mjs` pins the full drawing unless given `"&quality=low"` (check that one too).
 - **Bump the cache token** on every edit to `js/`, or browsers keep stale modules:
   `js/main.js?cb=NN` in `index.html`. The import map gives every `js/` module the same token, and
   `check-modules.mjs` syncs them. Pick a number no other branch has shipped.

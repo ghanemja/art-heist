@@ -16,20 +16,24 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { R, ROADS, arc, slerpDir, standAt, alignToSurface, yawToFace, onRoad, isWater, nearestRoad } from './world.js';
 import { paint, ink, blobShadow } from './style.js';
+import { QUALITY } from './quality.js';
 
 const SCALE = 0.66;                 // their metres → the town's units: adults come out within ~5% of the critic's ≈1.2
 const NEAR = 22;                    // farther than this from the camera's spot: not drawn, not animated
+// (light mode, quality.js: only the `lite` half of the cast comes out — two walkers, a cyclist, two
+// bystanders. Switched to light mode with the rest already out, each of those goes home the next
+// time they're out of sight, never in front of you)
 const CAST = [
-  { id: 'wren', role: 'walk', pitch: 360, line: 'I was on my DAILY STEPS!' },
+  { id: 'wren', lite: true, role: 'walk', pitch: 360, line: 'I was on my DAILY STEPS!' },
   { id: 'yara', role: 'walk', pitch: 380, line: 'Eyes on the ROAD!' },
   { id: 'ada', role: 'walk', pitch: 350, line: 'I just had my hair done!' },
-  { id: 'kai', role: 'walk', pitch: 170, line: 'Honestly. This TOWN.' },
-  { id: 'teo', role: 'bike', pitch: 190, line: 'Bike lane! BIKE LANE!' },
+  { id: 'kai', lite: true, role: 'walk', pitch: 170, line: 'Honestly. This TOWN.' },
+  { id: 'teo', lite: true, role: 'bike', pitch: 190, line: 'Bike lane! BIKE LANE!' },
   { id: 'zara', role: 'bike', pitch: 400, line: 'That was a new bike!' },
   { id: 'dev', role: 'bike', pitch: 160, line: 'I had right of way!' },
-  { id: 'june', role: 'stand', act: 'coffee', pitch: 370, line: 'My LATTE!' },
+  { id: 'june', lite: true, role: 'stand', act: 'coffee', pitch: 370, line: 'My LATTE!' },
   { id: 'lev', role: 'stand', act: 'read', pitch: 210, line: 'I was on the crossword!' },
-  { id: 'iris', role: 'stand', act: 'phone', pitch: 390, line: 'I was MID-TEXT!' },
+  { id: 'iris', lite: true, role: 'stand', act: 'phone', pitch: 390, line: 'I was MID-TEXT!' },
 ];
 
 // ── the body under the clothes is never seen — but on a bent hip or knee (pedalling, a
@@ -241,6 +245,7 @@ export function createCitizens({ scene, town, game, player, camera }) {
     const spots = planSpots(town, avoid, covered, inMain, CAST.filter((c) => c.role === 'stand').length, walks);
     let wi = 0, bi = 0, si = 0;
     for (const C of CAST) {
+      if (QUALITY.low && !C.lite) continue;
       const g = await load(`./models/citizens/${C.id}.glb`);
       const root = new THREE.Group(); root.userData.noGround = true;
       const body = g.scene; body.scale.setScalar(SCALE); root.add(body); root.add(blobShadow(0.28));
@@ -346,7 +351,8 @@ export function createCitizens({ scene, town, game, player, camera }) {
     for (const c of list) {
       const busy = game.bumps.busy?.(c.root);
       const far = arc(focus, c.dir) > api.near;
-      c.root.visible = !night && (!far || busy);
+      if (QUALITY.low && !c.lite && !busy && (far || night || !c.root.visible)) c.gone = true;   // (light mode: home, unseen)
+      c.root.visible = !c.gone && !night && (!far || busy);
       if (!c.root.visible) continue;
       if (busy) {                                              // knocked over: walk back once they're up
         c.play(game.bumps.body(c.root)?.state === 'back' ? 'walk' : 'idle', 0.15);

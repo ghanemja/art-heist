@@ -3,7 +3,7 @@
 // Headless perf + look check for the main app (see FEATURE_LOG 'feeling heavy'). Usage:
 //   python3 -m http.server 8123 &            (from the repo root; PORT=<n> for another checkout)
 //   (cd /tmp && npm pack three@0.160.0 && tar xzf three-0.160.0.tgz)   → THREE_DIR=/tmp/package serves three locally
-//   node scripts/perf-measure.mjs <label> ["&tol=2"]    → out/<label>.json + out/shots/<label>-<spot>.png
+//   node scripts/perf-measure.mjs <label> ["&tol=2"]   (full drawing by default; "&quality=low" for light mode)    → out/<label>.json + out/shots/<label>-<spot>.png
 // Env: SHOTS=0 (no screenshots), CLOSE=0 (skip close-ups), ONLY=1 (park close-up only), PROBE=<file.js> (evaluated at each spot).
 // Per spot: fill/ink triangles and draws per frame (tallied in renderBufferDirect), ms/frame, the culler's ms/frame while turning.
 import { createRequire } from 'module';
@@ -14,7 +14,8 @@ import fs from 'fs';
 import path from 'path';
 const SP = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'out');
 fs.mkdirSync(SP, { recursive: true });
-const label = process.argv[2] || 'run', extra = process.argv[3] || '';
+// (the full drawing unless asked: headless SwiftShader would otherwise choose light mode — quality.js)
+const label = process.argv[2] || 'run', extra0 = process.argv[3] || '', extra = /quality=/.test(extra0) ? extra0 : extra0 + '&quality=high';
 const shots = process.env.SHOTS !== '0';
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 700 } });

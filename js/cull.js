@@ -20,6 +20,7 @@
 // test layers, so the walk rays still find the ground).
 import * as THREE from 'three';
 import { R } from './manifest.js';
+import { QUALITY } from './quality.js';
 
 const P = R - 0.8;                    // a ball safely inside the lowest ground and the sea
 const HIDE = 31;                      // the layer a hidden thing is parked on
@@ -33,6 +34,11 @@ const _c = new THREE.Vector3(), _box = new THREE.Box3(), _s = new THREE.Sphere()
 // nearest point, is under LOD_TOL pixels (√3 × grid: the furthest a vertex can move)
 const LOD_CELLS = [0.003, 0.0065, 0.014, 0.03, 0.065, 0.14];
 const LOD_TOL = 1.0;                  // px (device pixels): a vertex moved less than this (the worst case) can't be seen
+// light mode (quality.js): a coarser LOD (QUALITY.lodTol px) where nothing's inked — the line is
+// under 2 px wide, so a coarser shape under a drawn line would eat it — and no ink on what's small on screen — a thing under QUALITY.inkPx radius (CSS px) draws no hull,
+// and a big static's merged ink isn't drawn where a patch's width (CHUNK) would be under QUALITY.inkPatchPx
+// on screen at its nearest point (its fill still is)
+const tol = (bare) => (bare ? QUALITY.lodTol : LOD_TOL);   // (bare: light mode, and no ink drawn on it)
 let LOD_NOW = /[?&]lodnow=1/.test(globalThis.location?.search || '');     // (dev: ?lodnow=1, or culler.lodNow = true, rebuilds a patched mesh the moment it changes — to compare)
 const LOD_MIN_TRIS = 240;             // a mesh smaller than this isn't worth simplifying
 const LOD_KEEP = 0.8;                 // a version is kept only if it's at most this share of the last one
@@ -275,9 +281,9 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         if (huge) _wide.add(q.geometry);
         if (huge && !_chunky.has(q.geometry)) return;
         if (_lod.get(q.geometry) === null) { if (q.raycast !== THREE.Mesh.prototype.raycast || o.userData.noGround) _rayless.add(q.geometry); else _rayless.delete(q.geometry); }
-        lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person });
+        lods.push({ m: q, hi: q.geometry, cur: -1, levels: null, dead: false, ws: Math.max(ws.x, ws.y, ws.z), skin: q.isSkinnedMesh || person, ink: !!q.userData.isInk });
       });
-      roots.set(o, { r, off, person, skinned, huge, detail: new Set(detail), hidden: false, lod: false, lods });
+      roots.set(o, { r, off, person, skinned, huge, detail: new Set(detail), hidden: false, lod: false, thin: false, lods });
     }
     for (const o of roots.keys()) if (o.parent !== scene) roots.delete(o);
     n = scene.children.length;
@@ -286,7 +292,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
     o.traverse(q => {
       if (!(q.isMesh || q.isSprite || q.isLine || q.isPoints)) return;
       if (q.userData._lay == null) q.userData._lay = q.layers.mask;              // its own layers, to give back
-      q.layers.mask = st.hidden || (st.lod && st.detail.has(q)) ? 1 << HIDE : q.userData._lay;
+      q.layers.mask = st.hidden || (st.lod && st.detail.has(q)) || (st.thin && q.userData.isInk) ? 1 << HIDE : q.userData._lay;
     });
   };
   // each mesh draws the coarsest version whose grid is under LOD_TOL px at its nearest point
@@ -321,8 +327,15 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       if (hz.ok && d > hz.tang + r && Math.acos(THREE.MathUtils.clamp(-_w.dot(eye) / (d * hz.el), -1, 1)) + Math.asin(Math.min(1, r / d)) < hz.alpha) k = -2;   // behind the planet
       else if (!(cc[c] === -2 ? hz.near : hz.wide).intersectsSphere(_s)) k = -2;    // out of view (shown a little before it comes in, kept a little after)
       else {
-        const px = 1.7320508 * fd / Math.max(d - r, 0.05); k = -1;
-        for (let i = lv.length - 1; i >= 0; i--) if (lv[i].cw * px <= (i > cc[c] ? LOD_TOL / 1.15 : LOD_TOL)) { k = i; break; }
+        // (light mode: past where a patch's width is under inkPatchPx on screen — by distance: a patch's
+        // own size says nothing — its ink isn't drawn, and its fill may be coarser)
+        const bare = QUALITY.low && CHUNK * hz.f / Math.max(d - r, 0.05) < (L.bare?.[c] ? QUALITY.inkPatchPx * 1.15 : QUALITY.inkPatchPx);
+        if (QUALITY.low) (L.bare ||= new Uint8Array(n))[c] = bare ? 1 : 0;
+        if (bare && L.ink) k = -2;
+        else {
+          const px = 1.7320508 * fd / Math.max(d - r, 0.05); k = -1;
+          for (let i = lv.length - 1; i >= 0; i--) if (lv[i].cw * px <= (i > cc[c] ? tol(bare) / 1.15 : tol(bare))) { k = i; break; }
+        }
       }
       if (k !== cc[c]) { cc[c] = k; dirty = true; }
       // (a patch in the view itself that the index doesn't hold yet can't wait; everything else —
@@ -365,7 +378,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       else { const bs = L.hi.boundingSphere; _w.copy(bs.center).applyMatrix4(m.matrixWorld); dn = _w.distanceTo(eye) - bs.radius * L.ws; }
       const px = 1.7320508 * fd / Math.max(dn, 0.05);                 // px per world unit of grid
       let k = -1;
-      for (let i = levels.length - 1; i >= 0; i--) if (levels[i].cw * px <= (i > L.cur ? LOD_TOL / 1.15 : LOD_TOL)) { k = i; break; }
+      for (let i = levels.length - 1; i >= 0; i--) if (levels[i].cw * px <= (i > L.cur ? tol(st.thin) / 1.15 : tol(st.thin))) { k = i; break; }
       if (k !== L.cur) { L.cur = k; m.geometry = k < 0 ? L.hi : levels[k].geo; }
     }
   }
@@ -429,7 +442,7 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
       const fd = f * (renderer ? renderer.getPixelRatio() : Math.min(devicePixelRatio || 1, 1.75));   // (in device pixels, as drawn: the adaptive resolution's)
       const behindOK = el > P + 0.01;
       const alpha = behindOK ? Math.asin(P / el) : 0, tang = behindOK ? Math.sqrt(el * el - P * P) : 0;
-      hz.ok = behindOK; hz.alpha = alpha; hz.tang = tang; hz.el = el;
+      hz.f = f; hz.ok = behindOK; hz.alpha = alpha; hz.tang = tang; hz.el = el;
       camera.updateMatrixWorld();
       // (a cut — the talk camera, a teleport — puts everything right at once; only a steady turn
       // or walk spreads its rebuilds over the next frames)
@@ -454,7 +467,8 @@ export function createCuller(scene, camera, { avatar = null, renderer = null } =
         // ball says when they're out (a little past the edge of the view, back a little before it)
         if (!hide && st.skinned) { _s.center.copy(_c).add(e); _s.radius = st.r; hide = !(st.hidden ? hz.near : hz.wide).intersectsSphere(_s); }
         const lod = st.person && 1.2 / d * f < LOD_PX;
-        if (hide !== st.hidden || lod !== st.lod) { st.hidden = hide; st.lod = lod; apply(o, st); }
+        const thin = QUALITY.low && st.r / d * f < (st.thin ? QUALITY.inkPx * 1.15 : QUALITY.inkPx);   // (light mode: small on screen, no ink)
+        if (hide !== st.hidden || lod !== st.lod || thin !== st.thin) { st.hidden = hide; st.lod = lod; st.thin = thin; apply(o, st); }
         if (!hide && st.lods.length) pick(st, d, e, fd, hz);
       }
       const now = performance.now(); if (lastT) frameMs += (Math.min(1000, now - lastT) - frameMs) * 0.2; lastT = now;
