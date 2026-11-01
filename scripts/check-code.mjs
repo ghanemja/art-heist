@@ -42,11 +42,17 @@ for (const [f, s] of [...Object.entries(src), ['index.html', html]]) {
 // the citizens' models are named from their ids (citizens.js: <id>.glb, <id>-bike.glb, <id>-<act>.glb)
 {
   const s = src['js/citizens.js'] || '';
-  for (const m of s.matchAll(/\{\s*id:\s*'([\w-]+)'\s*,\s*role:\s*'(\w+)'(?:\s*,\s*act:\s*'(\w+)')?/g)) {
-    note(`models/citizens/${m[1]}.glb`, 'js/citizens.js');
-    if (m[2] === 'bike') note(`models/citizens/${m[1]}-bike.glb`, 'js/citizens.js');
-    if (m[3]) note(`models/citizens/${m[1]}-${m[3]}.glb`, 'js/citizens.js');
+  // (each cast entry read whole, so the order of its fields doesn't matter)
+  let cast = 0;
+  for (const m of s.matchAll(/\{\s*id:\s*'([\w-]+)'[^{}]*\}/g)) {
+    const id = m[1], role = m[0].match(/\brole:\s*'(\w+)'/)?.[1], act = m[0].match(/\bact:\s*'(\w+)'/)?.[1];
+    if (!role) continue;
+    cast++;
+    note(`models/citizens/${id}.glb`, 'js/citizens.js');
+    if (role === 'bike') note(`models/citizens/${id}-bike.glb`, 'js/citizens.js');
+    if (act) note(`models/citizens/${id}-${act}.glb`, 'js/citizens.js');
   }
+  if (!cast) errors.push('js/citizens.js: no cast entries found — update scripts/check-code.mjs');
   if (!/\$\{C\.id\}\.glb/.test(s)) errors.push('js/citizens.js: the citizen model path pattern changed — update scripts/check-code.mjs');
 }
 for (const [p, where] of named) if (!existsSync(p)) errors.push(`${where}: names ${p} — no such file`);
