@@ -10,10 +10,43 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { R, arc, radiusAt, surfH, deflect, isWater, onRoad, resample, addBlocker } from './world.js';
 import { PAL, paint, ink } from './style.js';
 
-export const RAIL = { pts: [], stationIdx: new Set() };
+export const RAIL = { pts: [], stationIdx: new Set(), lines: [] };   // lines: branch lines off the loop ({ pts, closed: false, ... })
 export function onRail(d, pad = 0) {
   for (const p of RAIL.pts) if (arc(d, p) < 0.8 + pad) return true;
+  for (const L of RAIL.lines) for (const p of L.pts) if (arc(d, p) < 0.8 + pad) return true;
   return false;
+}
+
+// ── a branch line: off the loop, out to `end` (a direction), around every reserved zone ──
+// It leaves the loop where the loop passes nearest the destination (not on the station's own
+// straight), tangent to it for a few metres, then turns out toward `end`. Returns the branch
+// ({ pts, closed: false, junction: the loop index it leaves at, out: +1/−1 the loop direction
+// it leaves along }); RAIL.lines holds it (onRail sees it).
+export function railBranch(end, { except = null } = {}) {
+  const L = RAIL.pts, n = L.length;
+  let ji = -1, best = 1e9;
+  for (let i = 0; i < n; i++) { if (RAIL.stationIdx.has(i)) continue; const a = arc(L[i], end); if (a < best) { best = a; ji = i; } }
+  const J = L[ji], tl = L[(ji + 1) % n].clone().sub(L[(ji - 1 + n) % n]).projectOnPlane(J).normalize();
+  const toward = end.clone().sub(J).projectOnPlane(J).normalize(), out = tl.dot(toward) >= 0 ? 1 : -1;
+  const t0 = tl.clone().multiplyScalar(out);
+  // out along the loop, easing off it, then on to the end
+  const pts = [J.clone()];
+  for (let k = 1; k <= 6; k++) { const ang = Math.min(1, k / 6) * 0.5, t = t0.clone().applyAxisAngle(J, 0).lerp(toward, ang).normalize(); pts.push(expMap(pts[pts.length - 1], t.projectOnPlane(pts[pts.length - 1]).normalize(), 0.6)); }
+  const a = pts[pts.length - 1], rest = arc(a, end), m = Math.max(4, Math.round(rest / 1.2));
+  for (let k = 1; k <= m; k++) pts.push(a.clone().lerp(end, k / m).normalize());
+  const lock = (i) => i <= 3 || i === pts.length - 1;
+  for (let pass = 0; pass < 4; pass++) {
+    deflect(pts, { keep: lock, clear: 2.2, except });
+    for (let sm = 0; sm < 2; sm++) {
+      const o = pts.map(p => p.clone());
+      for (let i = 1; i < pts.length - 1; i++) if (!lock(i)) o[i] = pts[i].clone().multiplyScalar(2).add(pts[i - 1]).add(pts[i + 1]).normalize();
+      for (let i = 0; i < pts.length; i++) pts[i] = o[i];
+    }
+  }
+  deflect(pts, { keep: lock, clear: 2.2, except });
+  const br = { pts: resample(pts, 0.5, false), closed: false, junction: ji, out };
+  RAIL.lines.push(br);
+  return br;
 }
 
 // a point `r` along the surface from `o`, heading along the unit tangent `t`
@@ -95,17 +128,20 @@ function groundR(d) {
   }
   return r;
 }
-export function buildRailway(scene) {
-  const P = RAIL.pts, n = P.length, skip = RAIL.stationIdx;
+// (line: the loop by default; a branch is { pts, closed: false }: its last segment isn't joined
+// back to its first, and its ends take their tangent from their one neighbour)
+export function buildRailway(scene, line = { pts: RAIL.pts, closed: true, skip: RAIL.stationIdx }) {
+  const P = line.pts, n = P.length, skip = line.skip || new Set(), closed = line.closed !== false;
   const frames = P.map((d, i) => {
-    const t = P[(i + 1) % n].clone().sub(P[(i - 1 + n) % n]).projectOnPlane(d).normalize();
+    const a = closed ? P[(i - 1 + n) % n] : P[Math.max(0, i - 1)], b = closed ? P[(i + 1) % n] : P[Math.min(n - 1, i + 1)];
+    const t = b.clone().sub(a).projectOnPlane(d).normalize();
     const s = new THREE.Vector3().crossVectors(t, d).normalize();      // lateral (right of travel)
     return { d, t, s };
   });
   // the trestle: wherever the line (or its bank) would be in the water, and a couple of
   // samples either side, it rides a timber deck held level with the shore
   const wetI = P.map((d, i) => [0, 0.9, -0.9].some(u => isWater(d.clone().multiplyScalar(R).addScaledVector(frames[i].s, u).normalize(), -0.12)));
-  const bridge = P.map((_, i) => [-2, -1, 0, 1, 2].some(k => wetI[(i + k + n) % n]));
+  const bridge = P.map((_, i) => [-2, -1, 0, 1, 2].some(k => closed ? wetI[(i + k + n) % n] : wetI[Math.min(n - 1, Math.max(0, i + k))]));
   const DECK = R + 0.45;
   // a point: lateral offset u, height y above the ground under it (or above the deck)
   const pt = (i, u, y) => {
@@ -114,7 +150,7 @@ export function buildRailway(scene) {
     const base = bridge[i] ? Math.max(groundR(dir), DECK) : groundR(dir);
     return dir.multiplyScalar(base - SINK + y);
   };
-  const live = (i) => !skip.has(i) || !skip.has((i + 1) % n);           // segment i→i+1 drawn here
+  const live = (i) => (closed || i < n - 1) && (!skip.has(i) || !skip.has((i + 1) % n));   // segment i→i+1 drawn here
   const onDeck = (i) => bridge[i] && bridge[(i + 1) % n];
   const crossing = P.map(d => onRoad(d, 0.35));
   // ballast: a low trapezoid bank
@@ -145,7 +181,7 @@ export function buildRailway(scene) {
     let gone = 0;
     for (let i = 0; i < n; i++) {
       if (!onDeck(i)) continue;
-      gone += arc(P[i], P[(i + 1) % n]); if (gone < 1.4) continue; gone = 0;
+      gone += arc(P[i], P[Math.min(n - 1, i + 1) % n]); if (gone < 1.4) continue; gone = 0;
       const { d, t, s } = frames[i], top = pt(i, 0, 0.02).length();
       for (const u of [-0.58, 0.58]) {
         const dir = d.clone().multiplyScalar(R).addScaledVector(s, u).normalize(), bed = R + Math.min(surfH(dir), 0) - 0.3;
@@ -170,7 +206,7 @@ export function buildRailway(scene) {
   let acc = 0;
   for (let i = 0; i < n; i++) {
     if (!live(i)) continue;
-    acc += arc(P[i], P[(i + 1) % n]);
+    acc += arc(P[i], P[Math.min(n - 1, i + 1) % n]);
     if (acc < 0.42) continue;
     acc = 0;
     const { t, s } = frames[i];
@@ -190,13 +226,13 @@ export function buildRailway(scene) {
   const plank = new THREE.BoxGeometry(0.5, 0.05, 1.6);
   for (const r of xs) {
     for (let k = r[0] - 1; k <= r[r.length - 1] + 1; k++) {
-      const i = (k + n) % n, { t, s } = frames[i];
+      const i = closed ? (k + n) % n : Math.min(n - 1, Math.max(0, k)), { t, s } = frames[i];
       const c = pt(i, 0, 0.22), up = c.clone().normalize();
       boards.push(plank.clone().applyMatrix4(m4.makeBasis(t, up, s).setPosition(c)));
     }
     // crossbucks: on the road's verge, diagonally opposite, facing the traffic
     for (const [end, side] of [[r[0] - 3, 1], [r[r.length - 1] + 3, -1]]) {
-      const i = (end + n) % n, { t, s } = frames[i];
+      const i = closed ? (end + n) % n : Math.min(n - 1, Math.max(0, end)), { t, s } = frames[i];
       const base = pt(i, side * 1.25, 0), up = base.clone().normalize();
       const M = new THREE.Matrix4().makeBasis(s, up, t.clone().negate()).setPosition(base);
       const post = new THREE.CylinderGeometry(0.04, 0.05, 1.5, 8).translate(0, 0.75, 0);
@@ -215,7 +251,9 @@ export function buildRailway(scene) {
   for (const m of group.children) m.geometry.computeBoundingSphere();
   ink(group, 'fine');
   scene.add(group);
-  return { group, crossings: xs.length };
+  // the rails' top, from the planet's centre, at each sample (a train runs on it)
+  line.topR = P.map((_, i) => pt(i, 0, 0.25).length());
+  return { group, crossings: xs.length, topR: line.topR };
 }
 // smooth normals across shared positions (each segment repeats its end ring)
 function mergeNormals(g) {

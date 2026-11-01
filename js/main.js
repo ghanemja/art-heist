@@ -157,6 +157,8 @@ function loop() {
     plaza.update(dt);
     park.update(dt);
     northLife.update(dt);
+    town.farm?.update(dt, player.st.dir);          // the farm's cows and sheep amble and graze
+    town.freight?.update(dt);                      // the goods train: farm produce to town and back
     shopInside.update(dt, t, player);
   }
   if (!rooms.inside) meadow.update(dt);          // the meadow's stomp trail + "stomp!" words

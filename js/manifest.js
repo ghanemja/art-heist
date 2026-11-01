@@ -12,16 +12,17 @@
 // squeezes the open country beyond). ?R=<n> previews another size.
 export const R_PLAN = 40;
 const R_ASK = typeof location !== 'undefined' ? +new URLSearchParams(location.search).get('R') : 0;
-export const R = R_ASK >= 24 && R_ASK <= 40 ? R_ASK : 32;
+export const R = R_ASK >= 24 && R_ASK <= 40 ? R_ASK : 28;
 
 export default {
   R,
   // geography: shaped features, not noise
   terrain: {
     plateau: { at: [12, 4], r: 21 },          // downtown + boulevard sit on level ground
-    sea: { at: [-62, 14], r: 30, depth: 1.8 }, // the southern sea
+    sea: { at: [-62, 14], r: 15, depth: 1.8 }, // the southern sea (r 30 on the radius-40 planet)
     bay: { at: [-30, 8], r: 9, depth: 1.5 },   // an inlet of the sea, up to the harbour
     mountain: { at: [52, -42], r: 10, height: 3.6 },
+    island: { at: [-64, 18], r: 6.5, height: 0.5, name: 'Gull Island' },   // out in the sea: a lighthouse (farm.js)
     hills: 0.32,                              // rolling amplitude everywhere else
   },
   town: {
@@ -32,6 +33,10 @@ export default {
     // Maple Plaza, the strip mall: town-frame [x, y] of its shopfront line, and
     // the reserved circle (kept clear of the boulevard so the ring isn't pushed)
     mall: { at: [27.4, 0.5], zone: [24.8, 0.5], r: 6.0 },
+    // the roundabout where the boulevard, the Riverbend bridge road and YarnFlow's road meet
+    // (roundabout.js): near `at` on the boulevard, its middle `out` off the line away from town;
+    // ring = its carriageway's centre-line radius, half = the carriageway's half-width
+    roundabout: { at: [30.3, 18.24], ring: 3.4, half: 1.05, out: 2.8 },
   },
   museum: { at: [13, 25], facing: 'town' },
   // the story's places
@@ -41,6 +46,7 @@ export default {
     airport:   { at: [29, 99], r: 14, name: 'Airport' },
     launchpad: { at: [-8, -150], r: 7, stop: 6.2, name: 'Cape Far Side' },   // the finale: pad, gantry, rocket, crates
     overlook:  { at: [49, -40], r: 3.5, name: 'Summit Overlook' },
+    farm:      { at: [-48, 106.1], r: 8.0, name: 'Hilltop Farm' },   // barn, silo, paddock (cows, sheep), crops — farm.js
   },
   // a town park out past Maple Plaza (no road: you walk in across the grass). Splatform's
   // shop used to stand here with a spur road forking off to it; it moved round the planet
@@ -58,7 +64,7 @@ export default {
       desc: 'A browser game about how other animals see: photograph 14 hidden animals and borrow their eyes — bee ultraviolet, snake heat pits, bat echolocation, owl night vision.', url: 'https://ghanemja.github.io/borrowed_eyes/' },
     { key: 'yarnflow',  name: 'YarnFlow', tag: 'pattern haberdashery · crochet', at: [34, 53], style: 'yarn', lot: 1,
       desc: 'A crochet studio: watch a pattern get made stitch by stitch in 3D, learn the stitches, and share what you make.', url: 'https://ghanemja.github.io/crochet/' },
-    { key: 'splatform', name: 'Splatform', tag: 'paint & supplies · ui library', at: [16, -110], style: 'splat',
+    { key: 'splatform', name: 'Splatform', tag: 'paint & supplies · ui library', at: [33.1, -107.1], style: 'splat',
       desc: 'Components, painted: a UI library where every button, card and input is made of a real art medium — watercolor, acrylic, charcoal, torn paper or marker.', url: 'https://ghanemja.github.io/art-asset/' },
     { key: 'qr',        name: 'QR Compass', tag: 'the map room · 3d map', at: [-12, -64], style: 'qr', lot: 1,
       desc: "America's biggest companies on a 3D map, each drawn as its own little model — and every model turns into that company's scannable QR code.", url: 'https://ghanemja.github.io/qr/' },

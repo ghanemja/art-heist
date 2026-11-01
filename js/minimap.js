@@ -36,6 +36,7 @@ export function createMinimap({ town, player, game, rooms }) {
     if (k === 'airport') continue;                                       // (nothing out there yet)
     add(k === 'launchpad' ? 'cape' : k, s.name || k, s.dir, { r: Math.max(2.4, (s.r ?? 3) * 0.8) });
   }
+  if (town.island) add('island', PLAN.terrain.island?.name || 'Gull Island', town.island.dir, { r: 3 });
   const N = town.north || {};
   if (N.club?.dir) add('club', 'The Country Club', N.club.dir, { r: 5 });
   if (N.range?.dir) add('range', 'The Driving Range', N.range.dir, { r: 4.5 });

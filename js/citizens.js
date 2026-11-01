@@ -147,8 +147,10 @@ const townness = (d, town) => town.colliders.reduce((n, c) => n + (c.r >= 0.8 &&
 // the main town: inside the ring boulevard, or on its own pavement. (The ring isn't a
 // circle, so this is a point-in-polygon test, flattened onto the ground at its centre.)
 function mainArea() {
-  const ring = ROADS.find((r) => r.closed);
-  if (!ring) return () => true;
+  // (the boulevard: its whole loop, round the roundabout, where it opens into one)
+  const rd = ROADS.find((r) => r.loop) || ROADS.find((r) => r.closed);
+  if (!rd) return () => true;
+  const ring = { pts: rd.loop || rd.pts, half: rd.half };
   const cen = ring.pts.reduce((a, p) => a.add(p), new THREE.Vector3()).normalize();
   const e1 = new THREE.Vector3(0, 1, 0).cross(cen).normalize(), e2 = cen.clone().cross(e1).normalize();
   const flat = (d) => [d.dot(e1), d.dot(e2)];
@@ -190,7 +192,8 @@ function planWalks(town, avoid, count, covered, inMain) {
 // one lane of the boulevard, as a loop (side −1 rides it the other way round). Where the
 // lane passes close to one of the story's people or clues, it eases out to the middle.
 function planLane(side, avoid) {
-  const rd = ROADS.find((r) => r.closed) || ROADS[0], n = rd.pts.length, out = [];
+  const road = ROADS.find((r) => r.loop) || ROADS.find((r) => r.closed) || ROADS[0];
+  const rd = { pts: road.loop || road.pts, half: road.half }, n = rd.pts.length, out = [];
   for (let i = 0; i < n; i++) {
     const p = rd.pts[i], t = rd.pts[(i + 1) % n].clone().sub(rd.pts[(i - 1 + n) % n]).normalize();
     const lat = new THREE.Vector3().crossVectors(p, t).normalize().multiplyScalar(side);

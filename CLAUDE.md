@@ -74,10 +74,11 @@ through buildings, towers in streets, a station inside the museum). Now:
   (`window.__layout()` → every footprint/road/zone for a planning map).
   Other dev params: `?at=<landmark>`, `?shotcam=<key>,x,y,z,lookY,lookZ`, `?arrfreeze=0.9`, `?debug=1`.
 
-**The main app (`js/`) — curvature.** The planet is radius 32 (`R` in `js/manifest.js`; `?R=<n>`
+**The main app (`js/`) — curvature.** The planet is radius 28 (`R` in `js/manifest.js`; `?R=<n>`
 previews another size). The plan's `[lat, lon]`s are still drawn for radius 40: `ll()` in `world.js`
-keeps everything within 36 units of downtown at its drawn spacing and squeezes the open country
-beyond, so never hard-code 40 (or a 39.x horizon) — use `R`. Anything flat and wide
+keeps every place's bearing AND distance from downtown (world units), so the smaller sphere wraps
+the outer places round its back instead of leaving it empty; only the far tail is squeezed. Never
+hard-code 40 (or a 39.x horizon) — use `R`. Anything flat and wide
 floats at its ends. Build structures in `js/buildings.js` and set them down with
 `placeOnPlanet()` (bakes per material, splits long faces, lays every vertex onto the
 terrain under it — the curve, and any levelled plane or slope — then inks). Batch a row of them with `batchPlaced()`; register walkable tops with
